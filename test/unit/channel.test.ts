@@ -250,6 +250,11 @@ describe('gateway', () => {
     await startAccount(t.ctx);
     expect(sessions).toEqual([]);
     expect(t.status()).toMatchObject({ running: false, lastError: 'not configured' });
+    const off = makeCtx(cfg({ enabled: false }));
+    off.ac.abort();
+    await startAccount(off.ctx);
+    expect(sessions).toEqual([]);
+    expect(off.status()).toMatchObject({ running: false, connected: false, lastError: 'disabled' });
   });
 
   it('does not start an account while nobody is an owner', async () => {
