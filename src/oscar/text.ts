@@ -68,13 +68,23 @@ function decodeEntities(s: string): string {
 
 const ANCHOR_SCHEMES = new Set(['http', 'https', 'ftp', 'mailto', 'aim']);
 
+// The attributes are walked rather than searched for "href", because another attribute's value may
+// hold that word and the agent would then be told an address the link does not go to.
+function hrefValue(tag: string): string {
+  const attribute = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]*)))?/g;
+  attribute.lastIndex = /^<\/?[a-zA-Z][a-zA-Z0-9]*/.exec(tag)?.[0].length ?? 1;
+  for (let m = attribute.exec(tag); m; m = attribute.exec(tag)) {
+    if ((m[1] ?? '').toLowerCase() === 'href') return m[2] ?? m[3] ?? m[4] ?? '';
+  }
+  return '';
+}
+
 // An address reaches an agent as text, so it is read as one opaque token: entities are decoded here
 // and never again, and whitespace, control characters and angle brackets are dropped, so it can
 // neither open a tag nor start a line of its own. A scheme the outbound side would not write is
 // dropped with the address; a bare host like "www.example.net" has no scheme and is kept.
 function anchorAddress(tag: string): string {
-  const m = /[\s"'/]href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
-  const address = decodeEntities(m?.[1] ?? m?.[2] ?? m?.[3] ?? '').replace(/[\s<>\u0000-\u001f\u007f-\u009f]+/g, '');
+  const address = decodeEntities(hrefValue(tag)).replace(/[\s<>\u0000-\u001f\u007f-\u009f]+/g, '');
   const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(address);
   if (scheme && !ANCHOR_SCHEMES.has((scheme[1] ?? '').toLowerCase())) return '';
   return address;

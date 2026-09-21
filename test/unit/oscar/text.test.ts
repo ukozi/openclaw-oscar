@@ -155,6 +155,9 @@ describe('anchors', () => {
     ['a data address is dropped', '<A HREF="data:text/html,x">click here</A>', 'click here'],
     ['a file address is dropped', '<A HREF="file:///etc/passwd">click here</A>', 'click here'],
     ['an http address is kept', '<A HREF="HTTP://example.net/">click here</A>', 'click here (HTTP://example.net/)'],
+    ['a decoy href inside another attribute', '<A TITLE=" href=decoy.example.net" HREF="http://example.net/a">words</A>', 'words (http://example.net/a)'],
+    ['a decoy href before a single-quoted one', "<A TITLE='href=decoy.example.net' HREF='http://example.net/a'>words</A>", 'words (http://example.net/a)'],
+    ['a decoy href and no real one', '<A TITLE=" href=decoy.example.net">words</A>', 'words'],
   ];
   it.each(attacks)('%s', (_name, html, want) => {
     expect(htmlToText(html)).toBe(want);
