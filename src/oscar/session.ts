@@ -1,8 +1,9 @@
-import { bucpLogin, md5Available, strongHash } from './auth.js';
+import { bucpLogin, md5Available, probeLogin, strongHash } from './auth.js';
+import type { LoginResult } from './auth.js';
 import { BosClient, ServiceRefusedError } from './bos.js';
 import type { ServiceRedirect } from './bos.js';
 import { RedirectRefusedError, decideRedirect, isTlsError, isUnroutableHost, openConnection } from './connection.js';
-import type { CloseInfo, OscarConnection } from './connection.js';
+import type { CloseInfo, OscarConnection, RedirectDecision } from './connection.js';
 import {
   BACKOFF_BASE_MS,
   BACKOFF_CAP_MS,
@@ -12,6 +13,7 @@ import {
   BACKOFF_JITTER,
   LOGIN_BUDGET_PER_MINUTE,
   LOGIN_STAGGER_MS,
+  PASSWORD_CHECK_CACHE_MS,
   SERVER_DISCONNECT_BACKOFF_MS,
   SERVICE_COOKIE_TTL_MS,
   SIGNOFF_TLV_DISCONNECT_REASON,
@@ -23,9 +25,12 @@ import { hasTlv } from './tlv.js';
 import { normalizeScreenName } from './text.js';
 import { OscarSendError } from './types.js';
 import type {
+  Logger,
   LoginBudget,
   OscarEvents,
+  OscarSession,
   OscarSessionOptions,
+  PasswordCheck,
   Presence,
   SendPriority,
   SendReceipt,
@@ -130,7 +135,7 @@ class SendQueue {
 
 type Listeners = { [E in keyof OscarEvents]: Set<(payload: OscarEvents[E]) => void> };
 
-export class OscarSessionImpl {
+export class OscarSessionImpl implements OscarSession {
   private readonly now: () => number;
   private readonly timers: TimerApi;
   private readonly listeners: Listeners = {
@@ -156,6 +161,9 @@ export class OscarSessionImpl {
   private bos: BosClient | null = null;
   private pendingConn: OscarConnection | null = null;
   private self: { screenName: string; bot: boolean } | null = null;
+  private everOnline = false;
+  private passwordCheck: { result: PasswordCheck; at: number } | null = null;
+  private probing: Promise<PasswordCheck> | null = null;
 
   constructor(private readonly opts: OscarSessionOptions) {
     this.now = opts.now ?? Date.now;
@@ -320,6 +328,7 @@ export class OscarSessionImpl {
       this.pendingConn = null;
       this.bos = bos;
       this.self = self;
+      this.everOnline = true;
       this.onlineSince = this.now();
       this.setState('online');
       if (!conn.isOpen) {
@@ -382,6 +391,31 @@ export class OscarSessionImpl {
       this.retryTimer = null;
       void this.attempt(gen);
     }, delay);
+  }
+
+  probePasswordCheck(): Promise<PasswordCheck> {
+    const cached = this.passwordCheck;
+    if (cached && this.now() - cached.at < PASSWORD_CHECK_CACHE_MS) return Promise.resolve(cached.result);
+    // Only after a real login: on a server with auth disabled, probing a missing name would create it.
+    if (!this.everOnline) return Promise.resolve('unknown');
+    // Callers that overlap share one probe; each probe costs a slot in the server's per-address login limiter.
+    this.probing ??= this.runProbe().finally(() => {
+      this.probing = null;
+    });
+    return this.probing;
+  }
+
+  private async runProbe(): Promise<PasswordCheck> {
+    let result: PasswordCheck = 'unknown';
+    try {
+      await this.opts.loginBudget.take();
+      const conn = await this.open(this.configured(), 'auth');
+      result = await probeLogin(conn, this.timers, this.opts.screenName);
+    } catch {
+      result = 'unknown';
+    }
+    if (result !== 'unknown') this.passwordCheck = { result, at: this.now() };
+    return result;
   }
 
   updateBuddies(): void {
@@ -449,3 +483,81 @@ export class OscarSessionImpl {
     return grant(where, r.cookie, where.pinned);
   }
 }
+
+export type LoginCheckOptions = {
+  host: string;
+  port: number;
+  tls: boolean;
+  caFile?: string | undefined;
+  redirect: 'auto' | 'follow' | 'pin';
+  screenName: string;
+  log: Logger;
+  timeoutMs?: number | undefined;
+};
+export type LoginCheckResult =
+  | { ok: true; bosHost: string; bosPort: number; redirectProblem: string | null }
+  | { ok: false; reason: StateReason; detail?: string };
+
+function openForCheck(opts: LoginCheckOptions): Promise<OscarConnection> {
+  return openConnection({
+    host: opts.host,
+    port: opts.port,
+    tls: opts.tls,
+    caFile: opts.caFile,
+    label: 'auth',
+    log: opts.log,
+    connectTimeoutMs: opts.timeoutMs,
+  });
+}
+
+function redirectProblem(decision: RedirectDecision, advertised: string, followedUnroutable: boolean): string | null {
+  if (decision.why === 'unroutable' || decision.why === 'loopback') return `the server advertises ${advertised}, which cannot be reached from here; using the configured address`;
+  if (decision.why === 'tls-mismatch') return `the server advertises ${advertised} without TLS; staying on the configured TLS address`;
+  if (decision.why === 'malformed') return 'the server advertises an address that cannot be read; using the configured address';
+  if (followedUnroutable) return `redirect "follow" leads to ${advertised}, which cannot be reached from here`;
+  return null;
+}
+
+// For setup and status probes: a login that stops at the cookie. The cookie is never presented,
+// so no session is created and a live sign-on of the same name is not displaced.
+export async function checkLogin(opts: LoginCheckOptions & { password: string }): Promise<LoginCheckResult> {
+  const timers = { setTimeout, clearTimeout };
+  let result: LoginResult;
+  try {
+    const conn = await openForCheck(opts);
+    result = await bucpLogin(conn, timers, opts.screenName, opts.port, (key) => strongHash(opts.password, key), opts.timeoutMs);
+  } catch (error) {
+    return { ok: false, reason: connectFailureReason(error, false), detail: (error as Error).message };
+  }
+  if (!result.ok) {
+    return result.code === undefined ? { ok: false, reason: result.reason, detail: result.detail } : { ok: false, reason: result.reason };
+  }
+  const decision = decideRedirect(opts.redirect, opts, result);
+  if (decision.refused) {
+    return { ok: false, reason: decision.refused, detail: new RedirectRefusedError(`${result.host}:${result.port}`).message };
+  }
+  const followedUnroutable = !decision.pinned && isUnroutableHost(decision.host) && !isUnroutableHost(opts.host);
+  return {
+    ok: true,
+    bosHost: decision.host,
+    bosPort: decision.port,
+    redirectProblem: redirectProblem(decision, `${result.host}:${result.port}`, followedUnroutable),
+  };
+}
+
+// Only call this for a screen name that has logged in before: on a server with auth disabled,
+// probing a name that does not exist creates the account.
+export async function checkPasswordEnforced(opts: LoginCheckOptions): Promise<PasswordCheck> {
+  try {
+    const conn = await openForCheck(opts);
+    return await probeLogin(conn, { setTimeout, clearTimeout }, opts.screenName, opts.timeoutMs);
+  } catch {
+    return 'unknown';
+  }
+}
+
+export function createOscarSession(opts: OscarSessionOptions): OscarSession {
+  return new OscarSessionImpl(opts);
+}
+
+export type { OscarSession, OscarSessionOptions } from './types.js';
