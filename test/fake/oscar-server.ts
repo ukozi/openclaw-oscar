@@ -687,7 +687,10 @@ export class FakeOscarServer {
         conn.snac(1, 0x0f, snac.requestId, this.userInfo(session));
         return;
       case 0x0001_001f:
-        conn.snac(1, 0x20, snac.requestId);
+        // The probe route exists but is fatal: foodgroup/oservice.go:365 builds the ack with a nil
+        // body, wire/encode.go:15 refuses to marshal a nil SNAC, and server/oscar/server.go:620-629
+        // leaves the read loop on that error, so the socket dies. No client may send this.
+        conn.socket.destroy();
         return;
       case 0x0001_0002:
         if (!bos) return;

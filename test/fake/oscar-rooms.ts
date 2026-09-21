@@ -87,7 +87,6 @@ const ERR_NOT_SUPPORTED = 0x0008;
 const ERR_GENERAL_FAILURE = 0x001c;
 const COOKIE_NAME_LIMIT = 202;
 const PROBE_REQUEST = 0x001f;
-const PROBE_ACK = 0x0020;
 const BOS_IM_RATE_CLASS = 3;
 const CHAT_USER_FLAGS = 0x0010;
 const CHAT_SIGNON_TIME = 0x886e0900;
@@ -315,7 +314,9 @@ export class FakeRooms {
     const ticket = this.attached.get(conn);
     if (!ticket) return;
     if (family === FAMILY_OSERVICE && subtype === PROBE_REQUEST) {
-      conn.send(FAMILY_OSERVICE, PROBE_ACK, new Uint8Array(0), requestId);
+      // the probe kills a room socket exactly as it kills the main one: the nil-bodied ack cannot be
+      // marshalled (foodgroup/oservice.go:365, wire/encode.go:15) and the read loop returns
+      conn.destroy();
     } else if (family === FAMILY_OSERVICE && subtype === OSERVICE_SERVICE_REQUEST) {
       this.serviceRequest(conn, requestId, body);
     } else if (ticket.kind === 'chatnav' && family === FAMILY_CHATNAV) {

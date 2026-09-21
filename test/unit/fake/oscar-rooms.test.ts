@@ -372,12 +372,13 @@ describe('fake rooms', () => {
     expect(rooms.occupants({ exchange: 4, name: 'side' })).toEqual([]);
   });
 
-  it('answers the liveness probe on a room socket', () => {
+  it('kills a room socket that sends the OService probe, as the real server does', () => {
     const { rooms, signOn, join } = setup();
     rooms.addRoom(testroom);
     const one = join(signOn('botone'));
     rooms.snac(one, FAMILY_OSERVICE, 0x001f, 42, new Uint8Array(0));
-    expect(one.of(FAMILY_OSERVICE, 0x0020).map((o) => o.requestId)).toEqual([42]);
+    expect(one.of(FAMILY_OSERVICE, 0x0020)).toEqual([]);
+    expect(one.ended).toBe('destroyed');
   });
 
   it('closes every room of a name whose BOS session ended', () => {

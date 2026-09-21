@@ -29,6 +29,9 @@ export const OSERVICE_RATE_PARAM_CHANGE = 0x000a;
 export const OSERVICE_USER_INFO_QUERY = 0x000e;
 export const OSERVICE_USER_INFO_UPDATE = 0x000f;
 export const OSERVICE_CLIENT_VERSIONS = 0x0017;
+// Never send this. The route exists on every connection, but the handler answers with a nil body
+// (foodgroup/oservice.go:365), the encoder refuses it (wire/encode.go:15) and the read loop returns
+// (server/oscar/server.go:620-629), so the server closes the socket. Liveness uses 0x0e instead.
 export const OSERVICE_PROBE_REQ = 0x001f;
 export const FOOD_GROUP_VERSION = 1;
 export const CLIENT_TOOL_ID = 0x0110;

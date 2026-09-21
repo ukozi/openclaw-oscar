@@ -10,7 +10,7 @@ import {
   FLAP_SIGNON,
   KEEPALIVE_INTERVAL_MS,
   LOGIN_TLV_COOKIE,
-  OSERVICE_PROBE_REQ,
+  OSERVICE_USER_INFO_QUERY,
   PROBE_INTERVAL_MS,
   PROBE_TIMEOUT_MS,
   REQUEST_TIMEOUT_MS,
@@ -257,7 +257,7 @@ export class OscarConnection {
       this.opts.log.warn('dropped a malformed SNAC', { conn: this.label, error: (error as Error).message });
       return;
     }
-    // Servers older than the probe route answer it with a 0x01/0x01 error; either proves the link is alive.
+    // Any SNAC carrying the liveness request's id proves the link is alive, the 0x01/0x0F reply or an error.
     if (snac.requestId === this.probeRequestId) {
       this.probeRequestId = null;
       if (this.probeDeadline) this.timers.clearTimeout(this.probeDeadline);
@@ -337,9 +337,15 @@ export class OscarConnection {
         keepalive();
       }, KEEPALIVE_INTERVAL_MS);
     };
+    // The liveness request is the OService user-info query (0x01,0x0E), answered by 0x01,0x0F. Never use
+    // the OService probe (0x01,0x1F): its route exists on every connection but its handler builds a reply
+    // with a nil body (foodgroup/oservice.go:365), wire/encode.go:15 refuses to marshal a nil SNAC, and
+    // the read loop returns on that error (server/oscar/server.go:620-629), so the server closes the
+    // socket. Both server generations do this. The user-info query is in the same route table, so it is
+    // answered on the main connection and on a room connection alike.
     const probe = (): void => {
       this.probeTimer = this.timers.setTimeout(() => {
-        this.probeRequestId = this.send(FAMILY_OSERVICE, OSERVICE_PROBE_REQ);
+        this.probeRequestId = this.send(FAMILY_OSERVICE, OSERVICE_USER_INFO_QUERY);
         this.probeDeadline = this.timers.setTimeout(() => this.destroy({ kind: 'probe-timeout', clean: false }), PROBE_TIMEOUT_MS);
         probe();
       }, PROBE_INTERVAL_MS);

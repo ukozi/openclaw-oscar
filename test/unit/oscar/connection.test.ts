@@ -70,12 +70,12 @@ describe('OscarConnection', () => {
   it('answers the server signon with its own, then numbers its frames', async () => {
     const script = await listen((s) => s.write(SERVER_SIGNON));
     const conn = await connect(script.port, new ManualTimers());
-    expect(conn.send(0x0001, 0x001f, undefined, 7)).toBe(7);
-    expect(conn.send(0x0001, 0x001f)).toBe(1);
+    expect(conn.send(0x0001, 0x000e, undefined, 7)).toBe(7);
+    expect(conn.send(0x0001, 0x000e)).toBe(1);
     await waitFor(() => script.frames.length === 3, 'three frames');
     expect(script.frames.map((f) => [f.type, f.seq])).toEqual([[1, 0], [2, 1], [2, 2]]);
     expect(toHex(script.frames[0]?.payload ?? new Uint8Array())).toBe('00000001');
-    expect(decodeSnac(script.frames[1]?.payload ?? new Uint8Array())).toMatchObject({ family: 1, subtype: 0x1f, requestId: 7 });
+    expect(decodeSnac(script.frames[1]?.payload ?? new Uint8Array())).toMatchObject({ family: 1, subtype: 0x0e, requestId: 7 });
     conn.destroy();
   });
 
@@ -171,7 +171,7 @@ describe('OscarConnection', () => {
     await expect(conn.request(1, 6)).rejects.toBeInstanceOf(ConnectionClosedError);
   });
 
-  it('sends a keepalive every 60 s and a probe every 90 s', async () => {
+  it('sends a FLAP keepalive every 60 s and a user-info query, never the fatal probe, every 90 s', async () => {
     const script = await listen((s) => s.write(SERVER_SIGNON));
     const timers = new ManualTimers();
     const conn = await connect(script.port, timers);
@@ -182,12 +182,12 @@ describe('OscarConnection', () => {
     expect(script.frames[1]).toMatchObject({ type: 5, payload: new Uint8Array(0) });
     await timers.advance(30_000);
     await waitFor(() => script.frames.length === 3, 'probe');
-    expect(decodeSnac(script.frames[2]?.payload ?? new Uint8Array())).toMatchObject({ family: 1, subtype: 0x1f });
+    expect(decodeSnac(script.frames[2]?.payload ?? new Uint8Array())).toMatchObject({ family: 1, subtype: 0x0e });
     conn.destroy();
     expect(timers.pending()).toEqual([]);
   });
 
-  it('destroys the socket when a probe goes unanswered for 20 s', async () => {
+  it('destroys the socket when the liveness request goes unanswered for 20 s', async () => {
     const script = await listen((s) => s.write(SERVER_SIGNON));
     const timers = new ManualTimers();
     const conn = await connect(script.port, timers);
@@ -199,7 +199,7 @@ describe('OscarConnection', () => {
     expect(closed.info()).toEqual({ kind: 'probe-timeout', clean: false });
   });
 
-  it('counts any SNAC echoing the probe id as alive, including an error from an old server', async () => {
+  it('counts any SNAC echoing the liveness id as alive, an error reply included', async () => {
     const script = await listen((s) => s.write(SERVER_SIGNON));
     const timers = new ManualTimers();
     const conn = await connect(script.port, timers);
@@ -207,7 +207,7 @@ describe('OscarConnection', () => {
     const seen: number[] = [];
     conn.onSnac((s) => seen.push(s.subtype));
     await timers.advance(90_000);
-    await waitFor(() => script.frames.some((f) => f.type === 2), 'probe');
+    await waitFor(() => script.frames.some((f) => f.type === 2), 'liveness request');
     const probe = script.frames.find((f) => f.type === 2);
     const id = decodeSnac(probe?.payload ?? new Uint8Array()).requestId;
     script.sockets[0]?.write(encodeFlap(2, 101, encodeSnac({ family: 1, subtype: 0x01, requestId: id }, fromHex('0001'))));
