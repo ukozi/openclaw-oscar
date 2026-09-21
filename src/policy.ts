@@ -44,3 +44,72 @@ export function roomRequiresMention(bot: string, policy: RootPolicy): boolean {
   const lead = policy.chain.roster[0]?.screenName;
   return lead !== undefined && lead !== normalizeName(bot);
 }
+
+export type ToolPolicy = { allow?: string[]; alsoAllow?: string[]; deny?: string[] };
+
+const TYPED_SENDER_KEY = /^(channel|id|e164|username|name):(.*)$/i;
+
+function stringList(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : undefined;
+}
+
+function asToolPolicy(value: unknown): ToolPolicy | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  const out: ToolPolicy = {};
+  const allow = stringList(raw.allow);
+  const alsoAllow = stringList(raw.alsoAllow);
+  const deny = stringList(raw.deny);
+  if (allow) out.allow = allow;
+  if (alsoAllow) out.alsoAllow = alsoAllow;
+  if (deny) out.deny = deny;
+  return out;
+}
+
+function senderKeyRank(rawKey: string): { rank: number; subject: string } | null {
+  const typed = TYPED_SENDER_KEY.exec(rawKey);
+  if (!typed) return { rank: 1, subject: rawKey };
+  const type = (typed[1] ?? '').toLowerCase();
+  const rest = typed[2] ?? '';
+  if (type === 'id') return { rank: 1, subject: rest };
+  if (type === 'username') return { rank: 2, subject: rest };
+  if (type === 'name') return { rank: 3, subject: rest };
+  if (type !== 'channel') return null;
+  const cut = rest.indexOf(':');
+  if (cut <= 0 || rest.slice(0, cut).trim().toLowerCase() !== 'oscar') return null;
+  return { rank: 0, subject: rest.slice(cut + 1) };
+}
+
+export function toolsBySenderEntry(map: Record<string, unknown> | undefined, sender: string): ToolPolicy | undefined {
+  if (!map) return undefined;
+  const who = normalizeName(sender);
+  let best: { rank: number; policy: ToolPolicy } | undefined;
+  let wildcard: ToolPolicy | undefined;
+  for (const [rawKey, value] of Object.entries(map)) {
+    const policy = asToolPolicy(value);
+    if (!policy) continue;
+    const key = rawKey.trim();
+    if (key === '*') {
+      wildcard ??= policy;
+      continue;
+    }
+    const parsed = senderKeyRank(key);
+    if (!parsed || normalizeName(parsed.subject.trim().replace(/^@/, '')) !== who) continue;
+    if (!best || parsed.rank < best.rank) best = { rank: parsed.rank, policy };
+  }
+  return best?.policy ?? wildcard;
+}
+
+export function senderToolPolicy(sender: string, policy: RootPolicy, roomName: string | null): ToolPolicy | undefined {
+  const who = normalizeName(sender);
+  const role = roleOf(who, policy);
+  const entry =
+    roomName === null ? undefined : toolsBySenderEntry(policy.rooms[normalizeRoom(roomName)]?.toolsBySender, who);
+  const builtin = role === 'owner' || role === 'bot' ? [] : policy.nonOwnerTools.deny;
+  const deny = [...builtin, ...(entry?.deny ?? []).filter((tool) => !builtin.includes(tool))];
+  const out: ToolPolicy = {};
+  if (entry?.allow?.length) out.allow = entry.allow;
+  if (entry?.alsoAllow?.length) out.alsoAllow = entry.alsoAllow;
+  if (deny.length > 0) out.deny = deny;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
