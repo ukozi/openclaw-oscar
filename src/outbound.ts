@@ -2,13 +2,14 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createTypingCallbacks } from 'openclaw/plugin-sdk/channel-reply-pipeline';
 import type { TypingCallbacks } from 'openclaw/plugin-sdk/channel-reply-pipeline';
 import { chunkText } from 'openclaw/plugin-sdk/reply-chunking';
-import { defaultAccountId, readPolicy, resolveAccount } from './config.js';
-import { formatTarget, parseTarget } from './names.js';
-import type { Target } from './names.js';
-import type { SendPriority } from './oscar/index.js';
-import { toWireHtml } from './oscar/text.js';
+import { ROOM_CHUNK_MAX, defaultAccountId, readPolicy, resolveAccount } from './config.js';
+import { formatTarget, normalizeName, parseTarget } from './names.js';
+import type { RoomRef, Target } from './names.js';
+import type { SendPriority, SendReceipt } from './oscar/index.js';
+import { guardRoll, toAsciiEntities, toWireHtml } from './oscar/text.js';
 import { outboundProblem, roleOf } from './policy.js';
-import { getRuntime, liveConfig } from './runtime.js';
+import { getRuntime, liveConfig, roomKey } from './runtime.js';
+import type { AccountRuntime } from './runtime.js';
 
 const TYPING_KEEPALIVE_MS = 8000;
 const TYPING_MAX_MS = 120_000;
@@ -122,4 +123,83 @@ export async function sendAdapterText(ctx: { cfg: unknown; to: string; text: str
   const html = await filtered(ctx, 'send', 'wire', ctx.text);
   if (html === null) return { messageId: '', chatId: ctx.to };
   return sendWire({ cfg: ctx.cfg, accountId: ctx.accountId, to: ctx.to, html });
+}
+
+const WIRE_ATOM = /<A\b[^>]*>[\s\S]*?<\/A>|<[^>]*>|&#?[A-Za-z0-9]+;|[\s\S]/giu;
+const MIN_CHUNK_LIMIT = 64;
+// The room info the server sends advertises a 1024-byte message limit (state/chat.go:109).
+export const ROOM_WIRE_MAX = ROOM_CHUNK_MAX;
+
+function isBreak(atom: string): boolean {
+  return atom === ' ' || atom === '\n' || /^<br\s*\/?>$/i.test(atom);
+}
+
+export function splitWireHtml(html: string, limit: number): string[] {
+  if (limit < MIN_CHUNK_LIMIT) throw new RangeError(`chunk limit ${limit} is below ${MIN_CHUNK_LIMIT}`);
+  const budget = limit - 1;
+  const atoms = html.match(WIRE_ATOM) ?? [];
+  const chunks: string[] = [];
+  let current: string[] = [];
+  let length = 0;
+  let lastBreak = -1;
+  const cut = (upTo: number): void => {
+    chunks.push(current.slice(0, upTo).join(''));
+    current = current.slice(upTo);
+    length = 0;
+    lastBreak = -1;
+    current.forEach((atom, i) => {
+      length += atom.length;
+      if (isBreak(atom)) lastBreak = i;
+    });
+  };
+  for (const atom of atoms) {
+    while (length + atom.length > budget && current.length > 0) cut(lastBreak >= 0 ? lastBreak + 1 : current.length);
+    current.push(atom);
+    length += atom.length;
+    if (isBreak(atom)) lastBreak = current.length - 1;
+  }
+  if (current.length > 0) chunks.push(current.join(''));
+  // Trimming takes off the space guardRoll may have put in front of //roll, and a cut can make a
+  // later line the start of a message, so the guard runs last, on every chunk.
+  return chunks
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk !== '')
+    .map(guardRoll);
+}
+
+function notOnline(accountId: string): Error {
+  return Object.assign(new Error(`${accountId} is not signed on`), { code: 'not-online' as const });
+}
+
+function noteOwnLine(rt: AccountRuntime, room: RoomRef): void {
+  const state = rt.rooms.get(roomKey(room));
+  if (!state) return;
+  state.lastBotLine = { from: normalizeName(rt.session.selfInfo()?.screenName ?? rt.accountId), at: Date.now() };
+}
+
+export async function sendRoomHtml(accountId: string, room: RoomRef, html: string, limit: number): Promise<SendReceipt[]> {
+  const rt = getRuntime(accountId);
+  if (!rt) throw notOnline(accountId);
+  const receipts: SendReceipt[] = [];
+  for (const chunk of splitWireHtml(toAsciiEntities(html), Math.min(limit, ROOM_WIRE_MAX))) {
+    receipts.push(await rt.session.sendRoom(room, chunk, { priority: 'reply' }));
+    noteOwnLine(rt, room);
+  }
+  return receipts;
+}
+
+export async function sendRoomLine(
+  accountId: string,
+  room: RoomRef,
+  markdown: string,
+  opts: { whisperTo?: string; priority?: SendPriority } = {},
+): Promise<SendReceipt> {
+  const rt = getRuntime(accountId);
+  if (!rt) throw notOnline(accountId);
+  const html = guardRoll(toAsciiEntities(toWireHtml(markdown)));
+  const sendOpts: { whisperTo?: string; priority: SendPriority } = { priority: opts.priority ?? 'reply' };
+  if (opts.whisperTo !== undefined) sendOpts.whisperTo = opts.whisperTo;
+  const receipt = await rt.session.sendRoom(room, html, sendOpts);
+  if (opts.whisperTo === undefined) noteOwnLine(rt, room);
+  return receipt;
 }
