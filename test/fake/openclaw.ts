@@ -1,5 +1,8 @@
 import { vi } from 'vitest';
 import { z } from 'zod';
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/channel-core';
+import type { AnyAgentTool, OpenClawPluginToolContext } from 'openclaw/plugin-sdk/core';
+import type { AgentToolResult } from 'openclaw/plugin-sdk/tool-results';
 
 export type Rec = Record<string, unknown>;
 export type FakeReply = { text: string; kind?: string };
@@ -410,4 +413,169 @@ export function createInboundKernel() {
   }
 
   return { run, calls, dispatched };
+}
+
+type HookHandler = (event: unknown, ctx: unknown) => unknown;
+type EventSubscription = { id: string; streams?: string[]; handle: (event: never, ctx: never) => void | Promise<void> };
+type ToolFactory = (ctx: OpenClawPluginToolContext) => AnyAgentTool | AnyAgentTool[] | null | undefined;
+type LlmParams = { messages: { role: string; content: string }[]; systemPrompt?: string; maxTokens?: number; purpose?: string; signal?: AbortSignal };
+
+export type FakeToolCall = {
+  toolName: string; params: Record<string, unknown>;
+  runId: string; sessionKey: string; toolCallId?: string;
+};
+
+export function createFakeAgentApi(opts: {
+  registrationMode?: string;
+  complete?: (params: LlmParams) => Promise<string>;
+  config?: () => unknown;
+} = {}) {
+  const hooks = new Map<string, HookHandler[]>();
+  const subscriptions: EventSubscription[] = [];
+  const tools: { tool: AnyAgentTool | ToolFactory; names: string[] }[] = [];
+  const llmCalls: LlmParams[] = [];
+  let seq = 0;
+  let callSeq = 0;
+
+  const api = {
+    id: 'openclaw-oscar',
+    name: 'openclaw-oscar',
+    registrationMode: opts.registrationMode ?? 'full',
+    logger: { debug() {}, info() {}, warn() {}, error() {} },
+    on(name: string, handler: HookHandler) {
+      hooks.set(name, [...(hooks.get(name) ?? []), handler]);
+    },
+    agent: {
+      events: {
+        registerAgentEventSubscription(subscription: EventSubscription) {
+          subscriptions.push(subscription);
+        },
+      },
+    },
+    registerTool(tool: AnyAgentTool | ToolFactory, options?: { name?: string; names?: string[] }) {
+      tools.push({ tool, names: options?.names ?? (options?.name ? [options.name] : []) });
+    },
+    runtime: {
+      config: { current: () => opts.config?.() ?? {} },
+      llm: {
+        async complete(params: LlmParams) {
+          llmCalls.push(params);
+          const text = opts.complete ? await opts.complete(params) : '';
+          return { text, provider: 'fake', model: 'fake', agentId: 'main', usage: {}, audit: { caller: { kind: 'plugin' } } };
+        },
+      },
+    },
+  };
+
+  async function fireHook(name: string, event: unknown, ctx: unknown): Promise<void> {
+    for (const handler of hooks.get(name) ?? []) await handler(event, ctx);
+  }
+
+  async function emitAgentEvent(stream: string, runId: string, data: Record<string, unknown>, sessionKey?: string): Promise<void> {
+    seq += 1;
+    const event = { runId, seq, stream, ts: Date.now(), data, ...(sessionKey ? { sessionKey } : {}) };
+    for (const subscription of subscriptions) {
+      if (subscription.streams && !subscription.streams.includes(stream)) continue;
+      await subscription.handle(structuredClone(event) as never, {} as never);
+    }
+  }
+
+  function resolveTool(name: string, ctx: OpenClawPluginToolContext): AnyAgentTool {
+    for (const entry of tools) {
+      const made = typeof entry.tool === 'function' ? entry.tool(ctx) : entry.tool;
+      for (const tool of Array.isArray(made) ? made : made ? [made] : []) if (tool.name === name) return tool;
+    }
+    throw new Error(`no tool named ${name}`);
+  }
+
+  function startTool(call: FakeToolCall): Promise<string> {
+    const toolCallId = call.toolCallId ?? `call-${(callSeq += 1)}`;
+    return fireHook(
+      'before_tool_call',
+      { toolName: call.toolName, params: call.params, runId: call.runId, toolCallId },
+      { toolName: call.toolName, runId: call.runId, sessionKey: call.sessionKey, toolCallId },
+    ).then(() => toolCallId);
+  }
+
+  function finishTool(call: FakeToolCall & { toolCallId: string }): Promise<void> {
+    return fireHook(
+      'after_tool_call',
+      { toolName: call.toolName, params: call.params, runId: call.runId, toolCallId: call.toolCallId },
+      { toolName: call.toolName, runId: call.runId, sessionKey: call.sessionKey, toolCallId: call.toolCallId },
+    );
+  }
+
+  return {
+    api: api as unknown as OpenClawPluginApi,
+    llmCalls,
+    hookNames: () => [...hooks.keys()].sort(),
+    subscriptionIds: () => subscriptions.map((s) => s.id),
+    fireHook,
+    emitLifecycle: (runId: string, phase: string, sessionKey?: string) => emitAgentEvent('lifecycle', runId, { phase }, sessionKey),
+    emitAgentEvent,
+    promptBuild: (runId: string, sessionKey: string, trigger?: string) =>
+      fireHook('before_prompt_build', { prompt: '', messages: [] }, { runId, sessionKey, ...(trigger ? { trigger } : {}) }),
+    modelCall: (runId: string, sessionKey: string, trigger?: string) =>
+      fireHook(
+        'model_call_started',
+        { runId, callId: `c${(callSeq += 1)}`, sessionKey, provider: 'fake', model: 'fake' },
+        { runId, sessionKey, ...(trigger ? { trigger } : {}) },
+      ),
+    startTool,
+    finishTool,
+    async callTool(call: FakeToolCall, toolCtx: OpenClawPluginToolContext): Promise<AgentToolResult<unknown>> {
+      const tool = resolveTool(call.toolName, toolCtx);
+      const toolCallId = await startTool(call);
+      try {
+        return await tool.execute(toolCallId, call.params as never);
+      } finally {
+        await finishTool({ ...call, toolCallId });
+      }
+    },
+    subagentSpawned: (childSessionKey: string, requesterSessionKey: string, runId = 'child-run') =>
+      fireHook(
+        'subagent_spawned',
+        { runId, childSessionKey, agentId: 'main', mode: 'run', threadRequested: false, requester: { channel: 'oscar' } },
+        { runId, childSessionKey, requesterSessionKey },
+      ),
+    subagentEnded: (childSessionKey: string) =>
+      fireHook(
+        'subagent_ended',
+        { targetSessionKey: childSessionKey, targetKind: 'subagent', reason: 'complete', outcome: 'ok' },
+        { childSessionKey },
+      ),
+  };
+}
+
+export type FakeAgentApi = ReturnType<typeof createFakeAgentApi>;
+
+export function channelLifecycleMock() {
+  return {
+    createAccountStatusSink:
+      (params: { accountId: string; setStatus: (next: Record<string, unknown>) => void }) =>
+      (patch: Record<string, unknown>) =>
+        params.setStatus({ accountId: params.accountId, ...patch }),
+    createRunStateMachine(params: { setStatus?: (patch: { busy: boolean; activeRuns: number; lastRunActivityAt?: number }) => void }) {
+      let activeRuns = 0;
+      let active = true;
+      const publish = () => {
+        if (active) params.setStatus?.({ activeRuns, busy: activeRuns > 0, lastRunActivityAt: Date.now() });
+      };
+      params.setStatus?.({ activeRuns: 0, busy: false });
+      return {
+        isActive: () => active,
+        onRunStart() {
+          activeRuns += 1;
+          publish();
+        },
+        onRunEnd() {
+          activeRuns = Math.max(0, activeRuns - 1);
+          publish();
+        },
+        deactivate() {
+          active = false;
+        },
+      };
+    },
+  };
 }
