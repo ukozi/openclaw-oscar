@@ -9,7 +9,7 @@ import type { RunChange, RunInfo, RunTerminal } from '../presence/runs.js';
 import type { RoomState } from '../runtime.js';
 import { AckTimers } from './ack.js';
 import { RoomLoopGuard, botLoopFacts } from './guards.js';
-import { HandoffLedger, JobBoard, frameTask, stripTrailers } from './handoff.js';
+import { HandoffLedger, JobBoard, addressedLine, frameTask, handoffLine, mintId, sanitizeTask, stripTrailers } from './handoff.js';
 import type { OpenHandoff, Trailer } from './handoff.js';
 import { HelloExchange } from './hello.js';
 import { HoldQueue, mustHold } from './holds.js';
@@ -18,7 +18,7 @@ import { candidateOrder, noteRoomLine, rosterNames, route } from './route.js';
 import type { Asked } from './route.js';
 import { Takeover, parseTook } from './takeover.js';
 import { realTimers, roomKeyOf } from './types.js';
-import type { Clock, RoomSink, RoomTurn, Timers, UntrustedFact, WakeWhy } from './types.js';
+import type { Clock, OutboundMeta, RoomSink, RoomTurn, Timers, UntrustedFact, WakeWhy } from './types.js';
 
 export type ChainTracker = {
   activeRun(sessionKey: string): RunInfo | null;
@@ -87,6 +87,33 @@ export function resolveBot(raw: string, policy: RootPolicy): string | null {
     if ((entry.aliases ?? []).some((alias) => normalizeName(alias) === wanted)) return name;
   }
   return null;
+}
+
+export function wireEstimate(markdown: string): number {
+  let n = 0;
+  for (const ch of markdown) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code > 0xffff) n += 10;
+    else if (code > 126) n += 8;
+    else if (ch === '\n') n += 4;
+    else if (ch === '<' || ch === '>' || ch === '&' || ch === '"') n += 6;
+    else n += 1;
+  }
+  return n;
+}
+
+const HANDOFF_SEND_MS = 20_000;
+const WIRE_BREAK = /<br\s*\/?>/i;
+
+function plainOfWire(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, '')
+    .replace(/&#(\d{1,7});/g, (_m, n: string) => (Number(n) <= 0x10ffff ? String.fromCodePoint(Number(n)) : ''))
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&');
 }
 
 export class ChainController {
@@ -272,6 +299,42 @@ export class ChainController {
     const rec = this.turns.get(roomKey);
     if (!rec) return null;
     return rec.delegated ? { originator: rec.originator, delegator: rec.delegated.delegator } : { originator: rec.originator };
+  }
+
+  async filterOutbound(meta: OutboundMeta, body: string): Promise<string | null> {
+    if (meta.kind === 'plugin') return body;
+    const wire = meta.format === 'wire';
+    let text = stripTrailers(body);
+    if (meta.target.kind !== 'room') return text === '' ? null : text;
+    const roomKey = roomKeyOf(meta.target.room);
+    const room = this.deps.room(roomKey);
+    if (!room) return text === '' ? null : text;
+    this.watchIdle(roomKey);
+    const rec = this.turns.get(roomKey);
+    if (rec) text = await this.stampHandoffLines(room, rec, text, wire);
+    if ((wire ? plainOfWire(text) : text).trim() === '') return null;
+    this.ack.output(roomKey);
+    const d = rec?.delegated;
+    let out = text;
+    if (d && !d.stamped && meta.kind === 'final' && !wire) {
+      const stamped = `${d.delegator}: ${text} [d:${d.id}]`;
+      if (wireEstimate(stamped) <= this.deps.roomChunkLimit()) {
+        d.stamped = true;
+        out = stamped;
+      }
+    }
+    this.noteOwnLine(room, wire ? plainOfWire(out) : out);
+    return out;
+  }
+
+  async delegate(req: { roomKey: string | null; requester?: string; to: string; task: string }): Promise<string> {
+    const room = req.roomKey ? this.deps.room(req.roomKey) : undefined;
+    if (!room || !req.roomKey) throw new Error(copy.delegateError('not-in-room'));
+    const rec: TurnRecord = this.turns.get(req.roomKey) ?? {
+      origin: 'owner', originator: normalizeName(req.requester ?? ''), holdClass: '', hop: 0, failed: false,
+    };
+    const sent = await this.sendHandoff(room, rec, req.to, req.task);
+    return copy.delegateSent(sent.to, sent.id);
   }
 
   facts(): ChainFacts {
@@ -493,5 +556,82 @@ export class ChainController {
     }
     const next = this.holds.next(roomKey);
     for (const p of next?.items ?? []) this.dispatchOrHold(p);
+  }
+
+  private async stampHandoffLines(room: RoomState, rec: TurnRecord, text: string, wire: boolean): Promise<string> {
+    const keep: string[] = [];
+    for (const textLine of wire ? text.split(WIRE_BREAK) : text.split('\n')) {
+      const target = this.handoffTarget(wire ? plainOfWire(textLine) : textLine);
+      if (!target) {
+        keep.push(textLine);
+        continue;
+      }
+      try {
+        await this.sendHandoff(room, rec, target.to, target.task);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        this.lastRefusal = { at: this.now(), to: target.to, reason };
+        this.deps.log.info('chain text hand-off refused', { to: target.to, reason });
+        keep.push(textLine);
+      }
+    }
+    return keep.join(wire ? '<BR>' : '\n');
+  }
+
+  private handoffTarget(textLine: string): { to: string; task: string } | null {
+    const addressed = addressedLine(textLine);
+    if (!addressed) return null;
+    const policy = this.deps.policy();
+    const to = resolveBot(addressed.to, policy);
+    if (!to) return null;
+    const roster = rosterNames(policy);
+    const myIdx = roster.indexOf(this.deps.self());
+    if (myIdx < 0 || roster.indexOf(to) <= myIdx) return null;
+    return { to, task: addressed.task };
+  }
+
+  private async sendHandoff(room: RoomState, rec: TurnRecord, toRaw: string, taskRaw: string): Promise<{ id: string; to: string }> {
+    const policy = this.deps.policy();
+    const roster = rosterNames(policy);
+    const myIdx = roster.indexOf(this.deps.self());
+    if (this.deps.ownerWildcard()) throw new Error(copy.delegateError('wildcard'));
+    const to = resolveBot(toRaw, policy);
+    if (!to || myIdx < 0 || roster.indexOf(to) <= myIdx) throw new Error(copy.delegateError('not-below', to ?? normalizeName(toRaw)));
+    if (!room.occupants.has(to)) throw new Error(copy.delegateError('absent', to));
+    if (this.hello.mismatchedIn([to]).length > 0) throw new Error(copy.delegateError('mismatch', to));
+    const hop = rec.hop + 1;
+    if (hop > policy.chain.maxHops) throw new Error(copy.delegateError('hops'));
+    const role = roleOf(rec.originator, policy);
+    if (role !== 'owner' && role !== 'approved') throw new Error(copy.delegateError('lost-turn'));
+    const task = sanitizeTask(taskRaw);
+    if (!task) throw new Error(copy.delegateError('empty'));
+    const id = mintId(myIdx + 1);
+    const text = handoffLine(to, task, { id, hop, originator: rec.originator });
+    if (wireEstimate(text) > this.deps.roomChunkLimit()) throw new Error(copy.delegateError('too-long'));
+    if (this.roomLimited(roomKeyOf(room.ref))) throw new Error(copy.delegateError('rate'));
+    let late = false;
+    const sent = this.deps.say(room.ref, text).then(() => {
+      this.ledger.open({ id, to, room: room.ref, originator: rec.originator, hop });
+      if (late) this.deps.log.warn('chain hand-off went out after its deadline', { to, id });
+    });
+    try {
+      await this.withDeadline(sent, HANDOFF_SEND_MS);
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      late = code === 'deadline';
+      if (late) sent.catch(() => undefined);
+      this.deps.log.warn('chain hand-off was not sent', { to, code: code ?? 'unknown' });
+      throw new Error(copy.delegateError(late || code === 'rate-limited' ? 'rate' : 'send-failed'));
+    }
+    this.ack.output(roomKeyOf(room.ref));
+    this.noteOwnLine(room, text);
+    return { id, to };
+  }
+
+  private withDeadline(work: Promise<void>, ms: number): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const timer = this.timers.setTimeout(() => reject(Object.assign(new Error('deadline'), { code: 'deadline' })), ms);
+      work.then(resolve, reject).finally(() => this.timers.clearTimeout(timer));
+    });
   }
 }
