@@ -1,0 +1,40 @@
+{
+  "id": "oscar",
+  "name": "OSCAR",
+  "description": "Native OSCAR channel for Open OSCAR Server.",
+  "channels": ["oscar"],
+  "activation": {
+    "onChannels": ["oscar"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "channelConfigs": {
+    "oscar": {
+      "label": "OSCAR",
+      "description": "One screen name on an Open OSCAR Server per account.",
+      "schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "host": { "type": "string" },
+          "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "tls": { "type": "boolean" },
+          "screenName": { "type": "string" },
+          "password": {},
+          "passwordFile": { "type": "string" }
+        }
+      },
+      "uiHints": {
+        "host": { "label": "Server host", "placeholder": "oscar.example.net" },
+        "port": { "label": "Server port", "placeholder": "5190" },
+        "screenName": { "label": "Screen name" },
+        "password": { "label": "Password", "sensitive": true },
+        "passwordFile": { "label": "Password file", "placeholder": "/run/secrets/oscar" }
+      }
+    }
+  }
+}

@@ -52,5 +52,36 @@
     "openclaw": {
       "optional": true
     }
+  },
+  "openclaw": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "runtimeExtensions": [
+      "./dist/index.js"
+    ],
+    "setupEntry": "./src/setup-entry.ts",
+    "runtimeSetupEntry": "./dist/setup-entry.js",
+    "channel": {
+      "id": "oscar",
+      "label": "OSCAR",
+      "selectionLabel": "OSCAR (Open OSCAR Server)",
+      "docsPath": "/channels/oscar",
+      "blurb": "Native OSCAR messaging through an Open OSCAR Server."
+    },
+    "compat": {
+      "pluginApi": ">=2026.7.1",
+      "minGatewayVersion": "2026.7.1"
+    },
+    "build": {
+      "openclawVersion": "2026.7.1-2",
+      "pluginSdkVersion": "2026.7.1-2"
+    },
+    "install": {
+      "clawhubSpec": "clawhub:@ukozi/openclaw-oscar",
+      "npmSpec": "@ukozi/openclaw-oscar",
+      "defaultChoice": "clawhub",
+      "minHostVersion": ">=2026.7.1"
+    }
   }
 }
