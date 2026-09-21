@@ -1,5 +1,14 @@
 import { ByteReader } from './bytes.js';
-import { RATE_CLASS_RECORD_LENGTH_V2, RATE_CODE_ALERT, RATE_CODE_CLEAR, RATE_CODE_LIMITED } from './constants.js';
+import type { RoomPacer } from './chatroom.js';
+import {
+  CHAT_MSG_TO_HOST,
+  CHAT_SEND_RATE_CLASS,
+  FAMILY_CHAT,
+  RATE_CLASS_RECORD_LENGTH_V2,
+  RATE_CODE_ALERT,
+  RATE_CODE_CLEAR,
+  RATE_CODE_LIMITED,
+} from './constants.js';
 
 export type RateClassParams = {
   id: number;
@@ -132,4 +141,26 @@ export class RateGovernor {
   troubledWithin(ms: number): boolean {
     return this.troubleAt >= this.now() - ms;
   }
+}
+
+export function createRoomPacer(now: () => number): RoomPacer {
+  // room sessions never carry the bot flag, so a room is governed even when BOS is exempt
+  const governor = new RateGovernor({ now });
+  let classId = CHAT_SEND_RATE_CLASS;
+  return {
+    seed(rateParamsReply) {
+      const reply = decodeRateParamsReply(rateParamsReply);
+      classId = reply.classOf(FAMILY_CHAT, CHAT_MSG_TO_HOST) ?? CHAT_SEND_RATE_CLASS;
+      const params = reply.classes.find((c) => c.id === classId);
+      if (params) governor.seed(params);
+    },
+    notice(rateParamChange) {
+      const change = decodeRateParamChange(rateParamChange);
+      if (change.params.id !== classId) return null;
+      return governor.notice(change.code, change.params);
+    },
+    waitMs: () => governor.waitMs(),
+    sent: () => governor.sent(),
+    dropped: () => governor.dropped(),
+  };
 }
