@@ -15,20 +15,37 @@ export interface RunTracker {
   reset(accountId: string): void;
   isBusy(accountId: string): boolean;
   runInfo(runId: string): RunInfo | null;
+  toolSeen(runId: string): boolean;
   onRun(fn: (change: RunChange) => void): () => void;
 }
 
 export interface RunFeed {
   seen(runId: string, sessionKey?: string): void;
   ended(runId: string, phase?: RunTerminal): void;
+  trigger(runId: string, trigger: string | undefined, sessionKey?: string): void;
+  toolStart(runId: string, toolCallId: string | undefined, toolName: string, sessionKey?: string): void;
+  toolEnd(runId: string, toolCallId: string | undefined, toolName: string, sessionKey?: string): void;
+  subagentSpawned(childSessionKey: string, requesterSessionKey: string | undefined): void;
+  subagentEnded(childSessionKey: string): void;
 }
 
-export type RunTrackerOptions = { now?: () => number; log?: Logger };
+export type RunTrackerOptions = {
+  now?: () => number;
+  quietMs?: number;
+  toolCapMs?: number;
+  sweepMs?: number;
+  log?: Logger;
+};
 
+export const RUN_QUIET_MS = 15 * 60_000;
+export const TOOL_CAP_MS = 2 * 60 * 60_000;
+const SWEEP_MS = 30_000;
 const MEMO_LIMIT = 256;
 const MAX_BINDINGS = 1000;
+const UNCOUNTED_TRIGGERS = new Set(['heartbeat', 'cron']);
 
-type Tracked = RunInfo & { lastEventAt: number };
+type Tracked = RunInfo & { lastEventAt: number; openTools: Map<string, number>; toolSeen: boolean };
+type Hold = { accountId: string; at: number };
 
 function boundedSet(limit: number) {
   const items = new Set<string>();
@@ -56,15 +73,21 @@ function infoOf(run: Tracked): RunInfo {
 
 export function createRunTracker(opts: RunTrackerOptions = {}): RunTracker & RunFeed {
   const now = opts.now ?? Date.now;
+  const quietMs = opts.quietMs ?? RUN_QUIET_MS;
+  const toolCapMs = opts.toolCapMs ?? TOOL_CAP_MS;
+  const sweepMs = opts.sweepMs ?? SWEEP_MS;
   const log = opts.log;
 
   const bindings = new Map<string, { accountId: string; origin: OriginClass }>();
   const runs = new Map<string, Tracked>();
+  const holds = new Map<string, Hold>();
   const endedRuns = boundedSet(MEMO_LIMIT);
+  const uncounted = boundedSet(MEMO_LIMIT);
   const busyListeners = new Set<(accountId: string) => void>();
   const idleListeners = new Set<(accountId: string) => void>();
   const runListeners = new Set<(change: RunChange) => void>();
   const idleWaiters = new Map<string, Set<(last: RunTerminal) => void>>();
+  let sweepTimer: ReturnType<typeof setTimeout> | undefined;
 
   function call<A>(fn: (arg: A) => void, arg: A): void {
     try {
@@ -76,6 +99,7 @@ export function createRunTracker(opts: RunTrackerOptions = {}): RunTracker & Run
 
   function isBusy(accountId: string): boolean {
     for (const run of runs.values()) if (run.accountId === accountId) return true;
+    for (const hold of holds.values()) if (hold.accountId === accountId) return true;
     return false;
   }
 
@@ -94,19 +118,31 @@ export function createRunTracker(opts: RunTrackerOptions = {}): RunTracker & Run
     return first ? infoOf(first) : null;
   }
 
+  function arm(): void {
+    if (sweepTimer || (runs.size === 0 && holds.size === 0)) return;
+    sweepTimer = setTimeout(() => {
+      sweepTimer = undefined;
+      sweep();
+      arm();
+    }, sweepMs);
+    sweepTimer.unref?.();
+  }
+
   function add(runId: string, sessionKey: string | undefined): Tracked | null {
-    if (endedRuns.has(runId)) return null;
+    if (endedRuns.has(runId) || uncounted.has(runId)) return null;
     const key = normKey(sessionKey);
     const binding = key ? bindings.get(key) : undefined;
     if (!binding) return null;
     const at = now();
     const run: Tracked = {
-      runId, sessionKey: key, accountId: binding.accountId, origin: binding.origin, startedAt: at, lastEventAt: at,
+      runId, sessionKey: key, accountId: binding.accountId, origin: binding.origin,
+      startedAt: at, lastEventAt: at, openTools: new Map(), toolSeen: false,
     };
     const wasBusy = isBusy(run.accountId);
     runs.set(runId, run);
     for (const fn of [...runListeners]) call(fn, { kind: 'start', run: infoOf(run) });
     settle(run.accountId, wasBusy);
+    arm();
     return run;
   }
 
@@ -127,6 +163,26 @@ export function createRunTracker(opts: RunTrackerOptions = {}): RunTracker & Run
       for (const fn of waiters ?? []) call(fn, last);
     }
     settle(run.accountId, wasBusy);
+  }
+
+  function sweep(): void {
+    const at = now();
+    for (const run of [...runs.values()]) {
+      for (const [key, openedAt] of [...run.openTools]) {
+        if (at - openedAt >= toolCapMs) run.openTools.delete(key);
+      }
+      if (run.openTools.size === 0 && at - run.lastEventAt >= quietMs) remove(run, 'watchdog');
+    }
+    for (const [child, hold] of [...holds]) {
+      if (at - hold.at < toolCapMs) continue;
+      const wasBusy = isBusy(hold.accountId);
+      holds.delete(child);
+      settle(hold.accountId, wasBusy);
+    }
+  }
+
+  function toolKey(toolCallId: string | undefined, toolName: string): string {
+    return toolCallId ? toolCallId : `anon:${toolName}`;
   }
 
   return {
@@ -173,11 +229,17 @@ export function createRunTracker(opts: RunTrackerOptions = {}): RunTracker & Run
     },
     reset(accountId) {
       for (const run of [...runs.values()]) if (run.accountId === accountId) remove(run, 'reset');
+      const wasBusy = isBusy(accountId);
+      for (const [child, hold] of [...holds]) if (hold.accountId === accountId) holds.delete(child);
+      settle(accountId, wasBusy);
     },
     isBusy,
     runInfo(runId) {
       const run = runs.get(runId);
       return run ? infoOf(run) : null;
+    },
+    toolSeen(runId) {
+      return runs.get(runId)?.toolSeen ?? false;
     },
     onRun(fn) {
       runListeners.add(fn);
@@ -185,13 +247,53 @@ export function createRunTracker(opts: RunTrackerOptions = {}): RunTracker & Run
         runListeners.delete(fn);
       };
     },
+
     seen(runId, sessionKey) {
       touch(runId, sessionKey);
     },
     ended(runId, phase = 'end') {
       endedRuns.add(runId);
+      uncounted.delete(runId);
       const run = runs.get(runId);
       if (run) remove(run, 'terminal', phase);
+    },
+    trigger(runId, trigger, sessionKey) {
+      if (trigger && UNCOUNTED_TRIGGERS.has(trigger)) {
+        uncounted.add(runId);
+        const run = runs.get(runId);
+        if (run) remove(run, 'excluded');
+        return;
+      }
+      touch(runId, sessionKey);
+    },
+    toolStart(runId, toolCallId, toolName, sessionKey) {
+      const run = touch(runId, sessionKey);
+      if (!run) return;
+      run.toolSeen = true;
+      run.openTools.set(toolKey(toolCallId, toolName), now());
+    },
+    toolEnd(runId, toolCallId, toolName, sessionKey) {
+      const run = touch(runId, sessionKey);
+      run?.openTools.delete(toolKey(toolCallId, toolName));
+    },
+    subagentSpawned(childSessionKey, requesterSessionKey) {
+      const child = normKey(childSessionKey);
+      const requester = normKey(requesterSessionKey);
+      if (!child || !requester) return;
+      const accountId = activeRun(requester)?.accountId ?? holds.get(requester)?.accountId;
+      if (!accountId) return;
+      const wasBusy = isBusy(accountId);
+      holds.set(child, { accountId, at: now() });
+      settle(accountId, wasBusy);
+      arm();
+    },
+    subagentEnded(childSessionKey) {
+      const child = normKey(childSessionKey);
+      const hold = holds.get(child);
+      if (!hold) return;
+      const wasBusy = isBusy(hold.accountId);
+      holds.delete(child);
+      settle(hold.accountId, wasBusy);
     },
   };
 }
