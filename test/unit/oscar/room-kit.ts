@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { LinkClose, Logger, SnacIn, SnacLink } from '../../../src/oscar/types.js';
+import type { RoomPacer, RoomRateStatus } from '../../../src/oscar/chatroom.js';
 
 type VectorFile = { source: string; vectors: Record<string, { struct: string; hex: string }> };
 const vectorFile = JSON.parse(
@@ -104,5 +105,74 @@ export class FakeLink implements SnacLink {
 
   sentOf(family: number, subtype: number): SentSnac[] {
     return this.sent.filter((s) => s.family === family && s.subtype === subtype);
+  }
+}
+
+export class ManualClock {
+  private t = 0;
+  private seq = 0;
+  private readonly tasks = new Map<number, { at: number; fn: () => void }>();
+
+  readonly now = (): number => this.t;
+
+  readonly timers = {
+    setTimeout: ((fn: () => void, ms?: number) => {
+      const id = ++this.seq;
+      this.tasks.set(id, { at: this.t + (ms ?? 0), fn });
+      return id as unknown as ReturnType<typeof setTimeout>;
+    }) as unknown as typeof setTimeout,
+    clearTimeout: ((id?: ReturnType<typeof setTimeout>) => {
+      this.tasks.delete(id as unknown as number);
+    }) as unknown as typeof clearTimeout,
+  };
+
+  async advance(ms: number): Promise<void> {
+    const end = this.t + ms;
+    for (;;) {
+      let nextId: number | undefined;
+      let nextAt = Infinity;
+      for (const [id, task] of this.tasks) {
+        if (task.at <= end && task.at < nextAt) {
+          nextAt = task.at;
+          nextId = id;
+        }
+      }
+      if (nextId === undefined) break;
+      const task = this.tasks.get(nextId);
+      this.tasks.delete(nextId);
+      this.t = nextAt;
+      task?.fn();
+      await flush();
+    }
+    this.t = end;
+    await flush();
+  }
+}
+
+export class StubPacer implements RoomPacer {
+  seeded: Uint8Array | null = null;
+  wait = 0;
+  sentCount = 0;
+  droppedCount = 0;
+  nextNotice: RoomRateStatus | null = null;
+
+  seed(body: Uint8Array): void {
+    this.seeded = body;
+  }
+
+  notice(): RoomRateStatus | null {
+    return this.nextNotice;
+  }
+
+  waitMs(): number {
+    return this.wait;
+  }
+
+  sent(): void {
+    this.sentCount += 1;
+  }
+
+  dropped(): void {
+    this.droppedCount += 1;
   }
 }
