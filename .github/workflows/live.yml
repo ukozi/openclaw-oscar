@@ -1,0 +1,54 @@
+name: live
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        server:
+          - name: v0.24.0
+            sha: 8c0fab9f0576d60c3da6e0cacd3b4718ad4814b4
+          - name: main-7bdd674
+            sha: 7bdd674afc482d700cc733be7c0b86a51f65883a
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - id: server-cache
+        uses: actions/cache@v6
+        with:
+          path: server-bin
+          key: server-${{ runner.os }}-${{ runner.arch }}-go1.26.2-${{ matrix.server.sha }}
+      - if: steps.server-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: mk6i/open-oscar-server
+          ref: ${{ matrix.server.sha }}
+          path: server-src
+      - if: steps.server-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.2'
+          cache: false
+      - if: steps.server-cache.outputs.cache-hit != 'true'
+        run: mkdir -p server-bin && cd server-src && CGO_ENABLED=0 go build -o ../server-bin/open_oscar_server ./cmd/server
+      - run: npm run test:live
+        env:
+          OOS_BIN: ${{ github.workspace }}/server-bin/open_oscar_server
