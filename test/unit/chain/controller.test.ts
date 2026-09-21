@@ -91,6 +91,15 @@ describe('wake and standby', () => {
     expect(k.wakes[0]?.turn.systemPrompt).toContain('decide who should answer');
   });
 
+  it("the owner's answer still reaches the bot that asked a second earlier", async () => {
+    const k = kit('botone');
+    k.c.onRoomMessage(line('bottwo', 'should the intro keep the quote?'));
+    await vi.advanceTimersByTimeAsync(1000);
+    k.c.onRoomMessage(line('alice', 'yes, keep it', { cookie: 78n }));
+    expect(k.sink.wake).not.toHaveBeenCalled();
+    expect(k.c.standbys()).toBe(1);
+  });
+
   it('a worker that reported done does not keep the next unnamed line', () => {
     const k = kit('botone');
     k.c.onRoomMessage(line('bottwo', 'which draft?'));
