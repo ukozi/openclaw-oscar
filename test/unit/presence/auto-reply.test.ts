@@ -133,6 +133,16 @@ describe('away auto-reply', () => {
     expect(h.sent).toHaveLength(1);
   });
 
+  it('sends one line when two runs for the same person overlap', async () => {
+    const h = harness();
+    h.tracker.seen('r1', IM);
+    await vi.advanceTimersByTimeAsync(1000);
+    h.tracker.seen('r2', IM);
+    await vi.advanceTimersByTimeAsync(2000);
+    await h.replier.idle();
+    expect(h.sent).toHaveLength(1);
+  });
+
   it('sends again once the cooldown is up', async () => {
     const h = harness();
     h.tracker.seen('r1', IM);

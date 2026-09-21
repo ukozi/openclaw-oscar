@@ -3,11 +3,13 @@ import { readPolicy, resolveAccount, type AwayConfig } from '../../src/config.js
 import { createAwayController, type AwayController } from '../../src/presence/away.js';
 import { forbiddenNames } from '../../src/presence/blurb.js';
 import {
-  createOscarStatusTool, createSummarizer, hostConfig, originOf, presenceActions, presenceDispatch, presenceToolHints,
+  createOscarStatusTool, createSummarizer, hostConfig, imPeerFor, originOf, presenceActions, presenceDispatch, presenceToolHints,
   registerPresence, startPresence, summarizeViaHost,
 } from '../../src/presence/register.js';
 import { RUN_QUIET_MS, TOOL_CAP_MS, createRunTracker } from '../../src/presence/runs.js';
+import { resetRuntimeForTests, setRuntime } from '../../src/runtime.js';
 import { channelLifecycleMock, createFakeAgentApi } from '../fake/openclaw.js';
+import { FakeSession } from '../fake/session.js';
 import { quietLog, stubSession } from '../fake/stub-session.js';
 
 const IM = 'agent:main:oscar:group:botone/alice';
@@ -55,6 +57,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  resetRuntimeForTests();
 });
 
 describe('away line', () => {
@@ -315,6 +318,22 @@ describe('wiring', () => {
     const { cfg } = world({}, async () => 'Drafting a reply');
     expect(hostConfig()).toBe(cfg);
     await expect(summarizeViaHost('hello', new AbortController().signal)).resolves.toBe('Drafting a reply');
+  });
+
+  it('finds the IM peer of a session key and nothing else', () => {
+    setRuntime({
+      accountId: 'botone', session: new FakeSession().asSession(), rooms: new Map(), lastReplyAt: new Map(),
+      counters: { droppedSends: 0, eventGaps: 0 },
+      sessionKeys: new Map([
+        [IM, { accountId: 'botone', peer: { kind: 'im' as const, bot: 'botone', peer: 'alice' } }],
+        [ROOM, { accountId: 'botone', peer: { kind: 'room' as const, bot: 'botone', room: { exchange: 4 as const, name: 'testroom' } } }],
+      ]),
+    });
+    expect(imPeerFor('botone', IM)).toBe('alice');
+    expect(imPeerFor('botone', IM.toUpperCase())).toBe('alice');
+    expect(imPeerFor('botone', ROOM)).toBe(null);
+    expect(imPeerFor('botone', 'agent:main:oscar:group:botone/bob')).toBe(null);
+    expect(imPeerFor('bottwo', IM)).toBe(null);
   });
 
   it('maps roles to origin classes', () => {
