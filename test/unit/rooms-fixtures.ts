@@ -1,10 +1,12 @@
 import type { RootPolicy } from '../../src/config.js';
+import type { RoomDeps, RoomLineRecord, TurnRequest } from '../../src/inbound/room.js';
 import type { RoomRef } from '../../src/names.js';
 import type {
   InviteEvent,
   Logger,
   OscarEvents,
   OscarSession,
+  RoomMessageEvent,
   SendReceipt,
   SessionPhase,
 } from '../../src/oscar/index.js';
@@ -143,4 +145,54 @@ export function manualTimers() {
 
 export async function flush(): Promise<void> {
   for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+export function roomDeps(over: Partial<RoomDeps> = {}) {
+  const turns: TurnRequest[] = [];
+  const records: RoomLineRecord[] = [];
+  const notices: { name: string; display: string }[] = [];
+  const ownerNotes: string[] = [];
+  let policy = policyFixture();
+  let nowMs = 10_000;
+  const deps: RoomDeps = {
+    policy: () => policy,
+    self: () => 'BotOne',
+    now: () => nowMs,
+    timers: { setTimeout, clearTimeout },
+    log: silentLog,
+    runTurn: async (req) => {
+      turns.push(req);
+    },
+    record: async (rec) => {
+      records.push(rec);
+      const entries = rec.historyMap.get(rec.historyKey) ?? [];
+      entries.push({ sender: rec.senderLabel, body: rec.text, timestamp: rec.timestamp, messageId: rec.messageId });
+      rec.historyMap.set(rec.historyKey, entries);
+    },
+    noticeStranger: (name, display) => {
+      notices.push({ name, display });
+    },
+    tellOwners: async (text) => {
+      ownerNotes.push(text);
+    },
+    contacts: () => [],
+    ...over,
+  };
+  return {
+    deps,
+    turns,
+    records,
+    notices,
+    ownerNotes,
+    setPolicy(next: RootPolicy) {
+      policy = next;
+    },
+    tick(ms: number) {
+      nowMs += ms;
+    },
+  };
+}
+
+export function line(from: string, text: string, over: Partial<RoomMessageEvent> = {}): RoomMessageEvent {
+  return { room: ROOM, from, fromDisplay: from, text, cookie: 0n, whisper: false, serverGenerated: false, ...over };
 }
