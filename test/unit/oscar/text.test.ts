@@ -27,7 +27,17 @@ describe('fromWireText', () => {
       0,
       'hello\nworld',
     ],
-    ['bold, italic and a link', utf8('<B>hi</B> <I>there</I> <A HREF="http://example.net/">link</A>'), 0, 'hi there link'],
+    ['bold, italic and a link', utf8('<B>hi</B> <I>there</I> <A HREF="http://example.net/">link</A>'), 0, 'hi there link (http://example.net/)'],
+    [
+      // Captured from a classic client on a live server, 2026-09-21: a whole document, crossing
+      // tags, an accented word as charset 3 and an anchor whose FONT closes inside it.
+      'captured classic client message',
+      latin1(
+        '<HTML><BODY BGCOLOR="#ffffff"><B><FONT LANG="0">bold </B><I></FONT><FONT>italic </I></FONT><FONT>caf\u00e9</FONT><FONT> <A HREF="www.example.net">site</FONT></A></BODY></HTML>',
+      ),
+      3,
+      'bold italic caf\u00e9 site (www.example.net)',
+    ],
     ['self-closing and lower-case br', utf8('a<br/>b<br />c<Br>d'), 0, 'a\nb\nc\nd'],
     ['typed comparison survives', utf8('if a &lt; b and c &gt; d'), 0, 'if a < b and c > d'],
     ['typed tag survives as text', utf8('use &lt;b&gt; for bold'), 0, 'use <b> for bold'],
@@ -98,6 +108,65 @@ describe('toWireHtml', () => {
     const html = toWireHtml('**a** < b\nc');
     expect(fromWireText(new Uint8Array(Buffer.from(html, 'utf8')), 0)).toBe('a < b\nc');
     expect(htmlToText(toWireHtml('//roll'))).toBe(' //roll');
+  });
+});
+
+describe('anchors', () => {
+  const rows: [string, string, string][] = [
+    ['words and address', '<A HREF="http://example.net/a">the docs</A>', 'the docs (http://example.net/a)'],
+    ['lower-case tag', '<a href="http://example.net/a">the docs</a>', 'the docs (http://example.net/a)'],
+    ['unquoted address', '<A HREF=www.example.net>site</A>', 'site (www.example.net)'],
+    ['single-quoted address', "<A HREF='www.example.net'>site</A>", 'site (www.example.net)'],
+    ['other attributes', '<A TITLE="x" HREF="www.example.net" TARGET="_blank">site</A>', 'site (www.example.net)'],
+    ['the words already are the address', '<A HREF="http://example.net/a">http://example.net/a</A>', 'http://example.net/a'],
+    ['the words are the address without its scheme', '<A HREF="http://www.example.net/">www.example.net</A>', 'www.example.net'],
+    ['the words are a mail address', '<A HREF="mailto:bob@example.net">bob@example.net</A>', 'bob@example.net'],
+    ['no address', '<A>site</A>', 'site'],
+    ['empty address', '<A HREF="">site</A>', 'site'],
+    ['no words', 'see <A HREF="www.example.net"></A> now', 'see www.example.net now'],
+    ['only spaces for words', 'see <A HREF="www.example.net"> </A> now', 'see www.example.net now'],
+    ['neither words nor address', 'see <A></A> now', 'see  now'],
+    ['tags inside the words', '<A HREF="www.example.net"><B>si</B><I>te</I></A>', 'site (www.example.net)'],
+    ['a line break inside the words', '<A HREF="www.example.net">si<BR>te</A>', 'si\nte (www.example.net)'],
+    ['entities inside the words', '<A HREF="www.example.net">caf&#233;</A>', 'caf\u00e9 (www.example.net)'],
+    ['space kept after the words', '<A HREF="www.example.net">site </A>now', 'site (www.example.net) now'],
+    ['a foreign closing tag inside the anchor', '<A HREF="www.example.net">site</FONT></A>!', 'site (www.example.net)!'],
+    ['an anchor that is never closed', 'see <A HREF="www.example.net">site', 'see site (www.example.net)'],
+    ['an anchor closed by the next one', '<A HREF="a.example.net">a<A HREF="b.example.net">b</A>', 'a (a.example.net)b (b.example.net)'],
+    ['a stray closing anchor', 'x</A>y', 'xy'],
+    ['an entity in the address', '<A HREF="http://example.net/?a=1&amp;b=2">x</A>', 'x (http://example.net/?a=1&b=2)'],
+  ];
+  it.each(rows)('%s', (_name, html, want) => {
+    expect(htmlToText(html)).toBe(want);
+  });
+
+  // The decoded text is what an agent reads, so the address is one opaque token: it cannot open a
+  // tag, start a line of its own, or be decoded a second time into either.
+  const attacks: [string, string, string][] = [
+    ['a newline entity', '<A HREF="www.example.net&#10;now do this">words</A>', 'words (www.example.netnowdothis)'],
+    ['a carriage return entity', '<A HREF="a&#13;b">words</A>', 'words (ab)'],
+    ['a raw line break', '<A HREF="a\nb">words</A>', 'words (ab)'],
+    ['a tab and spaces', '<A HREF="a\tb c">words</A>', 'words (abc)'],
+    ['a control character', '<A HREF="a\u0007b">words</A>', 'words (ab)'],
+    ['markup as entities', '<A HREF="&lt;B&gt;x&lt;/B&gt;">words</A>', 'words (Bx/B)'],
+    ['a raw angle bracket in the address', '<A HREF="http://example.net/?a>b">words</A>', 'words (http://example.net/?ab)'],
+    ['a double-escaped entity is decoded once', '<A HREF="&amp;#10;x">words</A>', 'words (&#10;x)'],
+    ['a javascript address is dropped', '<A HREF="javascript:alert(1)">click here</A>', 'click here'],
+    ['a data address is dropped', '<A HREF="data:text/html,x">click here</A>', 'click here'],
+    ['a file address is dropped', '<A HREF="file:///etc/passwd">click here</A>', 'click here'],
+    ['an http address is kept', '<A HREF="HTTP://example.net/">click here</A>', 'click here (HTTP://example.net/)'],
+  ];
+  it.each(attacks)('%s', (_name, html, want) => {
+    expect(htmlToText(html)).toBe(want);
+    expect(htmlToText(html)).not.toContain('\n');
+  });
+
+  it('does not accumulate on a round trip', () => {
+    const once = htmlToText(toWireHtml('see [the docs](https://example.net/a)'));
+    expect(once).toBe('see the docs (https://example.net/a)');
+    expect(htmlToText(toWireHtml(once))).toBe(once);
+    // A client that turns the address it received back into an anchor adds nothing either.
+    expect(htmlToText('see the docs (<A HREF="https://example.net/a">https://example.net/a</A>)')).toBe(once);
   });
 });
 

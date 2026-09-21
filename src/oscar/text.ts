@@ -62,14 +62,83 @@ function decodeEntity(match: string, body: string): string {
   return NAMED_ENTITIES[body.toLowerCase()] ?? match;
 }
 
-// Tags go before entities: the other order turns a typed "&lt;b&gt;" into a tag and eats it.
+function decodeEntities(s: string): string {
+  return s.replace(/&(#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z]{2,8});/g, decodeEntity);
+}
+
+const ANCHOR_SCHEMES = new Set(['http', 'https', 'ftp', 'mailto', 'aim']);
+
+// An address reaches an agent as text, so it is read as one opaque token: entities are decoded here
+// and never again, and whitespace, control characters and angle brackets are dropped, so it can
+// neither open a tag nor start a line of its own. A scheme the outbound side would not write is
+// dropped with the address; a bare host like "www.example.net" has no scheme and is kept.
+function anchorAddress(tag: string): string {
+  const m = /[\s"'/]href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
+  const address = decodeEntities(m?.[1] ?? m?.[2] ?? m?.[3] ?? '').replace(/[\s<>\u0000-\u001f\u007f-\u009f]+/g, '');
+  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(address);
+  if (scheme && !ANCHOR_SCHEMES.has((scheme[1] ?? '').toLowerCase())) return '';
+  return address;
+}
+
+// "www.example.net" as the words of <A HREF="http://www.example.net/"> is the address again, not a
+// label for it, and so is an address that came back in from a bracket this decoder wrote.
+function isAddressItself(words: string, address: string): boolean {
+  const bare = (s: string) => s.trim().toLowerCase().replace(/^(?:https?:\/\/|mailto:)/, '').replace(/\/+$/, '');
+  return bare(words) !== '' && bare(words) === bare(address);
+}
+
+// Tags go before entities: the other order turns a typed "&lt;b&gt;" into a tag and eats it. One
+// walk does both, so an anchor's address is decoded once, on its own, and the text around it cannot
+// be decoded twice.
 export function htmlToText(html: string): string {
-  return html
-    .replace(/\r\n?/g, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<\/?[a-zA-Z][^>]*>/g, '')
-    .replace(/&(#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z]{2,8});/g, decodeEntity);
+  const src = html.replace(/\r\n?/g, '\n');
+  let out = '';
+  let anchor: { address: string; at: number } | null = null;
+  const closeAnchor = (): void => {
+    if (!anchor) return;
+    const { address, at } = anchor;
+    anchor = null;
+    const body = out.slice(at);
+    const words = body.trim();
+    if (address === '' || isAddressItself(words, address)) return;
+    // The words are empty: the anchor is its address alone, spacing and all.
+    if (words === '') out = `${out.slice(0, at)}${address}`;
+    else {
+      const trail = /\s*$/.exec(body)?.[0] ?? '';
+      out = `${out.slice(0, at)}${body.slice(0, body.length - trail.length)} (${address})${trail}`;
+    }
+  };
+  let i = 0;
+  while (i < src.length) {
+    const lt = src.indexOf('<', i);
+    if (lt < 0) {
+      out += decodeEntities(src.slice(i));
+      break;
+    }
+    if (!/[a-zA-Z/!?]/.test(src[lt + 1] ?? '')) {
+      out += decodeEntities(src.slice(i, lt + 1));
+      i = lt + 1;
+      continue;
+    }
+    out += decodeEntities(src.slice(i, lt));
+    const end = tagEnd(src, lt);
+    if (end < 0) {
+      out += decodeEntities(src.slice(lt));
+      break;
+    }
+    const tag = src.slice(lt, end + 1);
+    const name = /^<(\/?)([a-zA-Z][a-zA-Z0-9]*)/.exec(tag);
+    const closing = name?.[1] === '/';
+    const lower = (name?.[2] ?? '').toLowerCase();
+    if (lower === 'br' && !closing) out += '\n';
+    else if (lower === 'a') {
+      closeAnchor();
+      if (!closing) anchor = { address: anchorAddress(tag), at: out.length };
+    }
+    i = end + 1;
+  }
+  closeAnchor();
+  return out;
 }
 
 export function fromWireText(bytes: Uint8Array, charset: number | string | undefined): string {
