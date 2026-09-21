@@ -3,11 +3,21 @@ import { strongHash } from '../../src/oscar/auth.js';
 import { ByteReader, ByteWriter } from '../../src/oscar/bytes.js';
 import { FlapDecoder, encodeFlap, encodeSignonPayload } from '../../src/oscar/flap.js';
 import type { FlapFrame } from '../../src/oscar/flap.js';
+import { OscarSessionImpl } from '../../src/oscar/session.js';
 import { decodeSnac, encodeSnac } from '../../src/oscar/snac.js';
 import type { Snac } from '../../src/oscar/snac.js';
 import { decodeTlvs, encodeTlvs, findTlv, tlv } from '../../src/oscar/tlv.js';
 import type { Tlv } from '../../src/oscar/tlv.js';
-import type { Logger, TimerApi } from '../../src/oscar/types.js';
+import type {
+  ImEvent,
+  Logger,
+  OscarEvents,
+  OscarSessionOptions,
+  RateEvent,
+  SessionState,
+  TimerApi,
+} from '../../src/oscar/types.js';
+import type { FakeOscarServer } from './oscar-server.js';
 
 // Manual time outruns real sockets. After each fired timer, give loopback I/O a moment to land.
 export function tick(): Promise<void> {
@@ -77,6 +87,76 @@ export function captureLog(): { log: Logger; lines: LogLine[]; text: () => strin
         .map((l) => `${l.level} ${l.msg} ${JSON.stringify(l.fields ?? {}, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))}`)
         .join('\n'),
   };
+}
+
+export type Harness = {
+  session: OscarSessionImpl;
+  timers: ManualTimers;
+  logs: ReturnType<typeof captureLog>;
+  states: SessionState[];
+  ims: ImEvent[];
+  presence: OscarEvents['presence'][];
+  rates: RateEvent[];
+  online(): Promise<void>;
+  phase(phase: SessionState['phase']): Promise<SessionState>;
+};
+
+const harnesses: Harness[] = [];
+
+export function makeSession(server: FakeOscarServer, over: Partial<OscarSessionOptions> = {}): Harness {
+  const timers = new ManualTimers();
+  const logs = captureLog();
+  const session = new OscarSessionImpl({
+    host: '127.0.0.1',
+    port: server.port,
+    tls: server.caFile !== undefined,
+    caFile: server.caFile,
+    redirect: 'auto',
+    screenName: 'botone',
+    getPassword: async () => 'botpass1',
+    buddies: () => ['alice', 'bob'],
+    log: logs.log,
+    loginBudget: { take: async () => {} },
+    now: timers.now,
+    timers: timers.api,
+    ...over,
+  });
+  const h: Harness = {
+    session,
+    timers,
+    logs,
+    states: [],
+    ims: [],
+    presence: [],
+    rates: [],
+    online: async () => {
+      await h.phase('online');
+    },
+    phase: async (phase) => {
+      await waitFor(() => session.getState().phase === phase, `phase ${phase} (now ${session.getState().phase})`);
+      return session.getState();
+    },
+  };
+  session.on('state', (s) => h.states.push(s));
+  session.on('im', (e) => h.ims.push(e));
+  session.on('presence', (e) => h.presence.push(e));
+  session.on('rate', (e) => h.rates.push(e));
+  harnesses.push(h);
+  return h;
+}
+
+export async function stopAllSessions(): Promise<void> {
+  for (const h of harnesses.splice(0)) await h.session.stop();
+}
+
+export function imSends(server: FakeOscarServer, name: string): { cookie: bigint; to: string; tlvs: Tlv[] }[] {
+  return server
+    .snacsFrom(name)
+    .filter((s) => s.conn === 'bos' && s.family === 4 && s.subtype === 6)
+    .map((s) => {
+      const r = new ByteReader(s.body);
+      return { cookie: r.u64(), to: (r.u16(), r.str8()), tlvs: decodeTlvs(r.rest()) };
+    });
 }
 
 export class RawClient {
