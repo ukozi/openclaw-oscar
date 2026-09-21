@@ -92,6 +92,14 @@ describe('list', () => {
     });
     expect(result?.content[0]?.text).toBe(JSON.stringify(result?.details));
   });
+
+  it('leaves out a room that is waiting to be rejoined', async () => {
+    const { rt } = running();
+    applyRoomReady(rt, DEN, ['botone', 'bob'], 'botone', 1);
+    applyRoomClosed(rt, DEN, true);
+    const result = await createRoomTool(ctx(), env())?.execute('t1', { action: 'list' });
+    expect(result?.details).toMatchObject({ rooms: [{ target: 'room:4:testroom', home: true }] });
+  });
 });
 
 describe('join and leave', () => {
