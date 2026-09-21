@@ -22,6 +22,7 @@ export type {
   SendErrorCode,
   SendPriority,
   SendReceipt,
+  ServiceGrant,
   SessionPhase,
   SessionState,
   StateReason,
