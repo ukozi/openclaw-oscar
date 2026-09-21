@@ -1,0 +1,56 @@
+{
+  "name": "@ukozi/openclaw-oscar",
+  "version": "0.1.0",
+  "description": "OpenClaw channel plugin that speaks the native OSCAR protocol to an Open OSCAR Server.",
+  "license": "MIT",
+  "author": "Lucas Chumley",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ukozi/openclaw-oscar.git"
+  },
+  "homepage": "https://github.com/ukozi/openclaw-oscar#readme",
+  "bugs": {
+    "url": "https://github.com/ukozi/openclaw-oscar/issues"
+  },
+  "keywords": [
+    "openclaw-plugin",
+    "oscar",
+    "instant-messaging"
+  ],
+  "engines": {
+    "node": ">=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0"
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "assets/icon.png"
+  ],
+  "scripts": {
+    "prebuild": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "pack:check": "vitest run test/pack.test.ts",
+    "plugin:ci": "plugin-inspector ci --no-openclaw --runtime --mock-sdk --allow-execute"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@openclaw/plugin-inspector": "0.3.26",
+    "@types/node": "22.20.4",
+    "openclaw": "2026.7.1-2",
+    "typescript": "7.0.2",
+    "vitest": "5.0.1"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.7.1"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  }
+}
