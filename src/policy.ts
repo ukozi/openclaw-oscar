@@ -113,3 +113,40 @@ export function senderToolPolicy(sender: string, policy: RootPolicy, roomName: s
   if (deny.length > 0) out.deny = deny;
   return Object.keys(out).length > 0 ? out : undefined;
 }
+
+export type TurnOrigin = { originator: string; delegator?: string };
+
+function union(a: string[] | undefined, b: string[] | undefined): string[] {
+  return [...new Set([...(a ?? []), ...(b ?? [])])];
+}
+
+export function intersectToolPolicy(
+  a: ToolPolicy | undefined,
+  b: ToolPolicy | undefined,
+): ToolPolicy | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  const out: ToolPolicy = {};
+  let deny = union(a.deny, b.deny);
+  if (a.allow && b.allow) {
+    const both = a.allow.filter((entry) => b.allow?.includes(entry));
+    if (both.length > 0) {
+      out.allow = both;
+    } else {
+      out.allow = [...a.allow];
+      deny = union(deny, a.allow);
+    }
+  } else if (a.allow ?? b.allow) {
+    out.allow = [...(a.allow ?? b.allow ?? [])];
+  }
+  const also = (a.alsoAllow ?? []).filter((entry) => b.alsoAllow?.includes(entry));
+  if (also.length > 0) out.alsoAllow = also;
+  if (deny.length > 0) out.deny = deny;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export function handoffToolPolicy(origin: TurnOrigin, policy: RootPolicy, roomName: string | null): ToolPolicy | undefined {
+  const forOriginator = senderToolPolicy(origin.originator, policy, roomName);
+  if (!origin.delegator) return forOriginator;
+  return intersectToolPolicy(senderToolPolicy(origin.delegator, policy, roomName), forOriginator);
+}
