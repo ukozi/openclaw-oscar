@@ -14,6 +14,8 @@ import { fromWireText, isAscii, normalizeScreenName } from '../../src/oscar/text
 import { decodeTlvs, encodeTlvs, findTlv, hasTlv, tlv, tlvStr, tlvU8 } from '../../src/oscar/tlv.js';
 import type { Tlv } from '../../src/oscar/tlv.js';
 import type { RoomRef } from '../../src/oscar/types.js';
+import { FakeRooms } from './oscar-rooms.js';
+import type { FakeConn } from './oscar-rooms.js';
 import { TEST_TLS_CERT, TEST_TLS_KEY } from './tls-fixture.js';
 
 export type FakeGeneration = 'v0.24' | 'main';
@@ -69,13 +71,14 @@ function escapeText(s: string): string {
 }
 
 type User = { display: string; password: string; authKey: string; bot: boolean };
-type Cookie = { name: string; service: 'bos' | 'chatnav'; flag: number; expires: number };
+type Cookie = { name: string; service: 'bos'; flag: number; expires: number };
 type Stored = { sender: string; cookie: bigint; channel: number; tlvs: Tlv[]; sentAt: number };
 type Delivery = { cookie: bigint; channel: number; sender: FakeSession | null; senderName: string; tlvs: Tlv[] };
 
 class Conn {
   kind: ConnKind = 'auth';
   name = '';
+  display = '';
   readonly decoder = new FlapDecoder();
   private seq = 100;
   ignoreInput = false;
@@ -179,11 +182,32 @@ export class FakePeer {
       }));
   }
 
+  joinRoom(room: RoomRef): void {
+    this.server.roomEngine.peerJoin(this.name, room);
+  }
+
+  leaveRoom(room: RoomRef): void {
+    this.server.roomEngine.peerLeave(this.name, room);
+  }
+
+  say(room: RoomRef, text: string, opts?: { cookie?: bigint; whisperTo?: string; toc?: boolean }): void {
+    this.server.roomEngine.peerSay(this.name, room, text, opts);
+  }
+
+  invite(to: string, room: RoomRef, text?: string): void {
+    this.server.roomEngine.peerInvite(this.name, to, room, text);
+  }
+
+  roomLines(room: RoomRef): { from: string; text: string; whisper: boolean }[] {
+    return this.server.roomEngine.peerLines(this.name, room);
+  }
+
   deliver(d: Delivery): void {
     this.received.push(d);
   }
 
   signOff(): void {
+    this.server.roomEngine.peerLeaveAll(this.name);
     this.server.removeSession(normalizeScreenName(this.name));
   }
 }
@@ -205,6 +229,63 @@ export class FakeOscarServer {
   private readonly chatnav = new Set<Conn>();
   private limiter = { count: 0, windowStart: 0, bucp: false };
   private tmpDir: string | undefined;
+
+  readonly roomEngine = new FakeRooms({
+    generation: () => this.generation,
+    advertised: () => this.advertised(),
+    bosConn: (name) => this.wrap(this.sessions.get(name)?.conn ?? undefined),
+    bosUserInfo: (name) => {
+      const session = this.sessions.get(name);
+      return session ? this.userInfo(session) : encodeUserInfo({ name, warning: 0, tlvs: [] });
+    },
+    sslState: (wantsSsl) => (wantsSsl && this.opts.tls && this.sslHost ? 0x02 : 0x00),
+  });
+
+  private readonly wrapped = new WeakMap<Conn, FakeConn>();
+
+  private wrap(conn: Conn | undefined): FakeConn | undefined {
+    if (!conn) return undefined;
+    let out = this.wrapped.get(conn);
+    if (!out) {
+      out = {
+        get kind() {
+          return conn.kind;
+        },
+        get name() {
+          return conn.name;
+        },
+        get display() {
+          return conn.display;
+        },
+        send: (family, subtype, body, requestId = 0) => conn.snac(family, subtype, requestId, body),
+        destroy: () => conn.socket.destroy(),
+        // the four-byte signoff with no length field, which is how the server closes every room socket
+        signoffBare: () => conn.oldSignoff(),
+      };
+      this.wrapped.set(conn, out);
+    }
+    return out;
+  }
+
+  addRoom(room: RoomRef): void {
+    this.roomEngine.addRoom(room);
+  }
+
+  raceNextCreate(): void {
+    this.roomEngine.raceNextCreate();
+  }
+
+  occupants(room: RoomRef): string[] {
+    return this.roomEngine.occupants(room);
+  }
+
+  evictFromRoom(name: string, room: RoomRef): void {
+    this.roomEngine.evict(name, room);
+  }
+
+  strayRateOnNextNav(): void {
+    this.roomEngine.strayRateOnNextNav();
+  }
 
   private constructor(opts: StartOptions) {
     this.opts = opts;
@@ -255,6 +336,7 @@ export class FakeOscarServer {
     await this.closeListener();
     for (const [ident, session] of [...this.sessions]) if (session.conn) this.sessions.delete(ident);
     this.cookies.clear();
+    this.roomEngine.reset();
     this.chatnav.clear();
     this.limiter = { count: 0, windowStart: 0, bucp: false };
     await this.listen(this.port);
@@ -292,14 +374,22 @@ export class FakeOscarServer {
     if (session?.conn) this.evict(session);
   }
 
-  dropSocket(name: string, conn: 'bos' | 'chat', _room?: RoomRef): void {
-    if (conn !== 'bos') return;
+  dropSocket(name: string, conn: 'bos' | 'chat', room?: RoomRef): void {
+    if (conn === 'chat') {
+      if (!room) throw new Error('dropSocket chat needs a room');
+      this.roomEngine.dropChat(name, room);
+      return;
+    }
     this.sessions.get(normalizeScreenName(name))?.conn?.socket.destroy();
   }
 
   setRate(name: string, scope: 'bos' | RoomRef, status: 'clear' | 'limited', opts: { silent?: boolean } = {}): void {
+    if (scope !== 'bos') {
+      this.roomEngine.setRoomRate(name, scope, status, opts.silent === true);
+      return;
+    }
     const session = this.sessions.get(normalizeScreenName(name));
-    if (!session || scope !== 'bos') return;
+    if (!session) return;
     session.limited = status === 'limited';
     if (opts.silent || !session.subscribed.has(3)) return;
     const body = new ByteWriter()
@@ -365,6 +455,8 @@ export class FakeOscarServer {
     socket.on('close', () => {
       this.sockets.delete(socket);
       this.chatnav.delete(conn);
+      const link = this.wrapped.get(conn);
+      if (link) this.roomEngine.detached(link);
       const session = this.sessions.get(conn.name);
       if (conn.kind === 'bos' && session?.conn === conn) this.removeSession(conn.name);
     });
@@ -489,6 +581,18 @@ export class FakeOscarServer {
   }
 
   private onService(conn: Conn, cookieBytes: Uint8Array): void {
+    const ticket = this.roomEngine.claim(cookieBytes);
+    if (ticket) {
+      // kind and name are set before anything is recorded, so snacsFrom(name) labels these sockets
+      conn.kind = ticket.kind;
+      conn.name = ticket.name;
+      conn.display = ticket.display;
+      // P1a's setRate sends a v0.24 BOS notice to the account's open ChatNav connection
+      if (ticket.kind === 'chatnav') this.chatnav.add(conn);
+      const link = this.wrap(conn);
+      if (link) this.roomEngine.attach(link, ticket);
+      return;
+    }
     const cookie = this.cookies.get(Buffer.from(cookieBytes).toString('hex'));
     if (!cookie || cookie.expires < Date.now()) {
       conn.socket.destroy();
@@ -496,16 +600,11 @@ export class FakeOscarServer {
     }
     const ident = normalizeScreenName(cookie.name);
     conn.name = ident;
-    if (cookie.service === 'chatnav') {
-      conn.kind = 'chatnav';
-      this.chatnav.add(conn);
-      conn.snac(1, 0x03, SERVER_REQUEST_ID, new ByteWriter().u16(0x000d).u16(0x0001).toBytes());
-      return;
-    }
     conn.kind = 'bos';
     const old = this.sessions.get(ident);
     if (old) this.evict(old);
     this.sessions.set(ident, this.newSession(ident, conn, null, cookie.flag));
+    conn.display = this.sessions.get(ident)?.display ?? cookie.name;
     const families = new ByteWriter();
     for (const f of BOS_FAMILIES) families.u16(f);
     conn.snac(1, 0x03, SERVER_REQUEST_ID, families.toBytes());
@@ -523,6 +622,8 @@ export class FakeOscarServer {
     const session = this.sessions.get(ident);
     if (!session) return;
     this.sessions.delete(ident);
+    // the server closes every room of an account when its BOS session ends (RemoveUserFromAllChats)
+    this.roomEngine.bosGone(ident);
     // Departure carries the name and one TLV, flags 0; the real server sends no more than that.
     const departed = encodeUserInfo({ name: session.display, warning: 0, tlvs: [tlv.u16(0x01, 0)] });
     for (const watcher of this.watchersOf(ident)) watcher.conn?.snac(3, 0x0c, SERVER_REQUEST_ID, departed);
@@ -550,6 +651,11 @@ export class FakeOscarServer {
       return;
     }
     this.record(conn.name, snac, conn.kind);
+    const link = this.wrap(conn);
+    if (link && (conn.kind === 'chatnav' || conn.kind === 'chat')) {
+      this.roomEngine.snac(link, snac.family, snac.subtype, snac.requestId, snac.body);
+      return;
+    }
     const session = this.sessions.get(conn.name);
     if (!session) return;
     const bos = conn.kind === 'bos' && session.conn === conn;
@@ -603,7 +709,8 @@ export class FakeOscarServer {
         }
         return;
       case 0x0001_0004:
-        if (bos) this.onServiceRequest(conn, session, snac);
+        // one fake implementation of the service request, as there is one real one in src/oscar/session.ts
+        if (bos && link) this.roomEngine.serviceRequest(link, snac.requestId, snac.body);
         return;
       case 0x0002_0004: {
         const tlvs = decodeTlvs(snac.body);
@@ -663,36 +770,6 @@ export class FakeOscarServer {
       default:
         conn.snac(snac.family, 0x01, snac.requestId, new ByteWriter().u16(0x0001).toBytes());
     }
-  }
-
-  private onServiceRequest(conn: Conn, session: FakeSession, snac: Snac): void {
-    const r = new ByteReader(snac.body);
-    const family = r.u16();
-    const tlvs = decodeTlvs(r.rest());
-    const wantsSsl = hasTlv(tlvs, 0x8c);
-    const error = (code: number): void => conn.snac(1, 0x01, snac.requestId, new ByteWriter().u16(code).toBytes());
-    // v0.24.0 on a listener with no SSL advertised address: general failure instead of a redirect.
-    if (wantsSsl && this.generation === 'v0.24') return error(0x001c);
-    if (family === 0x000e) {
-      // No rooms exist yet, and a Chat request for an unknown room cookie drops BOS on the real server.
-      conn.socket.destroy();
-      return;
-    }
-    if (family !== 0x000d) return error(0x0005);
-    const cookie = new Uint8Array(randomBytes(256));
-    this.cookies.set(Buffer.from(cookie).toString('hex'), {
-      name: session.display,
-      service: 'chatnav',
-      flag: session.flag,
-      expires: Date.now() + COOKIE_TTL_MS,
-    });
-    const ssl = wantsSsl && this.opts.tls && this.sslHost ? 0x02 : 0x00;
-    conn.snac(
-      1,
-      0x05,
-      snac.requestId,
-      encodeTlvs([tlv.u16(0x0d, family), tlv.str(0x05, this.advertised()), tlv.bytes(0x06, cookie), tlv.u8(0x8e, ssl)]),
-    );
   }
 
   routeIm(sender: FakeSession | undefined, cookie: bigint, channel: number, to: string, tlvs: Tlv[], requestId: number | null): void {
