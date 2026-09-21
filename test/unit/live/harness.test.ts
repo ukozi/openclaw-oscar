@@ -45,6 +45,10 @@ describe('live harness', () => {
     expect(existsSync(report.env.DB_PATH ?? '')).toBe(false);
   });
 
+  it('reports a binary that cannot be spawned', async () => {
+    await expect(startLiveServer({ bin: path.join(path.dirname(standIn), 'no-such-binary') })).rejects.toThrow('ENOENT');
+  });
+
   it('reports the output of a binary that exits at once', async () => {
     await expect(startLiveServer({ bin: process.execPath, args: [exitsAtOnce] })).rejects.toThrow('bad config');
   });

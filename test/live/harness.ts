@@ -74,12 +74,18 @@ export async function startLiveServer(launch: { bin: string; args?: string[] } =
   child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
   child.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
   let exited = false;
-  const exit = new Promise<void>((resolve) =>
+  const exit = new Promise<void>((resolve) => {
     child.once('exit', () => {
       exited = true;
       resolve();
-    }),
-  );
+    });
+    // a binary that cannot be spawned at all emits 'error' and never 'exit', and an unheard 'error' throws
+    child.once('error', (err: Error) => {
+      output += `${err.message}\n`;
+      exited = true;
+      resolve();
+    });
+  });
 
   const api = `http://${HOST}:${apiPort}`;
   const stop = async (): Promise<void> => {
