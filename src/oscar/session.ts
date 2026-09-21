@@ -1,6 +1,6 @@
 import { bucpLogin, md5Available, probeLogin, strongHash } from './auth.js';
 import type { LoginResult } from './auth.js';
-import { BosClient, ServiceRefusedError } from './bos.js';
+import { BosClient, ServiceRefusedError, parseInvite } from './bos.js';
 import type { ServiceRedirect } from './bos.js';
 import { RedirectRefusedError, decideRedirect, isTlsError, isUnroutableHost, openConnection } from './connection.js';
 import type { CloseInfo, OscarConnection, RedirectDecision } from './connection.js';
@@ -21,10 +21,13 @@ import {
   TYPING_KEEPALIVE_MS,
   TYPING_MAX_MS,
 } from './constants.js';
+import { createRoomPacer } from './rate.js';
+import { RoomManager } from './rooms.js';
 import { hasTlv } from './tlv.js';
 import { normalizeScreenName } from './text.js';
 import { OscarSendError } from './types.js';
 import type {
+  InviteEvent,
   Logger,
   LoginBudget,
   OscarEvents,
@@ -32,6 +35,7 @@ import type {
   OscarSessionOptions,
   PasswordCheck,
   Presence,
+  RoomRef,
   SendPriority,
   SendReceipt,
   ServiceGrant,
@@ -164,11 +168,31 @@ export class OscarSessionImpl implements OscarSession {
   private everOnline = false;
   private passwordCheck: { result: PasswordCheck; at: number } | null = null;
   private probing: Promise<PasswordCheck> | null = null;
+  private readonly roomManager: RoomManager;
 
   constructor(private readonly opts: OscarSessionOptions) {
     this.now = opts.now ?? Date.now;
     this.timers = opts.timers ?? { setTimeout, clearTimeout };
     this.state = { phase: 'idle', since: this.now(), attempts: 0 };
+    this.roomManager = new RoomManager({
+      screenName: () => this.self?.screenName ?? this.opts.screenName,
+      online: () => this.state.phase === 'online' && this.bos !== null,
+      // the one BOS service request: TLV 0x8C, the pinned retry and the redirect rule all live there
+      resolveService: (family, roomInfo) => this.resolveService(family, roomInfo),
+      connect: (target, cookie) => this.open(target, 'room', cookie),
+      makePacer: () => createRoomPacer(this.now),
+      // v0.24.0 can deliver a BOS rate notice on the ChatNav socket
+      bosRateNotice: (body) => this.bos?.handleRateNotice(body),
+      emit: (event, payload) => this.emit(event, payload),
+      log: this.opts.log,
+      now: this.now,
+      timers: this.timers,
+      random: Math.random,
+    });
+    this.onChannel2((icbmBody) => {
+      const invite = parseInvite(icbmBody);
+      if (invite) this.emit('invite', invite);
+    });
   }
 
   on<E extends keyof OscarEvents>(event: E, fn: (payload: OscarEvents[E]) => void): () => void {
@@ -225,6 +249,7 @@ export class OscarSessionImpl implements OscarSession {
 
   async stop(): Promise<void> {
     this.generation++;
+    this.roomManager.stop();
     if (this.retryTimer) this.timers.clearTimeout(this.retryTimer);
     this.retryTimer = null;
     const bos = this.bos;
@@ -333,6 +358,7 @@ export class OscarSessionImpl implements OscarSession {
       this.everOnline = true;
       this.onlineSince = this.now();
       this.setState('online');
+      this.roomManager.bosOnline();
       if (!conn.isOpen) {
         this.onBosClosed(gen, bos, closedEarly ?? { kind: 'eof', clean: false });
         return;
@@ -363,6 +389,7 @@ export class OscarSessionImpl implements OscarSession {
 
   private onBosClosed(gen: number, bos: BosClient, info: CloseInfo): void {
     if (gen !== this.generation || this.bos !== bos) return;
+    this.roomManager.bosLost();
     if (this.now() - this.onlineSince >= STABLE_ONLINE_MS) this.failures = 0;
     this.dropBos(new OscarSendError('closed'));
     // TLV 0x09 is what eviction by a newer login, a rate-limit disconnect, queue overflow and an operator kick all look like.
@@ -393,6 +420,26 @@ export class OscarSessionImpl implements OscarSession {
       this.retryTimer = null;
       void this.attempt(gen);
     }, delay);
+  }
+
+  joinRoom(room: RoomRef, opts?: { persistent?: boolean }): Promise<void> {
+    return this.roomManager.joinRoom(room, opts);
+  }
+
+  joinInvited(invite: InviteEvent): Promise<void> {
+    return this.roomManager.joinInvited(invite);
+  }
+
+  leaveRoom(room: RoomRef): Promise<void> {
+    return this.roomManager.leaveRoom(room);
+  }
+
+  rooms(): { room: RoomRef; occupants: string[]; joinedAt: number }[] {
+    return this.roomManager.rooms();
+  }
+
+  sendRoom(room: RoomRef, html: string, opts?: { whisperTo?: string; priority?: SendPriority }): Promise<SendReceipt> {
+    return this.roomManager.sendRoom(room, html, opts);
   }
 
   probePasswordCheck(): Promise<PasswordCheck> {

@@ -3,7 +3,7 @@ export type { RedirectDecision } from './connection.js';
 export { checkLogin, checkPasswordEnforced, createLoginBudget, createOscarSession } from './session.js';
 export type { LoginCheckOptions, LoginCheckResult } from './session.js';
 export { fromWireText, isAscii, normalizeScreenName, toAsciiEntities, toWireHtml } from './text.js';
-export { OscarSendError } from './types.js';
+export { OscarRoomError, OscarSendError } from './types.js';
 export type {
   ImEvent,
   InviteEvent,
@@ -16,6 +16,7 @@ export type {
   Presence,
   RateEvent,
   RoomClosedEvent,
+  RoomErrorCode,
   RoomMessageEvent,
   RoomRef,
   RoomRosterEvent,

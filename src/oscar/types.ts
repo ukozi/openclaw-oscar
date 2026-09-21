@@ -111,6 +111,11 @@ export interface OscarSession {
   sendTyping(to: string, state: 'typing' | 'typed' | 'none'): void;
   setAway(text: string | null): Promise<void>;
   probePasswordCheck(): Promise<PasswordCheck>;
+  joinRoom(room: RoomRef, opts?: { persistent?: boolean }): Promise<void>;
+  joinInvited(invite: InviteEvent): Promise<void>;
+  leaveRoom(room: RoomRef): Promise<void>;
+  rooms(): { room: RoomRef; occupants: string[]; joinedAt: number }[];
+  sendRoom(room: RoomRef, html: string, opts?: { whisperTo?: string; priority?: SendPriority }): Promise<SendReceipt>;
 }
 
 export type SnacIn = { family: number; subtype: number; requestId: number; body: Uint8Array };
