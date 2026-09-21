@@ -25,6 +25,16 @@ describe('fake agent api', () => {
     expect(got[1]!.data.phase).toBe('start');
   });
 
+  it('numbers events per run', async () => {
+    const fake = createFakeAgentApi();
+    const got: { runId: string; seq: number }[] = [];
+    fake.api.agent.events.registerAgentEventSubscription({ id: 'a', streams: ['lifecycle'], handle: (event) => void got.push(event) });
+    await fake.emitLifecycle('r1', 'start');
+    await fake.emitLifecycle('r2', 'start');
+    await fake.emitLifecycle('r1', 'end');
+    expect(got.map((event) => [event.runId, event.seq])).toEqual([['r1', 1], ['r2', 1], ['r1', 2]]);
+  });
+
   it('fires hooks with the event and context shapes core uses', async () => {
     const fake = createFakeAgentApi();
     const seen: unknown[] = [];

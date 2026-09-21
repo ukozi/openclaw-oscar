@@ -434,7 +434,7 @@ export function createFakeAgentApi(opts: {
   const subscriptions: EventSubscription[] = [];
   const tools: { tool: AnyAgentTool | ToolFactory; names: string[] }[] = [];
   const llmCalls: LlmParams[] = [];
-  let seq = 0;
+  const seqByRun = new Map<string, number>();
   let callSeq = 0;
 
   const api = {
@@ -472,7 +472,8 @@ export function createFakeAgentApi(opts: {
   }
 
   async function emitAgentEvent(stream: string, runId: string, data: Record<string, unknown>, sessionKey?: string): Promise<void> {
-    seq += 1;
+    const seq = (seqByRun.get(runId) ?? 0) + 1;
+    seqByRun.set(runId, seq);
     const event = { runId, seq, stream, ts: Date.now(), data, ...(sessionKey ? { sessionKey } : {}) };
     for (const subscription of subscriptions) {
       const streams = subscription.streams;
