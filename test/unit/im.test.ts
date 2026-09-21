@@ -11,6 +11,7 @@ import { sdk } from '../fake/openclaw.js';
 
 const log = { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined };
 const T0 = 100 * 3600_000;
+const SHIPPED = { ...IM_TIMING };
 
 function setup() {
   const turns: ImTurn[] = [];
@@ -45,6 +46,12 @@ afterEach(() => {
   setImControlHandler('default', null);
   setImControlHandler('other', null);
   vi.useRealTimers();
+});
+
+describe('timing', () => {
+  it('ships the intervals the spec fixes', () => {
+    expect(SHIPPED).toEqual({ debounceMs: 2000, replyCooldownMs: 2000, replaySettleMs: 3000, dedupeMs: 60_000, replayMaxAgeMs: 4 * 3600_000 });
+  });
 });
 
 describe('check order', () => {
