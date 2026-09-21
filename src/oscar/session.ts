@@ -16,14 +16,19 @@ import {
   SERVICE_COOKIE_TTL_MS,
   SIGNOFF_TLV_DISCONNECT_REASON,
   STABLE_ONLINE_MS,
+  TYPING_KEEPALIVE_MS,
+  TYPING_MAX_MS,
 } from './constants.js';
 import { hasTlv } from './tlv.js';
+import { normalizeScreenName } from './text.js';
 import { OscarSendError } from './types.js';
 import type {
   LoginBudget,
   OscarEvents,
   OscarSessionOptions,
   Presence,
+  SendPriority,
+  SendReceipt,
   ServiceGrant,
   SessionState,
   StateReason,
@@ -39,6 +44,7 @@ const FATAL: ReadonlySet<StateReason> = new Set<StateReason>([
   'suspended',
   'md5-unavailable',
 ]);
+const PRIORITIES: readonly SendPriority[] = ['reply', 'control', 'notice'];
 
 export function connectFailureReason(error: unknown, followedUnroutable: boolean): StateReason {
   if (isTlsError(error)) return 'tls';
@@ -90,6 +96,38 @@ export function createLoginBudget(
   };
 }
 
+type Job = { run: () => Promise<SendReceipt>; resolve: (r: SendReceipt) => void; reject: (e: Error) => void };
+
+class SendQueue {
+  private readonly lanes: Record<SendPriority, Job[]> = { reply: [], control: [], notice: [] };
+  private busy = false;
+
+  push(priority: SendPriority, run: () => Promise<SendReceipt>): Promise<SendReceipt> {
+    return new Promise<SendReceipt>((resolve, reject) => {
+      this.lanes[priority].push({ run, resolve, reject });
+      void this.pump();
+    });
+  }
+
+  failAll(error: Error): void {
+    for (const p of PRIORITIES) for (const job of this.lanes[p].splice(0)) job.reject(error);
+  }
+
+  private async pump(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      for (;;) {
+        const job = PRIORITIES.map((p) => this.lanes[p]).find((lane) => lane.length > 0)?.shift();
+        if (!job) return;
+        await job.run().then(job.resolve, job.reject);
+      }
+    } finally {
+      this.busy = false;
+    }
+  }
+}
+
 type Listeners = { [E in keyof OscarEvents]: Set<(payload: OscarEvents[E]) => void> };
 
 export class OscarSessionImpl {
@@ -107,6 +145,9 @@ export class OscarSessionImpl {
     presence: new Set(),
     rate: new Set(),
   };
+  private readonly channel2Listeners = new Set<(icbmBody: Uint8Array) => void>();
+  private readonly queue = new SendQueue();
+  private readonly typing = new Map<string, { timer: Timer; stopAt: number }>();
   private state: SessionState;
   private generation = 0;
   private failures = 0;
@@ -126,6 +167,14 @@ export class OscarSessionImpl {
     this.listeners[event].add(fn);
     return () => {
       this.listeners[event].delete(fn);
+    };
+  }
+
+  // Invites arrive as raw channel 2 frames; the room code turns them into `invite` events.
+  onChannel2(fn: (icbmBody: Uint8Array) => void): () => void {
+    this.channel2Listeners.add(fn);
+    return () => {
+      this.channel2Listeners.delete(fn);
     };
   }
 
@@ -171,7 +220,7 @@ export class OscarSessionImpl {
     if (this.retryTimer) this.timers.clearTimeout(this.retryTimer);
     this.retryTimer = null;
     const bos = this.bos;
-    this.dropBos();
+    this.dropBos(new OscarSendError('closed'));
     bos?.conn.close();
     this.pendingConn?.destroy();
     this.pendingConn = null;
@@ -243,8 +292,12 @@ export class OscarSessionImpl {
         timers: this.timers,
         defaultPort: this.opts.port,
         callbacks: {
+          im: (e) => this.emit('im', e),
           presence: (e) => this.emit('presence', e),
           rate: (status) => this.emit('rate', { scope: 'bos', status }),
+          channel2: (icbmBody) => {
+            for (const fn of [...this.channel2Listeners]) fn(icbmBody);
+          },
         },
       });
       let closedEarly: CloseInfo | null = null;
@@ -291,14 +344,16 @@ export class OscarSessionImpl {
     return bos?.sawRateTrouble() ? 'rate limit' : 'signed on elsewhere or kicked';
   }
 
-  private dropBos(): void {
+  private dropBos(error: Error): void {
     this.bos = null;
+    for (const name of [...this.typing.keys()]) this.clearTyping(name);
+    this.queue.failAll(error);
   }
 
   private onBosClosed(gen: number, bos: BosClient, info: CloseInfo): void {
     if (gen !== this.generation || this.bos !== bos) return;
     if (this.now() - this.onlineSince >= STABLE_ONLINE_MS) this.failures = 0;
-    this.dropBos();
+    this.dropBos(new OscarSendError('closed'));
     // TLV 0x09 is what eviction by a newer login, a rate-limit disconnect, queue overflow and an operator kick all look like.
     if (info.kind === 'signoff' && hasTlv(info.tlvs, SIGNOFF_TLV_DISCONNECT_REASON)) {
       this.fail(gen, 'disconnected-by-server', this.disconnectDetail(bos));
@@ -331,6 +386,39 @@ export class OscarSessionImpl {
 
   updateBuddies(): void {
     this.bos?.setBuddies(this.opts.buddies());
+  }
+
+  sendIm(to: string, html: string, opts?: { priority?: SendPriority }): Promise<SendReceipt> {
+    if (!this.bos) return Promise.reject(new OscarSendError('not-online'));
+    return this.queue.push(opts?.priority ?? 'reply', () => {
+      const bos = this.bos;
+      return bos ? bos.sendIm(to, html) : Promise.reject(new OscarSendError('not-online'));
+    });
+  }
+
+  private clearTyping(name: string): void {
+    const entry = this.typing.get(name);
+    if (entry) this.timers.clearTimeout(entry.timer);
+    this.typing.delete(name);
+  }
+
+  sendTyping(to: string, state: 'typing' | 'typed' | 'none'): void {
+    const bos = this.bos;
+    if (!bos) return;
+    const name = normalizeScreenName(to);
+    const stopAt = this.typing.get(name)?.stopAt ?? this.now() + TYPING_MAX_MS;
+    this.clearTyping(name);
+    bos.sendTyping(to, state);
+    if (state !== 'typing') return;
+    const timer = this.timers.setTimeout(() => {
+      this.sendTyping(to, this.now() >= stopAt ? 'none' : 'typing');
+    }, TYPING_KEEPALIVE_MS);
+    this.typing.set(name, { timer, stopAt });
+  }
+
+  async setAway(text: string | null): Promise<void> {
+    if (!this.bos) throw new OscarSendError('not-online');
+    this.bos.setAway(text);
   }
 
   // The one place a BOS service request (0x01/0x04) is made; rooms come here for ChatNav and Chat.

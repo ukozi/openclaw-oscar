@@ -13,15 +13,28 @@ import {
   FAMILY_ICBM,
   FAMILY_LOCATE,
   FAMILY_OSERVICE,
+  FLAP_MAX_PAYLOAD,
   FOOD_GROUP_VERSION,
   ICBM_CHANNEL_IM,
+  ICBM_CHANNEL_RENDEZVOUS,
+  ICBM_CLIENT_EVENT,
+  ICBM_ERR,
+  ICBM_ERROR_NOT_LOGGED_ON,
+  ICBM_EVENT_NONE,
+  ICBM_EVENT_TYPED,
+  ICBM_EVENT_TYPING,
   ICBM_FRAGMENT_CAPS,
   ICBM_FRAGMENT_CAPS_TEXT,
   ICBM_FRAGMENT_TEXT,
   ICBM_FRAGMENT_VERSION,
+  ICBM_HOST_ACK,
+  ICBM_MSG_TO_CLIENT,
+  ICBM_MSG_TO_HOST,
   ICBM_OFFLINE_RETRIEVE,
+  ICBM_TLV_AUTO_RESPONSE,
   ICBM_TLV_IM_DATA,
   ICBM_TLV_REQUEST_HOST_ACK,
+  ICBM_TLV_SEND_TIME,
   ICBM_TLV_STORE,
   LOCATE_SET_INFO,
   LOCATE_TLV_AWAY_TEXT,
@@ -38,13 +51,16 @@ import {
   OSERVICE_SERVICE_RESPONSE,
   OSERVICE_USER_INFO_QUERY,
   OSERVICE_USER_INFO_UPDATE,
+  RATE_CLASS_IM,
   RATE_RECENT_MS,
+  RECEIPT_TIMEOUT_MS,
   REQUEST_TIMEOUT_MS,
   SERVICE_TLV_COOKIE,
   SERVICE_TLV_RECONNECT_HERE,
   SERVICE_TLV_ROOM_INFO,
   SERVICE_TLV_SSL_STATE,
   SERVICE_TLV_USE_SSL,
+  SYSTEM_SENDER,
   USER_FLAG_AWAY,
   USER_FLAG_BOT,
 } from './constants.js';
@@ -54,12 +70,14 @@ import { RateGovernor, decodeRateParamChange, decodeRateParamsReply } from './ra
 import type { RateStatus } from './rate.js';
 import { decodeSnacError, decodeUserInfo, userFlags } from './snac.js';
 import type { Snac, UserInfo } from './snac.js';
-import { normalizeScreenName } from './text.js';
-import { decodeTlvs, encodeTlvs, findTlv, tlv, tlvStr, tlvU8 } from './tlv.js';
+import { encodeImText, fromWireText, normalizeScreenName } from './text.js';
+import { decodeTlvs, encodeTlvs, findTlv, hasTlv, tlv, tlvStr, tlvU32, tlvU8 } from './tlv.js';
 import type { Tlv } from './tlv.js';
-import type { Logger, Presence, TimerApi } from './types.js';
+import { OscarSendError } from './types.js';
+import type { ImEvent, Logger, Presence, SendReceipt, TimerApi } from './types.js';
 
 const BRING_UP_FAMILIES = [FAMILY_OSERVICE, FAMILY_LOCATE, FAMILY_BUDDY, FAMILY_ICBM];
+const IM_OVERHEAD_BYTES = 512;
 
 export type ServiceRedirect = { host: string; port: number; cookie: Uint8Array; ssl: boolean };
 
@@ -74,8 +92,10 @@ export class ServiceRefusedError extends Error {
 }
 
 export type BosCallbacks = {
+  im(e: ImEvent): void;
   presence(e: { name: string } & Presence): void;
   rate(status: RateStatus): void;
+  channel2(icbmBody: Uint8Array): void;
 };
 
 export type BosOptions = {
@@ -184,13 +204,17 @@ export class BosClient {
   private classOf: (family: number, subtype: number) => number | undefined = () => undefined;
   private exempt = false;
   private readonly presence = new Map<string, Presence>();
+  private readonly sleepers = new Set<() => void>();
+  private readonly lateAcks = new Map<bigint, () => void>();
   private buddies = new Set<string>();
   private lastRate: RateStatus = 'clear';
 
   constructor(
     readonly conn: OscarConnection,
     private readonly opts: BosOptions,
-  ) {}
+  ) {
+    conn.onClose(() => this.wakeSleepers());
+  }
 
   async bringUp(buddies: readonly string[]): Promise<{ screenName: string; bot: boolean }> {
     await this.waitForHostOnline();
@@ -303,11 +327,34 @@ export class BosClient {
     }
     governor.notice(code, params);
     this.publishRate();
+    this.wakeSleepers();
+  }
+
+  private wakeSleepers(): void {
+    for (const wake of [...this.sleepers]) wake();
   }
 
   sawRateTrouble(): boolean {
     for (const governor of this.governors.values()) if (governor.troubledWithin(RATE_RECENT_MS)) return true;
     return false;
+  }
+
+  private async waitForRate(governor: RateGovernor | undefined, settled: () => boolean = () => false): Promise<void> {
+    for (;;) {
+      if (settled()) return;
+      if (!this.conn.isOpen) throw new OscarSendError('closed');
+      const delay = governor?.waitMs() ?? 0;
+      if (delay <= 0) return;
+      await new Promise<void>((resolve) => {
+        const wake = (): void => {
+          this.opts.timers.clearTimeout(timer);
+          this.sleepers.delete(wake);
+          resolve();
+        };
+        const timer = this.opts.timers.setTimeout(wake, delay);
+        this.sleepers.add(wake);
+      });
+    }
   }
 
   private cleanNames(names: readonly string[]): string[] {
@@ -333,6 +380,70 @@ export class BosClient {
     return this.presence.get(normalizeScreenName(name));
   }
 
+  async sendIm(to: string, html: string): Promise<SendReceipt> {
+    const { charset, bytes } = encodeImText(html);
+    if (bytes.length + IM_OVERHEAD_BYTES > FLAP_MAX_PAYLOAD) throw new OscarSendError('too-long');
+    if (Buffer.byteLength(to, 'utf8') === 0 || Buffer.byteLength(to, 'utf8') > 0xff) {
+      throw new OscarSendError('recipient-unavailable', 'bad screen name');
+    }
+    const cookie = newCookie();
+    const governor = this.governorFor(FAMILY_ICBM, ICBM_MSG_TO_HOST, RATE_CLASS_IM);
+    // At v0.24.0 the store TLV reaches an online recipient, whose client may then show us as offline.
+    let store = this.presenceOf(to)?.online === false;
+    let resentWithStore = false;
+    let retriedAfterDrop = false;
+    let ackedLate = false;
+    const receipt = (): SendReceipt => ({ id: cookie.toString(16).padStart(16, '0'), storedOffline: store });
+    try {
+      for (;;) {
+        await this.waitForRate(governor, () => ackedLate);
+        if (ackedLate) return receipt();
+        const body = encodeImToHost(cookie, to, charset, bytes, store);
+        let reply: Snac;
+        try {
+          reply = await this.ask(FAMILY_ICBM, ICBM_MSG_TO_HOST, body, RECEIPT_TIMEOUT_MS);
+        } catch (error) {
+          if (!(error instanceof RequestTimeoutError)) throw new OscarSendError('closed');
+          // No ack and no error on a live socket: the limiter dropped it. Dropped SNACs still lower the
+          // server's average, so wait for the model or a clear notice, then try once more with the same cookie.
+          governor?.dropped();
+          this.publishRate();
+          if (retriedAfterDrop) throw new OscarSendError('rate-limited');
+          retriedAfterDrop = true;
+          // An ack that lands during that wait still proves the IM went out; the retry would say it twice.
+          this.lateAcks.set(cookie, () => {
+            ackedLate = true;
+            this.wakeSleepers();
+          });
+          continue;
+        }
+        if (reply.family === FAMILY_ICBM && reply.subtype === ICBM_HOST_ACK) return receipt();
+        const code = reply.subtype === ICBM_ERR ? decodeSnacError(reply.body).code : -1;
+        if (code === ICBM_ERROR_NOT_LOGGED_ON && !store && !resentWithStore) {
+          store = true;
+          resentWithStore = true;
+          continue;
+        }
+        throw new OscarSendError('recipient-unavailable', `send refused (0x${(code >>> 0).toString(16)})`);
+      }
+    } finally {
+      this.lateAcks.delete(cookie);
+    }
+  }
+
+  sendTyping(to: string, state: 'typing' | 'typed' | 'none'): void {
+    if (!this.conn.isOpen) return;
+    if (this.governorFor(FAMILY_ICBM, ICBM_CLIENT_EVENT)?.status() === 'limited') return;
+    const event = state === 'typing' ? ICBM_EVENT_TYPING : state === 'typed' ? ICBM_EVENT_TYPED : ICBM_EVENT_NONE;
+    this.send(FAMILY_ICBM, ICBM_CLIENT_EVENT, encodeTyping(to, event));
+  }
+
+  // Away is driven through Locate only. A status bitmask is never sent: at main, leaving an
+  // "unavailable" status wipes the Locate away text.
+  setAway(text: string | null): void {
+    this.send(FAMILY_LOCATE, LOCATE_SET_INFO, encodeAway(text));
+  }
+
   async requestService(family: number, req: { useSsl: boolean; roomInfo?: Uint8Array }): Promise<ServiceRedirect> {
     const reply = await this.ask(FAMILY_OSERVICE, OSERVICE_SERVICE_REQUEST, encodeServiceRequest(family, req));
     if (reply.subtype !== OSERVICE_SERVICE_RESPONSE) {
@@ -347,9 +458,11 @@ export class BosClient {
 
   private dispatch(snac: Snac): void {
     try {
-      if (snac.family === FAMILY_BUDDY && snac.subtype === BUDDY_ARRIVED) this.onBuddy(snac.body, true);
+      if (snac.family === FAMILY_ICBM && snac.subtype === ICBM_MSG_TO_CLIENT) this.onMessage(snac.body);
+      else if (snac.family === FAMILY_BUDDY && snac.subtype === BUDDY_ARRIVED) this.onBuddy(snac.body, true);
       else if (snac.family === FAMILY_BUDDY && snac.subtype === BUDDY_DEPARTED) this.onBuddy(snac.body, false);
       else if (snac.family === FAMILY_OSERVICE && snac.subtype === OSERVICE_RATE_PARAM_CHANGE) this.handleRateNotice(snac.body);
+      else if (snac.family === FAMILY_ICBM && snac.subtype === ICBM_HOST_ACK) this.lateAcks.get(new ByteReader(snac.body).u64())?.();
     } catch (error) {
       this.opts.log.warn('dropped an unreadable SNAC', {
         family: snac.family,
@@ -373,4 +486,36 @@ export class BosClient {
     this.opts.callbacks.presence({ name, ...presence });
   }
 
+  private onMessage(body: Uint8Array): void {
+    // Channel 2 goes to the room code whole and before the strict decode below: its invite parser
+    // forgives TLVs that other clients cut short, and an invite must never surface as an IM.
+    if (body.length >= 10 && (((body[8] ?? 0) << 8) | (body[9] ?? 0)) === ICBM_CHANNEL_RENDEZVOUS) {
+      this.opts.callbacks.channel2(body);
+      return;
+    }
+    const { cookie, channel, sender, tlvs } = decodeImToClient(body);
+    const from = normalizeScreenName(sender.name);
+    if (channel !== ICBM_CHANNEL_IM) return;
+    const data = findTlv(tlvs, ICBM_TLV_IM_DATA);
+    if (!data) return;
+    const text = decodeImFragments(data)
+      .map((f) => fromWireText(f.text, f.charset))
+      .join('');
+    const sentAt = tlvU32(tlvs, ICBM_TLV_SEND_TIME);
+    const event: ImEvent = {
+      from,
+      fromDisplay: sender.name,
+      text,
+      cookie,
+      autoResponse: hasTlv(tlvs, ICBM_TLV_AUTO_RESPONSE),
+      // Display and ordering only: v0.24.0 forwards a sender-supplied send time on live messages.
+      offline: sentAt !== undefined,
+      // Server notices come from this literal name with an empty user-info block, cookie 0 and no send time.
+      // An offline replay has an empty block too, so a stored message from an account that took the name
+      // would pass without the last check; the server stamps the send time on every replay.
+      system: from === SYSTEM_SENDER && sender.tlvs.length === 0 && cookie === 0n && sentAt === undefined,
+    };
+    if (sentAt !== undefined) event.sentAt = sentAt * 1000;
+    this.opts.callbacks.im(event);
+  }
 }
