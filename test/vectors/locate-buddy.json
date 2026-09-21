@@ -1,0 +1,31 @@
+{
+  "source": "open-oscar-server 7bdd674afc482d700cc733be7c0b86a51f65883a: bytes produced by the server's own wire.MarshalBE and wire.FlapClient over the structs in wire/snacs.go",
+  "vectors": [
+    {
+      "name": "locate set info body, chat capability",
+      "hex": "00050010748f2420628711d18222444553540000"
+    },
+    {
+      "name": "locate set info body, away text",
+      "hex": "00040015576f726b696e67206f6e20736f6d657468696e672e"
+    },
+    {
+      "name": "locate set info body, away cleared",
+      "hex": "00040000"
+    },
+    {
+      "name": "buddy add body",
+      "hex": "05616c69636503626f62"
+    },
+    {
+      "name": "buddy arrived body, away bot",
+      "hex": "07426f742054776f00000002000100020430000300046ab13b80",
+      "note": "flags 0x0430"
+    },
+    {
+      "name": "buddy departed body",
+      "hex": "05616c69636500000001000100020000",
+      "note": "one TLV: flags 0"
+    }
+  ]
+}

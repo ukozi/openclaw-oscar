@@ -1,0 +1,37 @@
+{
+  "source": "open-oscar-server 7bdd674afc482d700cc733be7c0b86a51f65883a: bytes produced by the server's own wire.MarshalBE and wire.FlapClient over the structs in wire/tlv.go",
+  "vectors": [
+    {
+      "name": "u8",
+      "hex": "004a000103"
+    },
+    {
+      "name": "u16",
+      "hex": "00080002001d"
+    },
+    {
+      "name": "u32",
+      "hex": "001600046ab13b80"
+    },
+    {
+      "name": "string",
+      "hex": "00010006626f746f6e65"
+    },
+    {
+      "name": "empty",
+      "hex": "00030000"
+    },
+    {
+      "name": "rest block of two",
+      "hex": "00010006626f746f6e65000800020005"
+    },
+    {
+      "name": "count-prefixed block of two",
+      "hex": "0002000100020410000300046ab13b80"
+    },
+    {
+      "name": "length-prefixed block of one",
+      "hex": "0006000100020003"
+    }
+  ]
+}

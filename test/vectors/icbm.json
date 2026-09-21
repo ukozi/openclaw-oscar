@@ -1,0 +1,54 @@
+{
+  "source": "open-oscar-server 7bdd674afc482d700cc733be7c0b86a51f65883a: bytes produced by the server's own wire.MarshalBE and wire.FlapClient over the structs in wire/snacs.go",
+  "vectors": [
+    {
+      "name": "fragment list, ascii",
+      "hex": "0501000301010201010006000000006869"
+    },
+    {
+      "name": "fragment list, utf-16be with a surrogate pair",
+      "hex": "050100030101020101000e00020000006800e90020d83dde00"
+    },
+    {
+      "name": "message to host body, online recipient",
+      "hex": "1122334455667788000105616c69636500020011050100030101020101000600000000686900030000",
+      "note": "cookie 0x1122334455667788, channel 1, TLV 0x02 then empty TLV 0x03"
+    },
+    {
+      "name": "message to host body, offline recipient",
+      "hex": "1122334455667788000105616c6963650002001105010003010102010100060000000068690003000000060000",
+      "note": "adds empty TLV 0x06"
+    },
+    {
+      "name": "message to client body",
+      "hex": "1122334455667788000105416c69636500000002000100020010000300046ab13b80000200110501000301010201010006000000006869"
+    },
+    {
+      "name": "message to client body, auto-response from an away sender",
+      "hex": "0000000000000000000105416c69636500000002000100020030000300046ab13b800002001205010003010102010100070000000062726200040000"
+    },
+    {
+      "name": "message to client body, offline replay",
+      "hex": "1122334455667788000105616c6963650000000000020011050100030101020101000600000000686900060000001600046ab13b80",
+      "note": "empty user-info block, sender's store TLV kept, TLV 0x16 appended"
+    },
+    {
+      "name": "message to client body, server notice",
+      "hex": "000000000000000000010e4f4f532053797374656d204d73670000000000020040050100030101020101003500000000596f75206a757374207265636569766564203220494d287329207768696c6520796f752077657265206f66666c696e652e",
+      "note": "built the way foodgroup/oservice.go systemMessage does"
+    },
+    {
+      "name": "message to client body, channel 2 chat invitation",
+      "hex": "0102030405060708000205416c69636500000002000100020010000300046ab13b800005004000000102030405060708748f2420628711d18222444553540000000a00020001000c00076a6f696e206d652711001100040c342d302d74657374726f6f6d0000"
+    },
+    {
+      "name": "host ack body",
+      "hex": "1122334455667788000105616c696365"
+    },
+    {
+      "name": "typing event body",
+      "hex": "0000000000000000000105616c6963650002",
+      "note": "cookie 0, channel 1, event 2"
+    }
+  ]
+}

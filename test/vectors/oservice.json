@@ -1,0 +1,57 @@
+{
+  "source": "open-oscar-server 7bdd674afc482d700cc733be7c0b86a51f65883a: bytes produced by the server's own wire.MarshalBE and wire.FlapClient over the structs in wire/snacs.go and wire/rate_limit.go",
+  "vectors": [
+    {
+      "name": "host online body for BOS",
+      "hex": "001800100003001300040015000200010009000a00060008000b"
+    },
+    {
+      "name": "client versions body, every family at version 1",
+      "hex": "00010001000200010003000100040001"
+    },
+    {
+      "name": "rate params reply body, default classes, OService 1",
+      "hex": "0005000100000050000009c4000007d0000005dc00000320000017700000177000020000005000000bb8000007d0000005dc000003e80000177000001770000300000014000013ec0000138800000fa000000bb800001770000017700004000000140000157c000014b40000106800000bb800001f4000001f4000050000000a0000157c000014b40000106800000bb800001f4000001f40000100030001000200020004000400140002000200030004000300050003000200040006000200050004000000050000",
+      "note": "u16 count, five 30-byte records, then five groups with no count prefix"
+    },
+    {
+      "name": "rate sub add body, classes 1 to 5",
+      "hex": "00010002000300040005"
+    },
+    {
+      "name": "rate change body, limited, class 3 at 3900, OService 1",
+      "hex": "0003000300000014000013ec0000138800000fa000000bb800000f3c00001770"
+    },
+    {
+      "name": "rate change body, limited, class 3 at 3900, OService 2 or later",
+      "hex": "0003000300000014000013ec0000138800000fa000000bb800000f3c000017700000000201",
+      "note": "five more bytes: u32 seconds since last, u8 dropping"
+    },
+    {
+      "name": "client online body",
+      "hex": "0001000101100629000200010110062900030001011006290004000101100629"
+    },
+    {
+      "name": "user info update body, bot account",
+      "hex": "07426f74204f6e6500000002000100020410000300046ab13b80",
+      "note": "flags 0x0410 = OSCARFree | Bot"
+    },
+    {
+      "name": "service request body for ChatNav with TLV 0x8C",
+      "hex": "000d008c0000"
+    },
+    {
+      "name": "service request body for ChatNav without it",
+      "hex": "000d"
+    },
+    {
+      "name": "service response body",
+      "hex": "000d0002000d000500166f736361722e6578616d706c652e6e65743a35313930000600080001020304050607008e000100"
+    },
+    {
+      "name": "service refused body on v0.24.0",
+      "hex": "001c",
+      "note": "general failure 0x1C"
+    }
+  ]
+}

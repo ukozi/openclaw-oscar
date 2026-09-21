@@ -1,0 +1,45 @@
+{
+  "source": "open-oscar-server 7bdd674afc482d700cc733be7c0b86a51f65883a: bytes produced by the server's own wire.MarshalBE and wire.FlapClient over the structs in wire/frames.go",
+  "vectors": [
+    {
+      "name": "server signon, sequence 100",
+      "hex": "2a010064000400000001"
+    },
+    {
+      "name": "client signon with a 4-byte cookie, sequence 0",
+      "hex": "2a010000000c0000000100060004deadbeef"
+    },
+    {
+      "name": "keepalive, sequence 7",
+      "hex": "2a0500070000"
+    },
+    {
+      "name": "empty signoff, sequence 102",
+      "hex": "2a0400660000"
+    },
+    {
+      "name": "signoff after a server-side close, sequence 101",
+      "hex": "2a04006500320009000101000b002968747470733a2f2f6769746875622e636f6d2f6d6b36692f6f70656e2d6f736361722d736572766572",
+      "note": "TLV 0x09 = u8 0x01, TLV 0x0B = URL"
+    },
+    {
+      "name": "signoff from the login limiter, sequence 101",
+      "hex": "2a040065000600080002001d",
+      "note": "TLV 0x08 = u16 0x001D"
+    },
+    {
+      "name": "signoff when five instances are already online, sequence 101",
+      "hex": "2a04006500050008000118",
+      "note": "TLV 0x08 = u8 0x18"
+    },
+    {
+      "name": "truncated signoff, sequence 101",
+      "hex": "2a040065",
+      "note": "OldSignoff: four bytes, no length field, then EOF"
+    },
+    {
+      "name": "data frame holding a probe request, sequence 5",
+      "hex": "2a020005000a0001001f000000000009"
+    }
+  ]
+}
