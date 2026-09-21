@@ -109,6 +109,8 @@ export const LOGIN_HASH_SUFFIX = 'AOL Instant Messenger (SM)';
 export const LOGIN_ERR_UNKNOWN_NAME = 0x0001;
 export const LOGIN_ERR_BAD_PASSWORD = 0x0005;
 export const LOGIN_ERR_INVALID_ACCOUNT = 0x0007;
+// wire/snacs.go:123 LoginErrDeletedAccount and wire/snacs.go:131 LoginErrICQUserErr share 0x0008;
+// loginErrorReason tells them apart by whether the screen name is a UIN.
 export const LOGIN_ERR_DELETED = 0x0008;
 export const LOGIN_ERR_EXPIRED = 0x0009;
 export const LOGIN_ERR_SUSPENDED = 0x0011;

@@ -259,7 +259,9 @@ export class OscarSessionImpl implements OscarSession {
       this.fail(gen, 'md5-unavailable', 'this Node build disables MD5');
       return;
     }
-    // A screen-name TLV under 2 bytes panics the server, so such a name never reaches the wire.
+    // Local refusal, not a server rule: on the BUCP path the screen name is read with
+    // list.String() (foodgroup/auth.go:234) and a short name draws an ordinary 0x0001. See the
+    // note over the same guard in auth.ts for where the server's length panic actually lives.
     if (Buffer.byteLength(this.opts.screenName, 'utf8') < 2) {
       this.fail(gen, 'unknown-name', 'screen name too short');
       return;

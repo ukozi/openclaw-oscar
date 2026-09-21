@@ -86,4 +86,29 @@ describe('loginErrorReason', () => {
   it.each(rows)('0x%s -> %s', (code, want) => {
     expect(loginErrorReason(code)).toBe(want);
   });
+
+  // 0x0008 carries two meanings: wire/snacs.go:123 LoginErrDeletedAccount and wire/snacs.go:131
+  // LoginErrICQUserErr ("ICQ user doesn't exist"). foodgroup/auth.go:566-574 and 649-654 return it
+  // for a screen name that is a UIN and has no account, i.e. the ICQ spelling of an unknown name.
+  it('reads 0x0008 as an unknown name when the screen name is a UIN', () => {
+    expect(loginErrorReason(0x0008, '123456789')).toBe('unknown-name');
+    expect(loginErrorReason(0x0008, '1')).toBe('unknown-name');
+    expect(loginErrorReason(0x0008, 'botone')).toBe('suspended');
+    expect(loginErrorReason(0x0008, 'bot123')).toBe('suspended');
+    expect(loginErrorReason(0x0008, '')).toBe('suspended');
+    expect(loginErrorReason(0x0008)).toBe('suspended');
+    expect(loginErrorReason(0x0011, '123456789')).toBe('suspended');
+    expect(loginErrorReason(0x0001, '123456789')).toBe('unknown-name');
+  });
+
+  it('carries the signed-on name into a parsed failure reply', () => {
+    const body = encodeTlvs([tlv.str(0x01, '123456789'), tlv.u16(0x08, 0x0008)]);
+    expect(parseLoginReply(decodeTlvs(body), 5190, '123456789')).toMatchObject({
+      ok: false,
+      reason: 'unknown-name',
+      code: 8,
+    });
+    expect(parseLoginReply(decodeTlvs(body), 5190, 'botone')).toMatchObject({ ok: false, reason: 'suspended' });
+    expect(parseLoginReply(decodeTlvs(body), 5190)).toMatchObject({ ok: false, reason: 'suspended' });
+  });
 });

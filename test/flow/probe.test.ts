@@ -138,6 +138,12 @@ describe('checkLogin and checkPasswordEnforced, the setup-time checks that stop 
     server.addUser('botone', 'botpass1');
     expect(await checkLogin({ ...base(), password: 'wrong123' })).toEqual({ ok: false, reason: 'bad-password' });
     expect(await checkLogin({ ...base({ screenName: 'nobody' }), password: 'botpass1' })).toEqual({ ok: false, reason: 'unknown-name' });
+    // A UIN with no account comes back as 0x0008 (foodgroup/auth.go:566-574), not 0x0001.
+    expect(await checkLogin({ ...base({ screenName: '123456789' }), password: 'botpass1' })).toEqual({
+      ok: false,
+      reason: 'unknown-name',
+    });
+    expect(await checkPasswordEnforced(base({ screenName: '123456789' }))).toBe('checks');
     expect(await checkLogin({ ...base({ port: 1 }), password: 'botpass1' })).toMatchObject({ ok: false, reason: 'network' });
     expect(await checkPasswordEnforced(base({ port: 1 }))).toBe('unknown');
   });

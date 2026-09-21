@@ -431,6 +431,14 @@ export class BosClient {
     }
   }
 
+  // Outbound only, and that is all it can be over OSCAR. The server appends the "want events"
+  // TLV 0x0B to the IMs we send only while Session.TypingEventsEnabled() is true
+  // (foodgroup/icbm.go:201-204), and the one OSCAR setter for that flag is setSessionBuddyPrefs,
+  // which reads FeedbagBuddyPrefsDiscloseTyping off a FeedbagClassIdBuddyPrefs item
+  // (foodgroup/feedbag.go:1004-1013 -> state/session.go:863-867). We carry a client-side buddy
+  // list and send no feedbag item, so the flag stays false, peers never see 0x0B, and a
+  // well-behaved client will not send us typing notifications. Our own ClientEvent is relayed
+  // regardless (foodgroup/icbm.go:415-441). Inbound typing needs a feedbag BuddyPrefs item first.
   sendTyping(to: string, state: 'typing' | 'typed' | 'none'): void {
     if (!this.conn.isOpen) return;
     if (this.governorFor(FAMILY_ICBM, ICBM_CLIENT_EVENT)?.status() === 'limited') return;
@@ -440,6 +448,17 @@ export class BosClient {
 
   // Away is driven through Locate only. A status bitmask is never sent: at main, leaving an
   // "unavailable" status wipes the Locate away text.
+  //
+  // Setting a non-empty away text also sets OServiceUserFlagUnavailable on this instance
+  // (foodgroup/locate.go:113-120), which makes SessionInstance.active() false
+  // (state/session.go:1181-1193). ChannelMsgToHost routes on Session.Inactive()
+  // (foodgroup/icbm.go:205-223): if any other instance of this account is signed on and is
+  // neither idle nor away, delivery goes through RelayToScreenNameActiveOnly, which skips every
+  // inactive instance (state/session_manager.go:190-203) - so while we are away we would receive
+  // nothing, silently, with no error and no offline store. When ours is the only instance,
+  // Inactive() is true and delivery falls back to RelayToScreenName, so the single-instance case
+  // is unaffected. Same at v0.24.0. A bot that must keep receiving should not set away text while
+  // another instance of the same name is online.
   setAway(text: string | null): void {
     this.send(FAMILY_LOCATE, LOCATE_SET_INFO, encodeAway(text));
   }

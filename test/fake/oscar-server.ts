@@ -33,6 +33,9 @@ const COOKIE_TTL_MS = 60_000;
 const OFFLINE_CAP = 10;
 const SYSTEM_NAME = 'OOS System Msg';
 const BOS_FAMILIES = [0x0018, 0x0010, 0x0003, 0x0013, 0x0004, 0x0015, 0x0002, 0x0001, 0x0009, 0x000a, 0x0006, 0x0008, 0x000b];
+// state/user.go:98-108 IsUIN: an all-digit screen name is an ICQ UIN.
+const missingAccountError = (name: string): number => (name.length > 0 && /^\p{Nd}+$/u.test(name) ? 0x0008 : 0x0001);
+
 const RATE_CLASSES = [
   { id: 1, window: 80, clear: 2500, alert: 2000, limit: 1500, disconnect: 800, max: 6000 },
   { id: 2, window: 80, clear: 3000, alert: 2000, limit: 1500, disconnect: 1000, max: 6000 },
@@ -418,6 +421,8 @@ export class FakeOscarServer {
     this.limiter.bucp = true;
   }
 
+  // foodgroup/auth.go:566-574: a screen name that is a UIN and has no account gets
+  // LoginErrICQUserErr (0x0008), every other missing name gets 0x0001.
   private onAuthSnac(conn: Conn, snac: Snac): void {
     const tlvs = decodeTlvs(snac.body);
     const name = tlvStr(tlvs, 0x01) ?? '';
@@ -431,7 +436,7 @@ export class FakeOscarServer {
     if (snac.subtype === 0x06) {
       const user = this.users.get(ident);
       if (!user && !this.opts.disableAuth) {
-        conn.snac(0x17, 0x03, snac.requestId, encodeTlvs([tlv.u16(0x08, 0x0001)]));
+        conn.snac(0x17, 0x03, snac.requestId, encodeTlvs([tlv.u16(0x08, missingAccountError(ident))]));
         conn.ignoreInput = true;
         conn.socket.end();
         return;
@@ -455,7 +460,7 @@ export class FakeOscarServer {
       conn.signoff([]);
     };
     if (!user) {
-      if (!this.opts.disableAuth) return fail(0x0001);
+      if (!this.opts.disableAuth) return fail(missingAccountError(ident));
       this.addUser(name, 'welcome1');
       user = this.users.get(ident);
     }
