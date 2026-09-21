@@ -4,6 +4,7 @@ import {
   decodeRoomMessage,
   decodeRoster,
   encodeClassIds,
+  encodeRoomClientOnline,
   encodeRoomSend,
   newRoomCookie,
   type ChatRoomEvents,
@@ -111,6 +112,10 @@ describe('room codecs', () => {
     expect(decodeRoomMessage(body)).toBeNull();
   });
 
+  it('names the two room food groups when it goes online', () => {
+    expect(toHex(encodeRoomClientOnline())).toBe('0001000101100629000e000101100629');
+  });
+
   it('decodes a roster of user info blocks', () => {
     expect(decodeRoster(vector('usersJoined')).map((u) => u.name)).toEqual(['Alice', 'Bot One']);
   });
@@ -152,6 +157,20 @@ describe('room sign-on', () => {
     link.deliver({ family: FAMILY_CHAT, subtype: CHAT_USERS_JOINED, body: roster('alice', 'mallory', 'botone') });
     expect(await started).toEqual(['mallory', 'alice', 'botone']);
     expect(joins).toEqual([]);
+  });
+
+  it('refuses a send before the roster arrives', async () => {
+    const link = new FakeLink();
+    const clock = new ManualClock();
+    link.onRequest = () => ({ family: FAMILY_OSERVICE, subtype: OSERVICE_RATE_PARAMS_REPLY });
+    const chat = new ChatRoom({ room, link, self: 'botone', pacer: new StubPacer(), log: quietLog, now: clock.now, timers: clock.timers });
+    const started = chat.start();
+    const failed = expect(started).rejects.toMatchObject({ code: 'unavailable' });
+    await flush();
+    await expect(chat.send('too early')).rejects.toMatchObject({ code: 'room-not-joined' });
+    expect(link.sentOf(FAMILY_CHAT, CHAT_MSG_TO_HOST)).toHaveLength(0);
+    chat.close();
+    await failed;
   });
 
   it('fails when the socket closes before the roster', async () => {
