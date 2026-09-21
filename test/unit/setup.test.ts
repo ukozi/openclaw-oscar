@@ -114,6 +114,10 @@ describe('owner list and room proposal', () => {
     expect(withOwnerAllowFrom({}, ['alice'])).toEqual({ commands: { ownerAllowFrom: ['oscar:alice'] } });
   });
 
+  it('never writes a wildcard owner, which the host reads as everyone', () => {
+    expect(withOwnerAllowFrom({}, ['*', 'alice'])).toEqual({ commands: { ownerAllowFrom: ['oscar:alice'] } });
+  });
+
   it('proposes a name without a dash that the room rule accepts', () => {
     expect(proposeRoomName('Alice B', new Uint8Array([0, 31, 32, 255]))).toBe('aliceba7a7');
     expect(proposeRoomName('x'.repeat(60))).toHaveLength(50);
@@ -195,6 +199,14 @@ describe('wizard', () => {
     await expect(oscarSetupWizard.finalize?.({ cfg: base as never, accountId: 'default', credentialValues: {}, runtime: {} as never, prompter: noOwner.api as never, forceAllowFrom: false })).rejects.toThrow('at least one');
     const badRoster = prompter({ text: ['alice', '=', '', 'bottwo, botthree', ''], confirm: [] });
     await expect(oscarSetupWizard.finalize?.({ cfg: base as never, accountId: 'default', credentialValues: {}, runtime: {} as never, prompter: badRoster.api as never, forceAllowFrom: false })).rejects.toThrow('botone');
+  });
+
+  it('refuses "*" as an owner or an approved person', async () => {
+    const base = { channels: { oscar: { host: 'h', screenName: 'botone', password: 'hunter22' } } };
+    const starOwner = prompter({ text: ['*', '', '', '', ''], confirm: [] });
+    await expect(oscarSetupWizard.finalize?.({ cfg: base as never, accountId: 'default', credentialValues: {}, runtime: {} as never, prompter: starOwner.api as never, forceAllowFrom: false })).rejects.toThrow('"*" is not a screen name');
+    const starApproved = prompter({ text: ['alice', 'bob, *', '', '', ''], confirm: [] });
+    await expect(oscarSetupWizard.finalize?.({ cfg: base as never, accountId: 'default', credentialValues: {}, runtime: {} as never, prompter: starApproved.api as never, forceAllowFrom: false })).rejects.toThrow('"*" is not a screen name');
   });
 
   it('reports configured state and the current password', () => {

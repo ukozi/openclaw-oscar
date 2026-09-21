@@ -10,6 +10,7 @@ import { TOOLS_ALSO_ALLOW_LINE, boundAgentId, hiddenTools, ownerIssues } from '.
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj | undefined => (v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : undefined);
 const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567';
+const WILDCARD = '*';
 const URL_HINT = 'Pass --url oscar://<screenName>@<host>[:port] (oscars:// for TLS).';
 const quiet = { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined };
 
@@ -95,7 +96,7 @@ export function withOwnerAllowFrom<T>(cfg: T, owners: string[]): T {
   const entries = Array.isArray(commands.ownerAllowFrom) ? [...(commands.ownerAllowFrom as unknown[])] : [];
   const have = new Set(entries.filter((e): e is string => typeof e === 'string' && /^oscar:/i.test(e)).map(normalizeName));
   for (const owner of owners.map(normalizeName)) {
-    if (!owner || have.has(owner)) continue;
+    if (!owner || owner === WILDCARD || have.has(owner)) continue;
     have.add(owner);
     entries.push(`${CHANNEL_ID}:${owner}`);
   }
@@ -120,6 +121,7 @@ function splitNames(raw: string): string[] {
 function namesProblem(raw: string, min: number): string | undefined {
   const parts = raw.split(',').map((p) => p.trim()).filter((p) => p.length > 0);
   if (parts.length < min) return `Enter at least ${min === 1 ? 'one screen name' : `${min} screen names`}.`;
+  if (parts.some((p) => normalizeName(p) === WILDCARD)) return '"*" is not a screen name; list people one by one.';
   const odd = parts.find((p) => !isAsciiName(p));
   return odd ? `"${odd}" has letters outside ASCII; such names can never match.` : undefined;
 }
