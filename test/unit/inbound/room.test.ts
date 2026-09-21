@@ -209,6 +209,19 @@ describe('wake', () => {
     expect(s.rt.rooms.get(KEY)?.omittedCount).toBe(0);
   });
 
+  it('escapes a look-alike occupant in the room context', async () => {
+    const s = setup();
+    applyRoomReady(s.rt, ROOM, ['botone', 'alice', 'alicе'], 'botone', 1);
+    onRoomMessage(s.rt, s.deps, line('alice', 'who is here?'));
+    await vi.waitFor(() => expect(s.turns).toHaveLength(1));
+    expect(s.turns[0]?.untrustedContext[0]?.payload).toMatchObject({
+      occupants: [
+        { name: 'alice', role: 'owner' },
+        { name: 'alic\\u{435}', role: 'unlisted' },
+      ],
+    });
+  });
+
   it('does not authorise commands or pass directives for an approved wake, and adds no digest', async () => {
     const s = setup();
     touchActivity(s.rt, 'alice', 5);
