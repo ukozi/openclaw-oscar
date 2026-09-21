@@ -2,9 +2,11 @@ import type { ChannelMessageActionAdapter } from 'openclaw/plugin-sdk/channel-co
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/channel-core';
 import type { AnyAgentTool, OpenClawPluginToolContext } from 'openclaw/plugin-sdk/core';
 import { CHANNEL_ID, listAccountIds, readPolicy, resolveAccount, type AwayConfig } from '../config.js';
+import { sendAutoReply } from '../outbound.js';
 import type { OriginClass, Role } from '../policy.js';
 import { getRuntime } from '../runtime.js';
 import type { Logger, OscarSession } from '../oscar/index.js';
+import { createAutoReplier } from './auto-reply.js';
 import { awayToolHints, createAwayController, type AwayController, type LineVerdict } from './away.js';
 import { filterBlurb, forbiddenNames } from './blurb.js';
 import { driveRunState, getRunTracker, handleLifecycle, type RunFeed, type RunTracker } from './runs.js';
@@ -188,6 +190,14 @@ export function originOf(role: Role): OriginClass {
   return role === 'owner' || role === 'bot' ? role : 'approved';
 }
 
+export function imPeerFor(accountId: string, sessionKey: string): string | null {
+  const keys = getRuntime(accountId)?.sessionKeys;
+  if (!keys) return null;
+  const wanted = sessionKey.toLowerCase();
+  const entry = keys.get(sessionKey) ?? [...keys.entries()].find(([key]) => key.toLowerCase() === wanted)?.[1];
+  return entry?.peer.kind === 'im' ? entry.peer.peer : null;
+}
+
 export function presenceDispatch(
   input: { sessionKey: string; accountId: string; origin: OriginClass; text: string },
   wiring: PresenceWiring,
@@ -240,9 +250,23 @@ export function startPresence(input: {
     summarize: summarizeViaHost,
     log: input.log,
   });
+  const autoReply = createAutoReplier({
+    accountId,
+    tracker,
+    away,
+    config: () => resolveAccount(cfg(), accountId).away,
+    peerFor: (sessionKey) => imPeerFor(accountId, sessionKey),
+    repliedAt: (peer) => getRuntime(accountId)?.lastReplyAt.get(peer),
+    send: async (to, text) => {
+      await sendAutoReply({ cfg: cfg(), accountId, to, text });
+    },
+    log: input.log,
+  });
   return {
     away,
     async stop() {
+      autoReply.stop();
+      await autoReply.idle();
       await away.stop();
       tracker.reset(accountId);
       stopRunState();

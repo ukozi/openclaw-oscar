@@ -169,6 +169,11 @@
                 "type": "integer",
                 "minimum": 20,
                 "maximum": 200
+              },
+              "replyCooldownMinutes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1440
               }
             },
             "additionalProperties": false
@@ -588,6 +593,11 @@
                       "type": "integer",
                       "minimum": 20,
                       "maximum": 200
+                    },
+                    "replyCooldownMinutes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1440
                     }
                   },
                   "additionalProperties": false
