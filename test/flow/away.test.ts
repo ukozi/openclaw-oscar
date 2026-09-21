@@ -407,6 +407,7 @@ describe('account start and stop', () => {
     await presence.stop();
     expect(stub.calls).toEqual([DEFAULT, null]);
     expect(tracker.isBusy('botone')).toBe(false);
+    expect(status.at(-1)).toMatchObject({ busy: false, activeRuns: 0 });
     const frozen = status.length;
     await fake.emitLifecycle('r2', 'start', IM);
     expect(status).toHaveLength(frozen);
