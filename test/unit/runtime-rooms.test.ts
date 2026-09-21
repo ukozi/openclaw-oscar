@@ -41,6 +41,11 @@ describe('room state', () => {
     expect(applyRoomReady(rt, ROOM, ['botone'], 'botone', 500).aloneSince).toBe(500);
   });
 
+  it('treats a raw screen name as itself when counting company', () => {
+    const rt = makeRt();
+    expect(applyRoomReady(rt, ROOM, ['botone'], 'BotOne', 500).aloneSince).toBe(500);
+  });
+
   it('join and leave move the alone clock', () => {
     const rt = makeRt();
     applyRoomReady(rt, ROOM, ['botone', 'alice'], 'botone', 500);

@@ -209,7 +209,8 @@ export function joinedRooms(rt: AccountRuntime): RoomRef[] {
 }
 
 function refreshAlone(state: RoomState, self: string, now: number): void {
-  const others = [...state.occupants].some((name) => name !== self);
+  const me = normalizeName(self);
+  const others = [...state.occupants].some((name) => name !== me);
   if (others) delete state.aloneSince;
   else if (state.aloneSince === undefined) state.aloneSince = now;
 }
