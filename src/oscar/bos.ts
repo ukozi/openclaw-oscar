@@ -34,6 +34,7 @@ import {
   ICBM_TLV_AUTO_RESPONSE,
   ICBM_TLV_IM_DATA,
   ICBM_TLV_REQUEST_HOST_ACK,
+  ICBM_TLV_RENDEZVOUS,
   ICBM_TLV_SEND_TIME,
   ICBM_TLV_STORE,
   LOCATE_SET_INFO,
@@ -53,6 +54,11 @@ import {
   OSERVICE_USER_INFO_UPDATE,
   RATE_CLASS_IM,
   RATE_RECENT_MS,
+  RDV_FRAGMENT_MIN_BYTES,
+  RDV_TLV_CHARSET,
+  RDV_TLV_INVITATION,
+  RDV_TLV_SERVICE_DATA,
+  RDV_TYPE_PROPOSE,
   RECEIPT_TIMEOUT_MS,
   REQUEST_TIMEOUT_MS,
   SERVICE_TLV_COOKIE,
@@ -66,6 +72,7 @@ import {
 } from './constants.js';
 import { ConnectionClosedError, RequestTimeoutError, parseHostPort } from './connection.js';
 import type { OscarConnection } from './connection.js';
+import { roomFromCookie } from './chatnav.js';
 import { RateGovernor, decodeRateParamChange, decodeRateParamsReply } from './rate.js';
 import type { RateStatus } from './rate.js';
 import { decodeSnacError, decodeUserInfo, userFlags } from './snac.js';
@@ -74,7 +81,7 @@ import { encodeImText, fromWireText, normalizeScreenName } from './text.js';
 import { decodeTlvs, encodeTlvs, findTlv, hasTlv, tlv, tlvStr, tlvU32, tlvU8 } from './tlv.js';
 import type { Tlv } from './tlv.js';
 import { OscarSendError } from './types.js';
-import type { ImEvent, Logger, Presence, SendReceipt, TimerApi } from './types.js';
+import type { ImEvent, InviteEvent, Logger, Presence, SendReceipt, TimerApi } from './types.js';
 
 const BRING_UP_FAMILIES = [FAMILY_OSERVICE, FAMILY_LOCATE, FAMILY_BUDDY, FAMILY_ICBM];
 const IM_OVERHEAD_BYTES = 512;
@@ -537,4 +544,54 @@ export class BosClient {
     if (sentAt !== undefined) event.sentAt = sentAt * 1000;
     this.opts.callbacks.im(event);
   }
+}
+
+function tolerantTlvs(buf: Buffer): Tlv[] {
+  const out: Tlv[] = [];
+  let at = 0;
+  while (at + 4 <= buf.length) {
+    const tag = buf.readUInt16BE(at);
+    const len = buf.readUInt16BE(at + 2);
+    if (at + 4 + len > buf.length) break;
+    out.push({ tag, value: buf.subarray(at + 4, at + 4 + len) });
+    at += 4 + len;
+  }
+  return out;
+}
+
+export function parseInvite(icbmBody: Uint8Array): InviteEvent | null {
+  const b = Buffer.from(icbmBody.buffer, icbmBody.byteOffset, icbmBody.byteLength);
+  if (b.length < 10 || b.readUInt16BE(8) !== ICBM_CHANNEL_RENDEZVOUS) return null;
+  let fragment: Uint8Array | undefined;
+  let display: string;
+  try {
+    const { info, next } = decodeUserInfo(b, 10);
+    display = info.name;
+    fragment = findTlv(tolerantTlvs(b.subarray(next)), ICBM_TLV_RENDEZVOUS);
+  } catch {
+    return null;
+  }
+  if (!fragment || fragment.length < RDV_FRAGMENT_MIN_BYTES) return null;
+  const f = Buffer.from(fragment.buffer, fragment.byteOffset, fragment.byteLength);
+  if (f.readUInt16BE(0) !== RDV_TYPE_PROPOSE) return null;
+  if (!f.subarray(10, 26).equals(Buffer.from(CAP_CHAT))) return null;
+  const inner = tolerantTlvs(f.subarray(RDV_FRAGMENT_MIN_BYTES));
+  const data = findTlv(inner, RDV_TLV_SERVICE_DATA);
+  if (!data || data.length < 3) return null;
+  const d = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  const exchange = d.readUInt16BE(0);
+  const len = d.readUInt8(2);
+  if (d.length < 3 + len) return null;
+  const roomCookie = d.toString('utf8', 3, 3 + len);
+  const ref = roomFromCookie(roomCookie);
+  if (!ref || (exchange !== 4 && exchange !== 5)) return null;
+  const charset = findTlv(inner, RDV_TLV_CHARSET);
+  const text = findTlv(inner, RDV_TLV_INVITATION);
+  return {
+    from: normalizeScreenName(display),
+    fromDisplay: display,
+    room: { exchange, name: ref.name },
+    roomCookie,
+    text: text ? fromWireText(text, charset ? Buffer.from(charset).toString('ascii') : undefined) : '',
+  };
 }
