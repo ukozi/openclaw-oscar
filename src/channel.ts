@@ -1,5 +1,6 @@
 import { buildChannelOutboundSessionRoute, createChatChannelPlugin, tryReadSecretFileSync } from 'openclaw/plugin-sdk/channel-core';
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
+import { createAccountStatusSink, createRunStateMachine } from 'openclaw/plugin-sdk/channel-lifecycle';
 import { createChannelMessageAdapterFromOutbound } from 'openclaw/plugin-sdk/channel-outbound';
 import type { ChannelGatewayContext } from 'openclaw/plugin-sdk/channel-runtime';
 import { normalizeSecretInputString } from 'openclaw/plugin-sdk/secret-input';
@@ -18,6 +19,7 @@ import { createOscarSession } from './oscar/index.js';
 import type { Logger, SessionState } from './oscar/index.js';
 import { outboundBase, sendAdapterText } from './outbound.js';
 import { roleOf, roomRequiresMention, senderToolPolicy, toolDeny } from './policy.js';
+import { presenceActions, presenceToolHints, startPresence } from './presence/register.js';
 import {
   clearRuntime, createPasswordGuard, currentGeneration, getRuntime, liveConfig, nextGeneration, setRuntime, sharedLoginBudget,
 } from './runtime.js';
@@ -130,7 +132,21 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     log, loginBudget: sharedLoginBudget(),
     now, timers,
   });
-  const rt: AccountRuntime = { accountId, session, rooms: new Map(), sessionKeys: new Map(), lastReplyAt: new Map(), counters: { droppedSends: 0, eventGaps: 0 } };
+  const presence = startPresence({
+    accountId,
+    session,
+    getCfg,
+    machine: createRunStateMachine({
+      setStatus: createAccountStatusSink({ accountId: ctx.accountId, setStatus: ctx.setStatus }),
+      abortSignal: ctx.abortSignal,
+    }),
+    log,
+  });
+  const rt: AccountRuntime = {
+    accountId, session, rooms: new Map(), sessionKeys: new Map(), lastReplyAt: new Map(), counters: { droppedSends: 0, eventGaps: 0 },
+    away: presence.away,
+    stopPresence: presence.stop,
+  };
   setRuntime(rt);
 
   const publish = (state: SessionState): void => {
@@ -191,6 +207,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
       rt.halted = { reason: 'unauthenticated-server', detail };
       log.error('stopping: the server does not check passwords');
       publish(session.getState());
+      await rt.stopPresence?.();
       await session.stop();
     },
   });
@@ -210,6 +227,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     }),
   ];
   stoppers.set(accountId, async () => {
+    await rt.stopPresence?.();
     detachRooms();
     for (const off of offs) off();
     guard.stop();
@@ -243,6 +261,8 @@ export const oscarPlugin: ChannelPlugin<ResolvedAccount, { passwordCheck: ProbeR
       markdownCapable: false,
     },
     capabilities: { chatTypes: ['direct', 'group'], media: false, reactions: false, reply: false, threads: false, polls: false, edit: false, unsend: false },
+    actions: presenceActions,
+    agentPrompt: { messageToolHints: presenceToolHints },
     reload: { configPrefixes: [`channels.${CHANNEL_ID}`], noopPrefixes: RELOAD_NOOP_PREFIXES },
     configSchema: oscarChannelConfigSchema as ChannelPlugin['configSchema'],
     config: {

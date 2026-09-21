@@ -6,6 +6,7 @@ import { joinExtraRoom } from './inbound/invite.js';
 import { escapeNonAscii, normalizeName, parseTarget, roomNameProblem } from './names.js';
 import type { RoomRef } from './names.js';
 import { roleOf } from './policy.js';
+import { STATUS_TOOL, createOscarStatusTool, runtimeWiring } from './presence/register.js';
 import { applyRoomClosed, getRuntime, roomKey, roomsExt } from './runtime.js';
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -143,3 +144,4 @@ export function createRoomTool(ctx: RoomToolContext, env: RoomToolEnv = {}): Roo
 }
 
 installTool('oscar_room', (ctx) => createRoomTool(ctx) as unknown as AnyAgentTool | null);
+installTool(STATUS_TOOL, (ctx) => createOscarStatusTool(ctx, runtimeWiring));

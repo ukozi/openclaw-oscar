@@ -27,7 +27,9 @@ function fakeApi(mode: Mode) {
   const api = {
     registrationMode: mode,
     registerChannel,
-    runtime: { config: { current: () => ({ live: true }) } },
+    runtime: { config: { current: () => ({ live: true }) }, llm: { complete: async () => ({ text: '' }) } },
+    on: () => undefined,
+    agent: { events: { registerAgentEventSubscription: () => undefined } },
     registerTool: (_factory: unknown, opts?: { names?: string[] }) => { tools.push(opts?.names); },
     logger: { info: (message: string) => { info.push(message); }, warn: () => undefined, error: () => undefined },
   } as unknown as OpenClawPluginApi;

@@ -12,6 +12,7 @@ import type { ContactRingEntry } from '../notice.js';
 import type { Logger } from '../oscar/index.js';
 import { sendMarkdown, typingFor } from '../outbound.js';
 import { neutralizeDirectives, roleOf } from '../policy.js';
+import { originOf, presenceDispatch, runtimeWiring } from '../presence/register.js';
 import { getRuntime, touchActivity } from '../runtime.js';
 import type { TurnRequest } from './room.js';
 
@@ -42,6 +43,10 @@ export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void
   getRuntime(deps.accountId)?.sessionKeys.set(route.sessionKey, { accountId: deps.accountId, peer });
 
   const body = owner ? turn.text : neutralizeDirectives(turn.text);
+  const presence = presenceDispatch(
+    { sessionKey: route.sessionKey, accountId: deps.accountId, origin: originOf(role), text: body },
+    runtimeWiring,
+  );
   const messageId = turn.cookie !== 0n ? `${turn.from}:${turn.cookie}` : `${turn.from}:t${turn.at}`;
 
   const untrusted: Untrusted[] = [
@@ -120,7 +125,10 @@ export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void
         replyOptions: {
           disableBlockStreaming: typeof account.blockStreaming === 'boolean' ? !account.blockStreaming : true,
           sourceReplyDeliveryMode: 'automatic',
-          onAgentRunStart: (runId: string) => deps.onRunStart?.(runId, route.sessionKey),
+          onAgentRunStart: (runId: string) => {
+            presence.onAgentRunStart(runId);
+            deps.onRunStart?.(runId, route.sessionKey);
+          },
         },
         record: {
           onRecordError: (err) => {
@@ -146,6 +154,10 @@ export async function dispatchRoomTurn(req: TurnRequest, deps: RoomTurnDeps): Pr
   const to = formatTarget({ kind: 'room', room: peer.room });
   const route = resolveAgentRoute({ cfg, channel: CHANNEL_ID, accountId: deps.accountId, peer: { kind: 'group', id: peerId } });
   getRuntime(deps.accountId)?.sessionKeys.set(route.sessionKey, { accountId: deps.accountId, peer });
+  const presence = presenceDispatch(
+    { sessionKey: route.sessionKey, accountId: deps.accountId, origin: req.origin, text: req.text },
+    runtimeWiring,
+  );
 
   const ctxPayload = buildChannelInboundEventContext({
     channel: CHANNEL_ID,
@@ -200,7 +212,10 @@ export async function dispatchRoomTurn(req: TurnRequest, deps: RoomTurnDeps): Pr
         replyOptions: {
           disableBlockStreaming: typeof account.blockStreaming === 'boolean' ? !account.blockStreaming : true,
           sourceReplyDeliveryMode: 'automatic',
-          onAgentRunStart: (runId: string) => deps.onRunStart?.(runId, route.sessionKey),
+          onAgentRunStart: (runId: string) => {
+            presence.onAgentRunStart(runId);
+            deps.onRunStart?.(runId, route.sessionKey);
+          },
         },
         record: {
           onRecordError: (err) => {
