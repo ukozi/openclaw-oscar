@@ -471,11 +471,11 @@ export class OscarSessionImpl implements OscarSession {
     this.bos?.setBuddies(this.opts.buddies());
   }
 
-  sendIm(to: string, html: string, opts?: { priority?: SendPriority }): Promise<SendReceipt> {
+  sendIm(to: string, html: string, opts?: { priority?: SendPriority; auto?: boolean }): Promise<SendReceipt> {
     if (!this.bos) return Promise.reject(new OscarSendError('not-online'));
     return this.queue.push(opts?.priority ?? 'reply', () => {
       const bos = this.bos;
-      return bos ? bos.sendIm(to, html) : Promise.reject(new OscarSendError('not-online'));
+      return bos ? bos.sendIm(to, html, { auto: opts?.auto === true }) : Promise.reject(new OscarSendError('not-online'));
     });
   }
 

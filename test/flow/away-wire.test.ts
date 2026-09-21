@@ -37,7 +37,7 @@ function awayTexts(server: FakeOscarServer, from = 0): string[] {
 describe('away on the wire', () => {
   let server: FakeOscarServer;
   const sessions: OscarSession[] = [];
-  const base: AwayConfig = { enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 30, maxLength: 100 };
+  const base: AwayConfig = { enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 30, maxLength: 100, replyCooldownMinutes: 10 };
 
   beforeEach(async () => {
     server = await FakeOscarServer.start();

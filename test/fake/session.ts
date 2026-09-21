@@ -3,7 +3,7 @@ import type { InviteEvent, OscarEvents, OscarSession, Presence, RoomRef, SendPri
 type Listener = (payload: never) => void;
 
 export class FakeSession {
-  sent: { to: string; html: string; priority: SendPriority }[] = [];
+  sent: { to: string; html: string; priority: SendPriority; auto?: boolean }[] = [];
   joins: { room: RoomRef; persistent: boolean }[] = [];
   invitedJoins: InviteEvent[] = [];
   leaves: RoomRef[] = [];
@@ -53,13 +53,13 @@ export class FakeSession {
       selfInfo: () => self.self,
       presenceOf: (name: string): Presence | undefined => self.presence.get(name),
       updateBuddies(): void { self.buddyUpdates += 1; },
-      async sendIm(to: string, html: string, opts?: { priority?: SendPriority }): Promise<SendReceipt> {
+      async sendIm(to: string, html: string, opts?: { priority?: SendPriority; auto?: boolean }): Promise<SendReceipt> {
         if (self.failNext) {
           const err = self.failNext;
           self.failNext = null;
           throw err;
         }
-        self.sent.push({ to, html, priority: opts?.priority ?? 'reply' });
+        self.sent.push({ to, html, priority: opts?.priority ?? 'reply', ...(opts?.auto ? { auto: true } : {}) });
         const storedOffline = self.presence.get(to)?.online !== true;
         return { id: String(self.nextId++), storedOffline };
       },

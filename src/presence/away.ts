@@ -29,6 +29,10 @@ export type AwayDeps = {
   summarizeTimeoutMs?: number;
 };
 
+export function operatorAwayText(cfg: AwayConfig): string {
+  return capText(foldAscii(cfg.message), cfg.maxLength) || capText(copy.awayDefault(), cfg.maxLength);
+}
+
 export const MAX_LINE_CHANGES = 2;
 const MIN_UPDATE_MS = 5000;
 const SUMMARIZE_TIMEOUT_MS = 15_000;
@@ -64,10 +68,6 @@ export function createAwayController(deps: AwayDeps): AwayController {
     return undefined;
   }
 
-  function operatorText(cfg: AwayConfig): string {
-    return capText(foldAscii(cfg.message), cfg.maxLength) || capText(copy.awayDefault(), cfg.maxLength);
-  }
-
   function pickText(cfg: AwayConfig): string {
     const live = [...blurbs.values()].sort((a, b) => b.touchedAt - a.touchedAt);
     for (const blurb of live) {
@@ -75,9 +75,9 @@ export function createAwayController(deps: AwayDeps): AwayController {
         (cfg.blurb !== 'phrases' ? blurb.agentLine : undefined) ??
         (cfg.blurb === 'summarize' ? blurb.summary : undefined) ??
         blurb.phrase;
-      if (line) return capText(line, cfg.maxLength) || operatorText(cfg);
+      if (line) return capText(line, cfg.maxLength) || operatorAwayText(cfg);
     }
-    return operatorText(cfg);
+    return operatorAwayText(cfg);
   }
 
   function push(text: string | null): void {

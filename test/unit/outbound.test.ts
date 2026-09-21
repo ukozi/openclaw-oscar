@@ -4,7 +4,7 @@ vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake
 vi.mock('openclaw/plugin-sdk/channel-reply-pipeline', async () => (await import('../fake/openclaw.js')).channelReplyPipeline);
 
 import { toWireHtml } from '../../src/oscar/text.js';
-import { checkTarget, outboundBase, sendAdapterText, sendMarkdown, sendWire, setOutboundTextFilter, typingFor, withPriority } from '../../src/outbound.js';
+import { checkTarget, outboundBase, sendAdapterText, sendAutoReply, sendMarkdown, sendWire, setOutboundTextFilter, typingFor, withPriority } from '../../src/outbound.js';
 import type { OutboundMeta } from '../../src/outbound.js';
 import { getRuntime, resetRuntimeForTests, setRuntime } from '../../src/runtime.js';
 import { sdk } from '../fake/openclaw.js';
@@ -90,6 +90,17 @@ describe('sending', () => {
   it('fails cleanly when the account is not running', async () => {
     resetRuntimeForTests();
     await expect(sendWire({ cfg: cfg(), to: 'alice', html: 'x' })).rejects.toThrow('account default is not signed on');
+  });
+
+  it('sends an auto-reply as a notice, marks it automatic and does not count it as a reply', async () => {
+    expect(await sendAutoReply({ cfg: cfg(), accountId: 'default', to: 'Bob', text: 'Working on something.' })).toBe(true);
+    expect(session.sent).toEqual([{ to: 'bob', html: toWireHtml('Working on something.'), priority: 'notice', auto: true }]);
+    expect(getRuntime('default')?.lastReplyAt.has('bob')).toBe(false);
+  });
+
+  it('refuses an auto-reply to someone the account may not address', async () => {
+    expect(await sendAutoReply({ cfg: cfg(), accountId: 'default', to: 'mallory', text: 'Working on something.' })).toBe(false);
+    expect(session.sent).toEqual([]);
   });
 });
 

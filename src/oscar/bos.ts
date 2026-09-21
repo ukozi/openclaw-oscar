@@ -179,9 +179,11 @@ export function encodeAway(text: string | null): Uint8Array {
   return encodeTlvs([tlv.str(LOCATE_TLV_AWAY_TEXT, text ?? '')]);
 }
 
-export function encodeImToHost(cookie: bigint, to: string, charset: number, text: Uint8Array, store: boolean): Uint8Array {
+export function encodeImToHost(cookie: bigint, to: string, charset: number, text: Uint8Array, store: boolean, auto = false): Uint8Array {
   const tlvs = [tlv.bytes(ICBM_TLV_IM_DATA, encodeImFragments(charset, text)), tlv.empty(ICBM_TLV_REQUEST_HOST_ACK)];
   if (store) tlvs.push(tlv.empty(ICBM_TLV_STORE));
+  // The relay copies the sender's TLVs and strips only 0x03, 0x06 and 0x16, so this is what marks the message automatic.
+  if (auto) tlvs.push(tlv.empty(ICBM_TLV_AUTO_RESPONSE));
   return new ByteWriter().u64(cookie).u16(ICBM_CHANNEL_IM).str8(to).bytes(encodeTlvs(tlvs)).toBytes();
 }
 
@@ -387,7 +389,7 @@ export class BosClient {
     return this.presence.get(normalizeScreenName(name));
   }
 
-  async sendIm(to: string, html: string): Promise<SendReceipt> {
+  async sendIm(to: string, html: string, opts: { auto?: boolean } = {}): Promise<SendReceipt> {
     const { charset, bytes } = encodeImText(html);
     if (bytes.length + IM_OVERHEAD_BYTES > FLAP_MAX_PAYLOAD) throw new OscarSendError('too-long');
     if (Buffer.byteLength(to, 'utf8') === 0 || Buffer.byteLength(to, 'utf8') > 0xff) {
@@ -405,7 +407,7 @@ export class BosClient {
       for (;;) {
         await this.waitForRate(governor, () => ackedLate);
         if (ackedLate) return receipt();
-        const body = encodeImToHost(cookie, to, charset, bytes, store);
+        const body = encodeImToHost(cookie, to, charset, bytes, store, opts.auto === true);
         let reply: Snac;
         try {
           reply = await this.ask(FAMILY_ICBM, ICBM_MSG_TO_HOST, body, RECEIPT_TIMEOUT_MS);

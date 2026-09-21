@@ -1,6 +1,8 @@
 export type AwayFamily = 'shell' | 'files' | 'web' | 'handoff' | 'memory';
 export type Outcome = 'done' | 'none' | 'failed';
 
+const AWAY_DEFAULT = 'Working on something. Back in a bit.';
+
 const AWAY_PHRASES: Record<AwayFamily, string> = {
   shell: 'Running some commands',
   files: 'Working in some files',
@@ -40,6 +42,7 @@ export const copy = {
   mismatch: (a: string, b: string): string =>
     `${a} and ${b} disagree about the chain of command. Using name order until their configs match.`,
   outcome: (delegator: string, id: string, kind: Outcome): string => `${delegator}: ${OUTCOMES[kind]} [d:${id}]`,
-  awayDefault: (): string => 'Working on something. Back in a bit.',
+  awayDefault: (): string => AWAY_DEFAULT,
   awayPhrase: (family: AwayFamily): string => AWAY_PHRASES[family],
+  awayAutoReply: (line: string): string => orDefault(line.trim(), AWAY_DEFAULT),
 };

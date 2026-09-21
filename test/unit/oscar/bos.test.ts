@@ -54,6 +54,12 @@ describe('what the client sends', () => {
     expect(toHex(encodeServiceRequest(0x000e, { useSsl: true, roomInfo: fromHex('0004') }))).toBe('000e' + '000100020004' + '008c0000');
   });
 
+  it('marks an automatic reply with the auto-response TLV', () => {
+    const plain = toHex(encodeImToHost(0x1122334455667788n, 'alice', 0, fromHex('6869'), false));
+    const auto = toHex(encodeImToHost(0x1122334455667788n, 'alice', 0, fromHex('6869'), false, true));
+    expect(auto).toBe(`${plain}00040000`);
+  });
+
   it('never makes a zero cookie', () => {
     for (let i = 0; i < 1000; i++) expect(newCookie()).not.toBe(0n);
   });

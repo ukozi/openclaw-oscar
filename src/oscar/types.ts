@@ -110,7 +110,7 @@ export interface OscarSession {
   selfInfo(): { screenName: string; bot: boolean } | null;
   presenceOf(name: string): Presence | undefined;
   updateBuddies(): void;
-  sendIm(to: string, html: string, opts?: { priority?: SendPriority }): Promise<SendReceipt>;
+  sendIm(to: string, html: string, opts?: { priority?: SendPriority; auto?: boolean }): Promise<SendReceipt>;
   sendTyping(to: string, state: 'typing' | 'typed' | 'none'): void;
   setAway(text: string | null): Promise<void>;
   probePasswordCheck(): Promise<PasswordCheck>;

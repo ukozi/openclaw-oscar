@@ -15,6 +15,7 @@ function samples(): string[] {
     copy.outcome('botone', '2-k7f3', 'done'), copy.outcome('botone', '2-k7f3', 'none'), copy.outcome('botone', '2-k7f3', 'failed'),
     copy.awayDefault(),
     copy.awayPhrase('shell'), copy.awayPhrase('files'), copy.awayPhrase('web'), copy.awayPhrase('handoff'), copy.awayPhrase('memory'),
+    copy.awayAutoReply('Working in some files'), copy.awayAutoReply('   '),
   ];
 }
 
@@ -52,6 +53,8 @@ describe('copy', () => {
     expect(copy.awayPhrase('web')).toBe('Looking something up');
     expect(copy.awayPhrase('handoff')).toBe('Handing work to a teammate');
     expect(copy.awayPhrase('memory')).toBe('Checking my notes');
+    expect(copy.awayAutoReply('Working in some files')).toBe('Working in some files');
+    expect(copy.awayAutoReply('   ')).toBe('Working on something. Back in a bit.');
   });
 
   it('uses the singular for one', () => {

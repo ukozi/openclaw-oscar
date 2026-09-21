@@ -32,7 +32,7 @@ describe('accounts', () => {
       accountId: 'default', enabled: true, configured: true, screenName: 'botone', display: 'Bot One',
       host: 'oscar.example.net', port: 5190, tls: false, redirect: 'auto', dangerouslyAllowUnauthenticatedServer: false,
       typing: true, textChunkLimit: 1800, roomTextChunkLimit: 900,
-      away: { enabled: true, message: 'Working on something. Back in a bit.', blurb: 'agent', graceMs: 2000, maxLength: 100 },
+      away: { enabled: true, message: 'Working on something. Back in a bit.', blurb: 'agent', graceMs: 2000, maxLength: 100, replyCooldownMinutes: 10 },
     });
     expect(a.blockStreaming).toBeUndefined();
   });

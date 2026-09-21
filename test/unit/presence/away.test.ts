@@ -9,7 +9,7 @@ const ROOM = 'agent:main:oscar:group:botone#4.testroom';
 const DEFAULT = 'Working on something. Back in a bit.';
 
 function setup(overrides: Partial<AwayConfig> = {}, summarize?: (text: string, signal: AbortSignal) => Promise<string>) {
-  const cfg: AwayConfig = { enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 2000, maxLength: 100, ...overrides };
+  const cfg: AwayConfig = { enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 2000, maxLength: 100, replyCooldownMinutes: 10, ...overrides };
   const tracker = createRunTracker();
   tracker.bind(IM, 'botone', 'owner');
   tracker.bind(ROOM, 'botone', 'owner');
@@ -347,7 +347,7 @@ describe('rosterPresence', () => {
 });
 
 describe('awayToolHints', () => {
-  const base: AwayConfig = { enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 2000, maxLength: 100 };
+  const base: AwayConfig = { enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 2000, maxLength: 100, replyCooldownMinutes: 10 };
   it('explains both ways to set the line', () => {
     const text = awayToolHints(base).join(' ');
     expect(text).toContain('set-presence');

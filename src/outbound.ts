@@ -104,6 +104,16 @@ export async function sendMarkdown(p: { cfg: unknown; accountId?: string | null;
   return { messageIds };
 }
 
+export async function sendAutoReply(p: { cfg: unknown; accountId: string; to: string; text: string }): Promise<boolean> {
+  const cfg = liveConfig(p.cfg);
+  const checked = checkTarget({ cfg, accountId: p.accountId, to: p.to });
+  if (!checked.ok || checked.target.kind !== 'im') return false;
+  const rt = getRuntime(checked.accountId);
+  if (!rt || rt.halted) return false;
+  await rt.session.sendIm(checked.target.name, toWireHtml(p.text), { priority: 'notice', auto: true });
+  return true;
+}
+
 export function typingFor(p: { cfg: unknown; accountId: string; peer: string }): TypingCallbacks | undefined {
   const cfg = liveConfig(p.cfg);
   if (!resolveAccount(cfg, p.accountId).typing) return undefined;

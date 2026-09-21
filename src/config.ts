@@ -41,7 +41,7 @@ export const UI_HINTS = {
   dangerouslyAllowOpenDm: { label: 'Allow dmPolicy open', advanced: true },
 };
 
-export type AwayConfig = { enabled: boolean; message: string; blurb: 'agent' | 'phrases' | 'summarize'; graceMs: number; maxLength: number };
+export type AwayConfig = { enabled: boolean; message: string; blurb: 'agent' | 'phrases' | 'summarize'; graceMs: number; maxLength: number; replyCooldownMinutes: number };
 export type ResolvedAccount = {
   accountId: string; enabled: boolean; configured: boolean;
   screenName: string; display: string;
@@ -89,6 +89,7 @@ const awaySchema = z.object({
   blurb: z.enum(['agent', 'phrases', 'summarize']).optional(),
   graceMs: z.number().int().min(0).max(60000).optional(),
   maxLength: z.number().int().min(20).max(200).optional(),
+  replyCooldownMinutes: z.number().int().min(0).max(1440).optional(),
 }).strict();
 
 const transportShape = {
@@ -283,6 +284,7 @@ export function resolveAccount(cfg: unknown, accountId?: string | null): Resolve
       blurb: oneOf(away.blurb, ['agent', 'phrases', 'summarize'] as const, 'agent'),
       graceMs: num(away.graceMs, 2000),
       maxLength: num(away.maxLength, 100),
+      replyCooldownMinutes: num(away.replyCooldownMinutes, 10),
     },
     typing: bool(merged.typing, true),
     ...(typeof merged.blockStreaming === 'boolean' ? { blockStreaming: merged.blockStreaming } : {}),

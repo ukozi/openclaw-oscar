@@ -17,7 +17,7 @@ const DEFAULT = 'Working on something. Back in a bit.';
 const MINUTE = 60_000;
 
 function world(overrides: Partial<AwayConfig> = {}, complete?: () => Promise<string>) {
-  const away: AwayConfig = { enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 2000, maxLength: 100, ...overrides };
+  const away: AwayConfig = { enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 2000, maxLength: 100, replyCooldownMinutes: 10, ...overrides };
   const cfg = {
     channels: {
       oscar: {
