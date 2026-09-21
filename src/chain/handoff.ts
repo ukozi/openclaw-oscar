@@ -139,3 +139,67 @@ export class HandoffLedger {
     this.seen.clear();
   }
 }
+
+const ADDRESSED = /^\s*@?([^:\n]{1,40}?)\s*:\s*(\S.*)$/;
+const MAX_OBSERVED = 200;
+
+export function addressedLine(text: string): { to: string; task: string } | null {
+  const m = ADDRESSED.exec(text);
+  if (!m) return null;
+  return { to: m[1] ?? '', task: m[2] ?? '' };
+}
+
+export type ObservedJob = { id: string; to: string; by: string; originator: string; room: RoomRef; since: number };
+export type JobBoardDeps = { maxAgeMs(): number; resolve(name: string): string | null; now?: Clock };
+
+export class JobBoard {
+  private readonly jobs = new Map<string, ObservedJob>();
+  private readonly now: Clock;
+
+  constructor(private readonly deps: JobBoardDeps) {
+    this.now = deps.now ?? (() => Date.now());
+  }
+
+  note(room: RoomRef, line: { from: string; text: string; at: number }): void {
+    this.prune(line.at);
+    if (this.deps.resolve(line.from) !== line.from) return;
+    const parsed = parseTrailer(line.text);
+    if (parsed.resultId) {
+      const job = this.jobs.get(parsed.resultId);
+      if (job && job.to === line.from) this.jobs.delete(parsed.resultId);
+      return;
+    }
+    if (!parsed.trailer || this.jobs.has(parsed.trailer.id)) return;
+    const addressed = addressedLine(parsed.body);
+    const to = addressed ? this.deps.resolve(addressed.to) : null;
+    if (!to || to === line.from) return;
+    this.jobs.set(parsed.trailer.id, {
+      id: parsed.trailer.id, to, by: line.from, originator: parsed.trailer.originator, room, since: line.at,
+    });
+    while (this.jobs.size > MAX_OBSERVED) {
+      const oldest = this.jobs.keys().next().value;
+      if (oldest === undefined) break;
+      this.jobs.delete(oldest);
+    }
+  }
+
+  holderLeft(room: RoomRef, name: string): void {
+    const key = roomKeyOf(room);
+    for (const [id, job] of this.jobs) if (job.to === name && roomKeyOf(job.room) === key) this.jobs.delete(id);
+  }
+
+  openIn(room: RoomRef, at: number = this.now()): ObservedJob[] {
+    this.prune(at);
+    const key = roomKeyOf(room);
+    return [...this.jobs.values()].filter((job) => roomKeyOf(job.room) === key);
+  }
+
+  clear(): void {
+    this.jobs.clear();
+  }
+
+  private prune(at: number): void {
+    const maxAge = this.deps.maxAgeMs();
+    for (const [id, job] of this.jobs) if (at - job.since >= maxAge) this.jobs.delete(id);
+  }
+}
