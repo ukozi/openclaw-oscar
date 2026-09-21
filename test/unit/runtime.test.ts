@@ -63,12 +63,12 @@ describe('shared login budget', () => {
 });
 
 describe('password guard', () => {
-  function setup(results: ProbeResult[], allowUnauthenticated = false) {
+  function setup(results: ProbeResult[], allowUnauthenticated = false, cacheKey = 'h:5190:botone') {
     const halted: string[] = [];
     const seen: ProbeResult[] = [];
     let calls = 0;
     const guard = createPasswordGuard({
-      cacheKey: 'h:5190:botone', allowUnauthenticated,
+      cacheKey, allowUnauthenticated,
       probe: async () => results[Math.min(calls++, results.length - 1)] ?? 'unknown',
       now: () => Date.now(),
       timers: { setTimeout, clearTimeout }, log,
@@ -112,6 +112,18 @@ describe('password guard', () => {
     c.guard.onOnline();
     await c.guard.idle();
     expect(c.calls()).toBe(1);
+  });
+
+  it('does not reuse one host and name answer for another', async () => {
+    const a = setup(['checks']);
+    a.guard.onOnline();
+    await a.guard.idle();
+    const b = setup(['does-not-check'], false, 'other:5190:bottwo');
+    b.guard.onOnline();
+    await b.guard.idle();
+    expect(b.calls()).toBe(1);
+    expect(b.seen).toEqual(['does-not-check']);
+    expect(b.halted).toHaveLength(1);
   });
 
   it('retries unknown after 60 s and does not cache it', async () => {
