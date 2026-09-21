@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   decodeImFragments,
   decodeImToClient,
@@ -19,6 +19,12 @@ import { decodeUserInfo, userFlags } from '../../../src/oscar/snac.js';
 import { fromWireText } from '../../../src/oscar/text.js';
 import { findTlv, hasTlv, tlvU32 } from '../../../src/oscar/tlv.js';
 import { bytesOf, loadVectors, vector } from './vectors.js';
+
+const entropy = vi.hoisted(() => ({ queue: [] as Uint8Array[] }));
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:crypto')>();
+  return { ...actual, randomBytes: (size: number) => entropy.queue.shift() ?? actual.randomBytes(size) };
+});
 
 const oservice = loadVectors('oservice.json');
 const icbm = loadVectors('icbm.json');
@@ -50,6 +56,12 @@ describe('what the client sends', () => {
 
   it('never makes a zero cookie', () => {
     for (let i = 0; i < 1000; i++) expect(newCookie()).not.toBe(0n);
+  });
+
+  it('draws again when the random bytes come back all zero', () => {
+    entropy.queue.push(new Uint8Array(8), fromHex('0000000000000001'));
+    expect(newCookie()).toBe(1n);
+    expect(entropy.queue).toHaveLength(0);
   });
 });
 
