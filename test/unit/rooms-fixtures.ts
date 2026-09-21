@@ -51,6 +51,7 @@ export function fakeSession(screenName = 'BotOne') {
     joinInvited: [] as InviteEvent[],
     leaveRoom: [] as RoomRef[],
     sendIm: [] as { to: string; html: string; priority?: string }[],
+    sendTyping: [] as { to: string; state: string }[],
     sendRoom: [] as { room: RoomRef; html: string; whisperTo?: string; priority?: string }[],
   };
   const fail: { joinRoom?: unknown; joinInvited?: unknown } = {};
@@ -84,6 +85,9 @@ export function fakeSession(screenName = 'BotOne') {
     async sendIm(to: string, html: string, opts?: { priority?: string }) {
       calls.sendIm.push({ to, html, priority: opts?.priority });
       return receipt;
+    },
+    sendTyping(to: string, state: string) {
+      calls.sendTyping.push({ to, state });
     },
     async sendRoom(room: RoomRef, html: string, opts?: { whisperTo?: string; priority?: string }) {
       calls.sendRoom.push({ room, html, whisperTo: opts?.whisperTo, priority: opts?.priority });

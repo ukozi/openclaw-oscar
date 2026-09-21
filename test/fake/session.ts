@@ -1,9 +1,13 @@
-import type { OscarEvents, OscarSession, Presence, SendPriority, SendReceipt, SessionState } from '../../src/oscar/index.js';
+import type { InviteEvent, OscarEvents, OscarSession, Presence, RoomRef, SendPriority, SendReceipt, SessionState } from '../../src/oscar/index.js';
 
 type Listener = (payload: never) => void;
 
 export class FakeSession {
   sent: { to: string; html: string; priority: SendPriority }[] = [];
+  joins: { room: RoomRef; persistent: boolean }[] = [];
+  invitedJoins: InviteEvent[] = [];
+  leaves: RoomRef[] = [];
+  roomSent: { room: RoomRef; html: string; whisperTo?: string; priority: SendPriority }[] = [];
   typing: { to: string; state: 'typing' | 'typed' | 'none' }[] = [];
   away: (string | null)[] = [];
   buddyUpdates = 0;
@@ -63,6 +67,19 @@ export class FakeSession {
       async setAway(text: string | null): Promise<void> { self.away.push(text); },
       async probePasswordCheck(): Promise<'checks' | 'does-not-check' | 'unknown'> { self.probes += 1; return self.probeResult; },
       rooms: () => [],
+      async joinRoom(room: RoomRef, opts?: { persistent?: boolean }): Promise<void> {
+        self.joins.push({ room, persistent: opts?.persistent === true });
+      },
+      async joinInvited(invite: InviteEvent): Promise<void> {
+        self.invitedJoins.push(invite);
+      },
+      async leaveRoom(room: RoomRef): Promise<void> {
+        self.leaves.push(room);
+      },
+      async sendRoom(room: RoomRef, html: string, opts?: { whisperTo?: string; priority?: SendPriority }): Promise<SendReceipt> {
+        self.roomSent.push({ room, html, whisperTo: opts?.whisperTo, priority: opts?.priority ?? 'reply' });
+        return { id: String(self.nextId++), storedOffline: false };
+      },
     };
     return api as unknown as OscarSession;
   }

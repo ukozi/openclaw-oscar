@@ -4,6 +4,7 @@ import { recordInboundSession } from 'openclaw/plugin-sdk/conversation-runtime';
 import { dispatchReplyWithBufferedBlockDispatcher } from 'openclaw/plugin-sdk/reply-dispatch-runtime';
 import { resolveAgentRoute } from 'openclaw/plugin-sdk/routing';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
+import { awarenessFor } from '../awareness.js';
 import { CHANNEL_ID, readPolicy, resolveAccount } from '../config.js';
 import { encodePeerId, formatTarget } from '../names.js';
 import type { PeerRef } from '../names.js';
@@ -11,7 +12,7 @@ import type { ContactRingEntry } from '../notice.js';
 import type { Logger } from '../oscar/index.js';
 import { sendMarkdown, typingFor } from '../outbound.js';
 import { neutralizeDirectives, roleOf } from '../policy.js';
-import { getRuntime } from '../runtime.js';
+import { getRuntime, touchActivity } from '../runtime.js';
 import type { TurnRequest } from './room.js';
 
 export type ImTurn = {
@@ -58,6 +59,14 @@ export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void
       label: 'Recent contact attempts', source: CHANNEL_ID, type: 'oscar_contact_attempts',
       payload: { attempts: ring.map((e) => ({ name: e.name, kind: e.kind, count: e.count, secondsAgo: Math.max(0, Math.round((deps.now() - e.lastAt) / 1000)), oddName: e.oddName })) },
     });
+  }
+
+  const rt = getRuntime(deps.accountId);
+  if (rt) {
+    for (const entry of awarenessFor(rt, policy, peer, owner ? 'owner' : 'approved', deps.now(), [])) {
+      untrusted.push({ label: entry.label, source: CHANNEL_ID, type: 'awareness', payload: entry.payload });
+    }
+    touchActivity(rt, to, deps.now());
   }
 
   const ctxPayload = buildChannelInboundEventContext({

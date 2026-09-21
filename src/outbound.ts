@@ -8,7 +8,7 @@ import type { RoomRef, Target } from './names.js';
 import type { SendPriority, SendReceipt } from './oscar/index.js';
 import { guardRoll, toAsciiEntities, toWireHtml } from './oscar/text.js';
 import { outboundProblem, roleOf } from './policy.js';
-import { getRuntime, liveConfig, roomKey } from './runtime.js';
+import { getRuntime, joinedRooms, liveConfig, roomKey } from './runtime.js';
 import type { AccountRuntime } from './runtime.js';
 
 const TYPING_KEEPALIVE_MS = 8000;
@@ -41,7 +41,7 @@ export function checkTarget(p: { cfg: unknown; accountId?: string | null; to: st
   const bot = rt?.session.selfInfo()?.screenName ?? resolveAccount(cfg, accountId).screenName;
   const target = parseTarget(p.to, bot);
   if (!target) return { ok: false, error: new Error(`"${p.to}" is not a screen name or room this account can address`) };
-  const joined = [...(rt?.rooms.values() ?? [])].map((room) => room.ref);
+  const joined = rt ? joinedRooms(rt) : [];
   const problem = outboundProblem(target, readPolicy(cfg), joined);
   if (problem) return { ok: false, error: new Error(problem) };
   return { ok: true, accountId, target, to: formatTarget(target) };
@@ -52,7 +52,16 @@ export async function sendWire(p: { cfg: unknown; accountId?: string | null; to:
   if (!checked.ok) throw checked.error;
   const rt = getRuntime(checked.accountId);
   if (!rt || rt.halted) throw new Error(`account ${checked.accountId} is not signed on`);
-  if (checked.target.kind !== 'im') throw new Error(`not in room ${checked.target.room.name}`);
+  if (checked.target.kind === 'room') {
+    try {
+      const limit = resolveAccount(liveConfig(p.cfg), checked.accountId).roomTextChunkLimit;
+      const receipts = await sendRoomHtml(checked.accountId, checked.target.room, p.html, limit);
+      return { messageId: receipts[receipts.length - 1]?.id ?? '', chatId: checked.to };
+    } catch (err) {
+      rt.counters.droppedSends += 1;
+      throw err;
+    }
+  }
   const priority = priorityScope.getStore() ?? 'reply';
   try {
     const receipt = await rt.session.sendIm(checked.target.name, p.html, { priority });
@@ -82,6 +91,11 @@ export async function sendMarkdown(p: { cfg: unknown; accountId?: string | null;
   const markdown = await filtered({ cfg, accountId: p.accountId, to: p.to }, p.kind ?? 'final', 'markdown', p.markdown);
   if (markdown === null) return { messageIds: [] };
   const limit = resolveAccount(cfg, p.accountId).textChunkLimit;
+  const checked = checkTarget({ cfg, accountId: p.accountId, to: p.to });
+  if (checked.ok && checked.target.kind === 'room') {
+    const sent = await sendWire({ cfg, accountId: p.accountId, to: p.to, html: toWireHtml(markdown) });
+    return { messageIds: sent.messageId === '' ? [] : [sent.messageId] };
+  }
   const messageIds: string[] = [];
   for (const chunk of chunkText(toWireHtml(markdown), limit)) {
     if (chunk.trim().length === 0) continue;

@@ -7,15 +7,17 @@ import {
   CHANNEL_ID, RELOAD_NOOP_PREFIXES, buddyList, defaultAccountId, listAccountIds, oscarChannelConfigSchema, readPolicy, resolveAccount,
 } from './config.js';
 import type { ResolvedAccount } from './config.js';
+import { attachRooms } from './inbound/home.js';
 import { admitSender, createImHandler } from './inbound/im.js';
-import { dispatchImTurn } from './inbound/turn.js';
+import { recordRoomLine } from './inbound/room.js';
+import { dispatchImTurn, dispatchRoomTurn } from './inbound/turn.js';
 import { decodePeerId, encodePeerId, formatTarget, isAsciiName, normalizeName, parseTarget } from './names.js';
 import type { PeerRef } from './names.js';
 import { createNotices, sendNotice } from './notice.js';
 import { createOscarSession } from './oscar/index.js';
 import type { Logger, SessionState } from './oscar/index.js';
 import { outboundBase, sendAdapterText } from './outbound.js';
-import { roleOf, roomRequiresMention, toolDeny } from './policy.js';
+import { roleOf, roomRequiresMention, senderToolPolicy, toolDeny } from './policy.js';
 import {
   clearRuntime, createPasswordGuard, currentGeneration, getRuntime, liveConfig, nextGeneration, setRuntime, sharedLoginBudget,
 } from './runtime.js';
@@ -67,34 +69,15 @@ function readPassword(account: ResolvedAccount): string {
   return value;
 }
 
-function senderEntry(toolsBySender: Record<string, unknown> | undefined, sender: string): ToolPolicy | undefined {
-  if (!toolsBySender) return undefined;
-  const entry = obj(toolsBySender[`id:${sender}`]) ?? obj(toolsBySender[sender]) ?? obj(toolsBySender['*']);
-  if (!entry) return undefined;
-  return { allow: strings(entry.allow), alsoAllow: strings(entry.alsoAllow), deny: strings(entry.deny) };
-}
-
 function resolveToolPolicy(params: { cfg: unknown; groupId?: string | null; senderId?: string | null }): ToolPolicy | undefined {
   const ref = decodePeerId(params.groupId ?? '');
   if (!ref) return undefined;
   const policy = readPolicy(liveConfig(params.cfg));
   const sender = params.senderId ? normalizeName(params.senderId) : '';
-  let deny: string[];
-  let operator: ToolPolicy | undefined;
-  if (ref.kind === 'im') {
-    // The peer id names the originator; a missing sender id falls back to it, a different one can only narrow.
-    deny = toolDeny(sender && sender !== ref.peer ? 'unlisted' : roleOf(ref.peer, policy), policy);
-  } else {
-    deny = toolDeny(sender ? roleOf(sender, policy) : 'unlisted', policy);
-    operator = sender ? senderEntry(policy.rooms[ref.room.name]?.toolsBySender, sender) : undefined;
-  }
-  const merged = [...deny, ...(operator?.deny ?? []).filter((d) => !deny.includes(d))];
-  const out: ToolPolicy = {
-    ...(operator?.allow?.length ? { allow: operator.allow } : {}),
-    ...(operator?.alsoAllow?.length ? { alsoAllow: operator.alsoAllow } : {}),
-    ...(merged.length > 0 ? { deny: merged } : {}),
-  };
-  return Object.keys(out).length > 0 ? out : undefined;
+  if (ref.kind === 'room') return senderToolPolicy(sender, policy, ref.room.name);
+  // The peer id names the originator; a missing sender id falls back to it, a different one can only narrow.
+  const deny = toolDeny(sender && sender !== ref.peer ? 'unlisted' : roleOf(ref.peer, policy), policy);
+  return deny.length > 0 ? { deny } : undefined;
 }
 
 function ensure(parent: Obj, key: string): Obj {
@@ -178,6 +161,26 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     lastReplyAt: (peer) => rt.lastReplyAt.get(peer),
     updateBuddies: () => session.updateBuddies(),
   });
+  const detachRooms = attachRooms(rt, {
+    policy: () => readPolicy(getCfg()),
+    self: () => session.selfInfo()?.screenName ?? account.display,
+    now,
+    timers,
+    log,
+    runTurn: (req) => dispatchRoomTurn(req, { accountId, getCfg, log }),
+    record: (line) => recordRoomLine(line),
+    noticeStranger: (name, display) => notices.contact({ name, display, kind: 'invite', at: now() }),
+    tellOwners: async (text) => {
+      for (const owner of readPolicy(getCfg()).owners) {
+        // The server stores at most 10 offline messages per sender and recipient; a note must not use a slot a reply needs.
+        if (owner === self() || session.presenceOf(owner)?.online !== true) continue;
+        await sendNotice({ cfg: getCfg(), accountId, bot: self(), owner, text }).catch((err: unknown) => {
+          log.warn('owner note was not delivered', { owner, error: err instanceof Error ? err.message : String(err) });
+        });
+      }
+    },
+    contacts: () => notices.ring().map((entry) => ({ name: entry.name, kind: entry.kind, at: entry.lastAt })),
+  });
   const guard = createPasswordGuard({
     cacheKey: `${account.host}:${account.port}:${account.screenName}`,
     allowUnauthenticated: account.dangerouslyAllowUnauthenticatedServer,
@@ -207,6 +210,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     }),
   ];
   stoppers.set(accountId, async () => {
+    detachRooms();
     for (const off of offs) off();
     guard.stop();
     im.stop();

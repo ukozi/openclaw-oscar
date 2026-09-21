@@ -9,10 +9,10 @@ vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake
 vi.mock('openclaw/plugin-sdk/channel-reply-pipeline', async () => (await import('../fake/openclaw.js')).channelReplyPipeline);
 
 import type { TurnRequest } from '../../src/inbound/room.js';
-import { dispatchRoomTurn } from '../../src/inbound/turn.js';
+import { dispatchImTurn, dispatchRoomTurn } from '../../src/inbound/turn.js';
 import type { RoomTurnDeps } from '../../src/inbound/turn.js';
 import { setOutboundTextFilter } from '../../src/outbound.js';
-import { applyRoomReady, getRuntime, resetRuntimeForTests, setRuntime } from '../../src/runtime.js';
+import { applyRoomReady, getRuntime, resetRuntimeForTests, roomsExt, setRuntime, touchActivity } from '../../src/runtime.js';
 import { sdk } from '../fake/openclaw.js';
 import { fakeSession, makeRt, silentLog } from './rooms-fixtures.js';
 
@@ -132,5 +132,26 @@ describe('room turn', () => {
     await expect(dispatchRoomTurn(request({ group: undefined }), deps())).rejects.toThrow('room turn');
     await expect(dispatchRoomTurn(request({ peer: { kind: 'im', bot: 'botone', peer: 'alice' } }), deps())).rejects.toThrow('room turn');
     expect(sdk.inbound).toEqual([]);
+  });
+});
+
+describe('IM turns and the digest', () => {
+  const imDeps = () => ({ accountId: 'botone', self: () => 'botone', getCfg: () => cfg, now: () => 1_000_000, log: silentLog, ring: () => [] });
+  const im = (from: string) => ({ from, fromDisplay: from, text: 'hello', cookie: 7n, at: 999_000 });
+  const types = () => ((sdk.inbound[0]?.ctx.UntrustedStructuredContext ?? []) as { type?: string; payload: unknown }[]);
+
+  it('gives an owner the digest of the other conversations and notes the activity', async () => {
+    const rt = getRuntime('botone');
+    if (rt) touchActivity(rt, 'bob', 5);
+    await dispatchImTurn(im('alice'), imDeps());
+    expect(types().find((e) => e.type === 'awareness')?.payload).toMatchObject({ directMessages: [{ target: 'bob', lastActivityAt: 5 }] });
+    expect(rt && roomsExt(rt).activity.get('alice')).toBe(1_000_000);
+  });
+
+  it('gives an approved person no digest', async () => {
+    const rt = getRuntime('botone');
+    if (rt) touchActivity(rt, 'alice', 5);
+    await dispatchImTurn(im('bob'), imDeps());
+    expect(types().some((e) => e.type === 'awareness')).toBe(false);
   });
 });
