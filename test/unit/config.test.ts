@@ -76,6 +76,11 @@ describe('accounts', () => {
   it('returns an unconfigured shell for an unknown account', () => {
     expect(resolveAccount({}, 'nope')).toMatchObject({ accountId: 'nope', configured: false, screenName: '' });
   });
+
+  it('answers an unknown account id with the root defaults', () => {
+    const cfg = cfgOf({ ...good(), port: 5191, accounts: { botone: { screenName: 'botone' } } });
+    expect(resolveAccount(cfg, 'nope')).toMatchObject({ accountId: 'nope', configured: true, screenName: 'botone', host: 'oscar.example.net', port: 5191 });
+  });
 });
 
 describe('configProblems', () => {
