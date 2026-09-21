@@ -51,6 +51,7 @@ const rows: Row[] = [
   { name: 'approved unnamed in a room they invited the bot into', from: 'bob', text: 'anyone there?', invitedBy: 'bob', want: { kind: 'wake', why: 'invited', origin: 'approved' } },
   { name: 'approved unnamed in a room someone else invited the bot into', from: 'bob', text: 'anyone there?', invitedBy: 'alice', want: { kind: 'record' } },
   { name: 'inviter names the owner', from: 'bob', text: 'alice: are you here?', invitedBy: 'bob', want: { kind: 'record' } },
+  { name: 'inviter stored with spaces and case', from: 'bob', text: 'anyone there?', invitedBy: 'B ob', want: { kind: 'wake', why: 'invited', origin: 'approved' } },
   { name: 'inviter no longer listed', from: 'bob', text: 'anyone there?', invitedBy: 'bob', allowFrom: ['alice'], want: { kind: 'count' } },
   { name: 'approved whisper', from: 'bob', text: 'psst', whisper: true, want: { kind: 'wake', why: 'named', origin: 'approved' } },
   { name: 'unlisted unnamed', from: 'mallory', text: 'hi', want: { kind: 'count' } },

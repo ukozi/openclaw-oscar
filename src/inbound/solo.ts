@@ -52,7 +52,9 @@ export function soloRoute(input: SoloInput): SoloDecision {
     if (people.has(name)) return { kind: 'record' };
   }
   if (role === 'owner') return { kind: 'wake', why: 'lead', origin };
-  if (input.room.invitedBy === from) return { kind: 'wake', why: 'invited', origin };
+  if (input.room.invitedBy !== undefined && normalizeName(input.room.invitedBy) === from) {
+    return { kind: 'wake', why: 'invited', origin };
+  }
   return { kind: 'record' };
 }
 
