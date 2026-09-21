@@ -1,9 +1,10 @@
 import net from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { bucpLogin, probeLogin, strongHash } from '../../src/oscar/auth.js';
+import { CLIENT_ID, bucpLogin, probeLogin, strongHash } from '../../src/oscar/auth.js';
 import { fromHex } from '../../src/oscar/bytes.js';
 import { openConnection } from '../../src/oscar/connection.js';
 import type { OscarConnection } from '../../src/oscar/connection.js';
+import { decodeTlvs, findTlv, tlvStr, tlvU8 } from '../../src/oscar/tlv.js';
 import { ManualTimers, captureLog, settle, waitFor } from '../fake/oscar-client.js';
 import { FakeOscarServer } from '../fake/oscar-server.js';
 
@@ -49,6 +50,18 @@ describe('bucpLogin', () => {
     expect(result.ok).toBe(true);
     expect(keys).toEqual(['salt-botone']);
     expect(conn.isOpen).toBe(false);
+  });
+
+  it('sends the single-session flag and the client id, and no other credential TLV', async () => {
+    server = await FakeOscarServer.start();
+    server.addUser('botone', 'botpass1');
+    expect((await login('botone', 'botpass1')).ok).toBe(true);
+    const sent = server.snacsFrom('botone').find((s) => s.subtype === 0x02);
+    const tlvs = decodeTlvs(sent?.body ?? new Uint8Array());
+    expect(tlvs.map((t) => t.tag)).toEqual([0x01, 0x25, 0x03, 0x4a]);
+    expect(tlvU8(tlvs, 0x4a)).toBe(0x03);
+    expect(tlvStr(tlvs, 0x03)).toBe(CLIENT_ID);
+    expect(findTlv(tlvs, 0x25)).toHaveLength(16);
   });
 
   it('maps a bad password and an unknown name', async () => {
