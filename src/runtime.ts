@@ -1,6 +1,9 @@
+import type { HistoryEntry } from 'openclaw/plugin-sdk/reply-history';
+import { formatTarget, normalizeName } from './names.js';
 import type { PeerRef, RoomRef } from './names.js';
 import { createLoginBudget } from './oscar/index.js';
 import type { Logger, LoginBudget, OscarSession, StateReason, TimerApi } from './oscar/index.js';
+import type { Role } from './policy.js';
 
 export type RoomState = {
   ref: RoomRef; occupants: Set<string>; joinSeenAt: Map<string, number>; selfJoinedAt: number;
@@ -14,6 +17,7 @@ export type AccountRuntime = {
   counters: { droppedSends: number; eventGaps: number };
   halted?: { reason: StateReason; detail: string };
   probe?: { result: ProbeResult; at: number };
+  roomsExt?: RoomsExt;
 };
 export type HostRuntime = { config: { current(): unknown } };
 export type Timers = TimerApi;
@@ -152,4 +156,152 @@ export function createPasswordGuard(deps: PasswordGuardDeps): { onOnline(): void
 export function resetRuntimeForTests(): void {
   const g = globalThis as unknown as Record<symbol, Holder | undefined>;
   delete g[SLOT];
+}
+
+const RECENT_LINES_MAX = 20;
+
+export type HomeRoomStatus = 'unset' | 'pending' | 'joined' | 'missing' | 'failed';
+export type RoomLine = { from: string; role: Role; text: string; at: number };
+export type RoomsExt = {
+  home: { status: HomeRoomStatus; detail?: string };
+  homeRegistered: boolean;
+  homeBusy: boolean;
+  joined: Set<string>;
+  joining: Set<string>;
+  invitedBy: Map<string, string>;
+  history: Map<string, HistoryEntry[]>;
+  recentLines: Map<string, RoomLine[]>;
+  activity: Map<string, number>;
+  seen: Map<string, number>;
+  aloneTimers: Map<string, ReturnType<typeof setTimeout>>;
+  joinNotes: { last: Map<string, number>; sentAt: number[] };
+  tails: Map<string, Promise<void>>;
+};
+
+export function roomsExt(rt: AccountRuntime): RoomsExt {
+  if (!rt.roomsExt) {
+    rt.roomsExt = {
+      home: { status: 'unset' },
+      homeRegistered: false,
+      homeBusy: false,
+      joined: new Set(),
+      joining: new Set(),
+      invitedBy: new Map(),
+      history: new Map(),
+      recentLines: new Map(),
+      activity: new Map(),
+      seen: new Map(),
+      aloneTimers: new Map(),
+      joinNotes: { last: new Map(), sentAt: [] },
+      tails: new Map(),
+    };
+  }
+  return rt.roomsExt;
+}
+
+export function roomKey(ref: RoomRef): string {
+  return formatTarget({ kind: 'room', room: ref });
+}
+
+export function joinedRooms(rt: AccountRuntime): RoomRef[] {
+  const ext = roomsExt(rt);
+  return [...rt.rooms.entries()].filter(([key]) => ext.joined.has(key)).map(([, state]) => state.ref);
+}
+
+function refreshAlone(state: RoomState, self: string, now: number): void {
+  const others = [...state.occupants].some((name) => name !== self);
+  if (others) delete state.aloneSince;
+  else if (state.aloneSince === undefined) state.aloneSince = now;
+}
+
+export function applyRoomReady(
+  rt: AccountRuntime,
+  ref: RoomRef,
+  occupants: string[],
+  self: string,
+  now: number,
+): RoomState {
+  const key = roomKey(ref);
+  const ext = roomsExt(rt);
+  const prev = rt.rooms.get(key);
+  const names = occupants.map((name) => normalizeName(name));
+  const state: RoomState = {
+    ref,
+    occupants: new Set(names),
+    joinSeenAt: new Map(names.map((name) => [name, now])),
+    selfJoinedAt: now,
+    omittedCount: prev?.omittedCount ?? 0,
+  };
+  const invitedBy = ext.invitedBy.get(key) ?? prev?.invitedBy;
+  if (invitedBy !== undefined) state.invitedBy = invitedBy;
+  if (prev?.lastBotLine) state.lastBotLine = prev.lastBotLine;
+  refreshAlone(state, self, now);
+  rt.rooms.set(key, state);
+  ext.joined.add(key);
+  ext.joining.delete(key);
+  return state;
+}
+
+export function applyRoomJoin(
+  rt: AccountRuntime,
+  ref: RoomRef,
+  name: string,
+  self: string,
+  now: number,
+): RoomState | undefined {
+  const state = rt.rooms.get(roomKey(ref));
+  if (!state) return undefined;
+  const who = normalizeName(name);
+  state.occupants.add(who);
+  state.joinSeenAt.set(who, now);
+  refreshAlone(state, self, now);
+  return state;
+}
+
+export function applyRoomLeave(
+  rt: AccountRuntime,
+  ref: RoomRef,
+  name: string,
+  self: string,
+  now: number,
+): RoomState | undefined {
+  const state = rt.rooms.get(roomKey(ref));
+  if (!state) return undefined;
+  const who = normalizeName(name);
+  state.occupants.delete(who);
+  state.joinSeenAt.delete(who);
+  refreshAlone(state, self, now);
+  return state;
+}
+
+export function applyRoomClosed(rt: AccountRuntime, ref: RoomRef, willRejoin: boolean): void {
+  const key = roomKey(ref);
+  const ext = roomsExt(rt);
+  ext.joined.delete(key);
+  const state = rt.rooms.get(key);
+  if (willRejoin) {
+    if (state) {
+      state.occupants.clear();
+      state.joinSeenAt.clear();
+      delete state.aloneSince;
+    }
+    return;
+  }
+  rt.rooms.delete(key);
+  ext.invitedBy.delete(key);
+  ext.history.delete(key);
+  ext.recentLines.delete(key);
+  ext.activity.delete(key);
+}
+
+export function pushRecentLine(rt: AccountRuntime, key: string, line: RoomLine): void {
+  const ext = roomsExt(rt);
+  const lines = ext.recentLines.get(key) ?? [];
+  lines.push(line);
+  if (lines.length > RECENT_LINES_MAX) lines.splice(0, lines.length - RECENT_LINES_MAX);
+  ext.recentLines.set(key, lines);
+}
+
+export function touchActivity(rt: AccountRuntime, target: string, now: number): void {
+  roomsExt(rt).activity.set(target, now);
 }
