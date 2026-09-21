@@ -166,6 +166,8 @@ describe('rooms in the gateway', () => {
     const params = sdk.durable[0]?.params as { to: string; payloads: { text: string }[] };
     expect(params.to).toBe('alice');
     expect(params.payloads[0]?.text).toBe(copy.unlistedJoin('Mallory', 'testroom'));
+    await flush();
+    expect(sdk.durable.map((d) => (d.params as { to: string }).to)).toEqual(['alice']);
   });
 
   it('stops listening when the account stops', async () => {
