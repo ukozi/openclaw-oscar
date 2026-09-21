@@ -78,6 +78,7 @@ describe('sending', () => {
   it('sanitizes through the wire converter', () => {
     expect(outboundBase.sanitizeText({ text: '**x** <script>' })).toBe(toWireHtml('**x** <script>'));
     expect(outboundBase.deliveryMode).toBe('gateway');
+    expect(outboundBase).toMatchObject({ chunkerMode: 'text', textChunkLimit: 1800 });
   });
 
   it('counts a failed send and rethrows', async () => {
