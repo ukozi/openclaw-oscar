@@ -4,6 +4,7 @@ import type { PeerRef, RoomRef } from './names.js';
 import { createLoginBudget } from './oscar/index.js';
 import type { Logger, LoginBudget, OscarSession, StateReason, TimerApi } from './oscar/index.js';
 import type { Role } from './policy.js';
+import type { AwayController } from './presence/away.js';
 
 export type RoomState = {
   ref: RoomRef; occupants: Set<string>; joinSeenAt: Map<string, number>; selfJoinedAt: number;
@@ -18,6 +19,8 @@ export type AccountRuntime = {
   halted?: { reason: StateReason; detail: string };
   probe?: { result: ProbeResult; at: number };
   roomsExt?: RoomsExt;
+  away?: AwayController;
+  stopPresence?: () => Promise<void>;
 };
 export type HostRuntime = { config: { current(): unknown } };
 export type Timers = TimerApi;
