@@ -2,7 +2,7 @@ import { vi } from 'vitest';
 import { z } from 'zod';
 
 export type Rec = Record<string, unknown>;
-export type FakeReply = { text: string };
+export type FakeReply = { text: string; kind?: string };
 
 type Outbound = {
   sanitizeText?: (p: { text: string; payload: Rec }) => string;
@@ -94,10 +94,11 @@ async function runChannelInboundEvent(params: Rec): Promise<Rec> {
   await typing?.onReplyStart();
   try {
     for (const reply of await sdk.agent(ctx)) {
+      const info = { kind: reply.kind ?? 'final' };
       try {
-        await delivery.deliver(reply, { kind: 'final' });
+        await delivery.deliver(reply, info);
       } catch (err) {
-        delivery.onError?.(err, { kind: 'final' });
+        delivery.onError?.(err, info);
       }
     }
   } finally {

@@ -79,7 +79,7 @@ describe('fake sdk', () => {
   it('maps context fields the way core does', () => {
     const ctx = call(channelInbound, 'buildChannelInboundEventContext')({
       channel: 'oscar', accountId: 'botone', from: 'oscar:alice',
-      sender: { id: 'alice', name: 'Alice' }, conversation: { kind: 'direct', id: 'botone/alice' },
+      sender: { id: 'alice', name: 'Alice' }, conversation: { kind: 'direct', id: 'botone/alice', label: 'alice' },
       route: { agentId: 'main', accountId: 'botone', routeSessionKey: 'k' }, reply: { to: 'alice' },
       message: { rawBody: 'hi', bodyForAgent: 'hi there' }, access: { commands: { authorized: true } },
       supplemental: { untrustedContext: [{ label: 'x', payload: 1 }] }, extra: { OwnerAllowFrom: ['alice'] },
@@ -90,6 +90,8 @@ describe('fake sdk', () => {
       CommandAuthorized: true, OriginatingChannel: 'oscar', OriginatingTo: 'alice', OwnerAllowFrom: ['alice'],
     });
     expect(ctx.UntrustedStructuredContext).toEqual([{ label: 'x', payload: 1 }]);
+    expect(ctx.ConversationLabel).toBe('alice');
+    expect(ctx.GroupSubject).toBeUndefined();
   });
 
   it('sends a durable batch through the plugin adapter and flags a mirror without a session', async () => {

@@ -119,13 +119,13 @@ describe('room turn', () => {
       seen.push(`${meta.kind}:${meta.format}:${meta.target.kind}`);
       return null;
     });
-    sdk.agent = () => [{ text: 'an answer' }];
+    sdk.agent = () => [{ text: 'a block', kind: 'block' }, { text: 'an answer' }];
     try {
       await dispatchRoomTurn(request(), deps());
     } finally {
       setOutboundTextFilter('botone', null);
     }
-    expect(seen).toEqual(['final:markdown:room']);
+    expect(seen).toEqual(['block:markdown:room', 'final:markdown:room']);
   });
 
   it('refuses a request that is not a room turn', async () => {
