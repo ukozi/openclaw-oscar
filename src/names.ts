@@ -1,5 +1,6 @@
 import { normalizeScreenName } from './oscar/index.js';
 import type { RoomRef } from './oscar/index.js';
+import type { Role } from './policy.js';
 
 export type { RoomRef } from './oscar/index.js';
 
@@ -105,4 +106,17 @@ export function parseTarget(raw: string, bot: string): Target | null {
 
 export function formatTarget(t: Target): string {
   return t.kind === 'im' ? t.name : `room:${t.room.exchange}:${t.room.name}`;
+}
+
+export function escapeNonAscii(s: string): string {
+  let out = '';
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0;
+    out += cp >= 0x20 && cp <= 0x7e ? ch : `\\u{${cp.toString(16)}}`;
+  }
+  return out;
+}
+
+export function senderLabel(name: string, role: Role): string {
+  return `${escapeNonAscii(name)} (${role})`;
 }
