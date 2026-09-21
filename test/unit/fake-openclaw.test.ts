@@ -13,6 +13,18 @@ describe('fake agent api', () => {
     expect(fake.subscriptionIds()).toEqual(['a', 'b']);
   });
 
+  it('gives every subscription its own copy and treats an empty stream list as all', async () => {
+    const fake = createFakeAgentApi();
+    const got: { data: Record<string, unknown> }[] = [];
+    fake.api.agent.events.registerAgentEventSubscription({ id: 'a', streams: [], handle: (event) => void got.push(event) });
+    fake.api.agent.events.registerAgentEventSubscription({ id: 'b', handle: (event) => void got.push(event) });
+    await fake.emitLifecycle('r1', 'start');
+    expect(got).toHaveLength(2);
+    expect(got[0]).not.toBe(got[1]);
+    got[0]!.data.phase = 'tampered';
+    expect(got[1]!.data.phase).toBe('start');
+  });
+
   it('fires hooks with the event and context shapes core uses', async () => {
     const fake = createFakeAgentApi();
     const seen: unknown[] = [];

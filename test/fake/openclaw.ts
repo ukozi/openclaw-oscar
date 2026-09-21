@@ -475,7 +475,8 @@ export function createFakeAgentApi(opts: {
     seq += 1;
     const event = { runId, seq, stream, ts: Date.now(), data, ...(sessionKey ? { sessionKey } : {}) };
     for (const subscription of subscriptions) {
-      if (subscription.streams && !subscription.streams.includes(stream)) continue;
+      const streams = subscription.streams;
+      if (streams && streams.length > 0 && !streams.includes(stream)) continue;
       await subscription.handle(structuredClone(event) as never, {} as never);
     }
   }
