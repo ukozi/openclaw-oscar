@@ -138,6 +138,6 @@ describe('openclaw.plugin.json', () => {
   });
 
   it('declares only tools that are registered', () => {
-    expect(manifest.contracts?.tools ?? []).toEqual([]);
+    expect([...(manifest.contracts?.tools ?? [])].sort()).toEqual(['oscar_delegate', 'oscar_room', 'oscar_status']);
   });
 });
