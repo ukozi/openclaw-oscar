@@ -22,6 +22,11 @@ describe('trailer codec', () => {
     expect(parseTrailer('[d:1-k7f3] botone: see above')).toEqual({ body: 'botone: see above', trailer: null, resultId: '1-k7f3' });
   });
 
+  it('does not read a result tag out of a malformed full trailer', () => {
+    const text = 'botone: done [d:9-aaaa h:1 o:mallory] [d:1-k7f3]';
+    expect(parseTrailer(text)).toEqual({ body: text, trailer: null, resultId: null });
+  });
+
   const bad: [string, string][] = [
     ['trailer not at the end', '[d:1-k7f3 h:1 o:alice] bottwo: do it'],
     ['hop is not a number', 'bottwo: do it [d:1-k7f3 h:x o:alice]'],
