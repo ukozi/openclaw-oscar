@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChainController } from '../../../src/chain/controller.js';
 import type { OscarSession } from '../../../src/oscar/index.js';
 import { clearRuntime, setRuntime } from '../../../src/runtime.js';
-import { DELEGATE_TOOL, createDelegateTool } from '../../../src/tools.js';
+import { DELEGATE_TOOL, createDelegateTool, registerOscarTools } from '../../../src/tools.js';
 import { ROOM } from './fixtures.js';
 
 function install(delegate: ChainController['delegate'] | null) {
@@ -66,6 +66,20 @@ describe('oscar_delegate', () => {
     expect(a).not.toBe(b);
     expect(a.name).toBe(DELEGATE_TOOL);
     expect(a.description).toContain('not a subagent');
+  });
+
+  it('is the builder behind the registered name', () => {
+    const registered: { factory: (ctx: Record<string, unknown>) => unknown; names?: string[] }[] = [];
+    registerOscarTools({
+      registerTool: (factory: unknown, opts?: { names?: string[] }) => {
+        registered.push({ factory: factory as (ctx: Record<string, unknown>) => unknown, names: opts?.names });
+      },
+    } as never);
+    const factory = registered.find((r) => r.names?.[0] === DELEGATE_TOOL)?.factory;
+    expect(factory).toBeTypeOf('function');
+    const built = factory?.({ messageChannel: 'oscar', sessionKey: 'sk-room' }) as { name?: string } | null;
+    expect(built?.name).toBe(DELEGATE_TOOL);
+    expect(factory?.({ messageChannel: 'slack' })).toBeNull();
   });
 
   it('is declared in the manifest', () => {
