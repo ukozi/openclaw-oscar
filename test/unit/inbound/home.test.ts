@@ -217,6 +217,14 @@ describe('unlisted-join note', () => {
     await flush();
     expect(s.ownerNotes).toEqual([`${copy.unlistedJoin('Alicе', 'testroom')} ${copy.noticeOddName()}`]);
   });
+
+  it('flags a look-alike name that hides behind a plain display name', async () => {
+    const s = setup();
+    s.fake.emit('roomReady', { room: ROOM, occupants: ['botone'] });
+    s.fake.emit('roomJoin', { room: ROOM, name: 'alicе', display: 'Alice' });
+    await flush();
+    expect(s.ownerNotes).toEqual([`${copy.unlistedJoin('Alice', 'testroom')} ${copy.noticeOddName()}`]);
+  });
 });
 
 describe('roomIssues', () => {

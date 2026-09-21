@@ -72,7 +72,7 @@ function noteUnlistedJoin(rt: AccountRuntime, deps: RoomDeps, ref: RoomRef, name
   }
   notes.last.set(name, now);
   notes.sentAt.push(now);
-  const odd = isAsciiName(display) ? '' : ` ${copy.noticeOddName()}`;
+  const odd = isAsciiName(display) && isAsciiName(name) ? '' : ` ${copy.noticeOddName()}`;
   deps.tellOwners(`${copy.unlistedJoin(display, ref.name)}${odd}`).catch((err: unknown) => {
     deps.log.warn('unlisted-join note failed', { room: roomKey(ref), error: errText(err) });
   });
