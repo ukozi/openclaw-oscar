@@ -112,3 +112,22 @@ export interface OscarSession {
   setAway(text: string | null): Promise<void>;
   probePasswordCheck(): Promise<PasswordCheck>;
 }
+
+export type SnacIn = { family: number; subtype: number; requestId: number; body: Uint8Array };
+export type LinkClose = { clean: boolean };
+export interface SnacLink {
+  send(family: number, subtype: number, body: Uint8Array): number;
+  request(family: number, subtype: number, body: Uint8Array, timeoutMs?: number): Promise<SnacIn>;
+  onSnac(fn: (snac: SnacIn) => void): () => void;
+  onClose(fn: (info: LinkClose) => void): () => void;
+  close(): void;
+}
+export type RoomErrorCode = 'no-such-room' | 'too-long' | 'not-online' | 'unavailable';
+export class OscarRoomError extends Error {
+  readonly code: RoomErrorCode;
+  constructor(code: RoomErrorCode, message?: string) {
+    super(message ?? code);
+    this.name = 'OscarRoomError';
+    this.code = code;
+  }
+}
