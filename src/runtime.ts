@@ -1,4 +1,5 @@
 import type { HistoryEntry } from 'openclaw/plugin-sdk/reply-history';
+import type { ChainController } from './chain/controller.js';
 import { formatTarget, normalizeName } from './names.js';
 import type { PeerRef, RoomRef } from './names.js';
 import { createLoginBudget } from './oscar/index.js';
@@ -21,6 +22,7 @@ export type AccountRuntime = {
   roomsExt?: RoomsExt;
   away?: AwayController;
   stopPresence?: () => Promise<void>;
+  chain?: ChainController;
 };
 export type HostRuntime = { config: { current(): unknown } };
 export type Timers = TimerApi;

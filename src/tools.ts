@@ -1,13 +1,15 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/channel-core';
 import type { AnyAgentTool, OpenClawPluginToolContext } from 'openclaw/plugin-sdk/core';
+import { roomKeyOf } from './chain/types.js';
 import { CHANNEL_ID, listAccountIds, readPolicy, TOOL_NAMES } from './config.js';
+import { copy } from './copy.js';
 import type { RootPolicy } from './config.js';
 import { joinExtraRoom } from './inbound/invite.js';
 import { escapeNonAscii, normalizeName, parseTarget, roomNameProblem } from './names.js';
 import type { RoomRef } from './names.js';
 import { roleOf } from './policy.js';
 import { STATUS_TOOL, createOscarStatusTool, runtimeWiring } from './presence/register.js';
-import { applyRoomClosed, getRuntime, roomKey, roomsExt } from './runtime.js';
+import { applyRoomClosed, getRuntime, roomKey, roomsExt, runtimeForSessionKey } from './runtime.js';
 
 export type ToolName = (typeof TOOL_NAMES)[number];
 export type ToolBuilder = (ctx: OpenClawPluginToolContext) => AnyAgentTool | null;
@@ -145,3 +147,39 @@ export function createRoomTool(ctx: RoomToolContext, env: RoomToolEnv = {}): Roo
 
 installTool('oscar_room', (ctx) => createRoomTool(ctx) as unknown as AnyAgentTool | null);
 installTool(STATUS_TOOL, (ctx) => createOscarStatusTool(ctx, runtimeWiring));
+
+export const DELEGATE_TOOL = 'oscar_delegate';
+
+const delegateParameters = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['to', 'task'],
+  properties: {
+    to: { type: 'string', description: 'Screen name or alias of a teammate below you who is in this room.' },
+    task: { type: 'string', description: 'The job, in one or two sentences. It is posted in the room for everyone to see.' },
+  },
+} as const;
+
+export function createDelegateTool(ctx: { sessionKey?: string; requesterSenderId?: string }) {
+  return {
+    name: DELEGATE_TOOL,
+    label: 'Hand off',
+    description:
+      'Hand a job to a teammate below you in this chat room. The teammate answers in the room. This is not a subagent.',
+    parameters: delegateParameters,
+    async execute(_toolCallId: string, params: { to?: unknown; task?: unknown }) {
+      const rt = ctx.sessionKey ? runtimeForSessionKey(ctx.sessionKey) : undefined;
+      const peer = ctx.sessionKey ? rt?.sessionKeys.get(ctx.sessionKey)?.peer : undefined;
+      if (!rt?.chain || !peer || peer.kind !== 'room') throw new Error(copy.delegateError('not-in-room'));
+      const text = await rt.chain.delegate({
+        roomKey: roomKeyOf(peer.room),
+        requester: ctx.requesterSenderId,
+        to: String(params.to ?? ''),
+        task: String(params.task ?? ''),
+      });
+      return { content: [{ type: 'text' as const, text }], details: { status: 'sent' as const } };
+    },
+  } as const;
+}
+
+installTool(DELEGATE_TOOL, (ctx) => createDelegateTool(ctx) as unknown as AnyAgentTool);
