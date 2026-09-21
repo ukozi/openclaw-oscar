@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { encodeServiceRequest } from '../../../src/oscar/bos.js';
+import { ServiceRefusedError, encodeServiceRequest } from '../../../src/oscar/bos.js';
+import { RedirectRefusedError } from '../../../src/oscar/connection.js';
 import {
   decodeNavInfo,
   encodeCreateRoom,
@@ -178,6 +179,18 @@ describe('requestService', () => {
       message,
     });
     expect(r.asked).toHaveLength(1);
+  });
+
+  it('reports unavailable for the refusals the session really throws', async () => {
+    for (const refusal of [new ServiceRefusedError(0x1c), new RedirectRefusedError('127.0.0.1:5190')]) {
+      const r = resolver(async () => {
+        throw refusal;
+      });
+      await expect(requestService(r.resolve, { foodGroup: FAMILY_CHAT, room: testroom, screenName: 'botone' })).rejects.toMatchObject({
+        code: 'unavailable',
+        message: refusal.message,
+      });
+    }
   });
 
   it('reports not-online when BOS is down or closes under the request', async () => {
