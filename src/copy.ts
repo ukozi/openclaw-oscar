@@ -21,6 +21,19 @@ function orDefault(text: string, fallback: string): string {
   return text.trim().length > 0 ? text : fallback;
 }
 
+export type DelegateErrorKind =
+  | 'not-in-room'
+  | 'absent'
+  | 'not-below'
+  | 'hops'
+  | 'wildcard'
+  | 'mismatch'
+  | 'rate'
+  | 'send-failed'
+  | 'lost-turn'
+  | 'too-long'
+  | 'empty';
+
 export const copy = {
   noticeIm: (name: string): string => `${name} tried to message me. I did not reply.`,
   noticeInvite: (name: string): string => `${name} invited me to a chat. I did not join.`,
@@ -42,6 +55,40 @@ export const copy = {
   mismatch: (a: string, b: string): string =>
     `${a} and ${b} disagree about the chain of command. Using name order until their configs match.`,
   outcome: (delegator: string, id: string, kind: Outcome): string => `${delegator}: ${OUTCOMES[kind]} [d:${id}]`,
+  delegateError: (kind: DelegateErrorKind, to = ''): string => {
+    switch (kind) {
+      case 'not-in-room':
+        return 'hand-offs only work in a room; tell the owner';
+      case 'absent':
+        return `${to} is not in this room`;
+      case 'not-below':
+        return `${to} is not below you in the chain`;
+      case 'hops':
+        return 'too many hops';
+      case 'wildcard':
+        return 'the chain is unsafe on this host: commands.ownerAllowFrom contains *';
+      case 'mismatch':
+        return `${to} has a different chain config; hand-offs to it are off until the configs match`;
+      case 'rate':
+        return 'the room is rate limited and the hand-off has not gone out; tell the owner';
+      case 'lost-turn':
+        return 'I lost track of who asked for this; ask them to repeat it';
+      case 'too-long':
+        return 'the task is too long for one room message; shorten it';
+      case 'send-failed':
+        return 'the hand-off could not be sent; tell the owner';
+      case 'empty':
+        return 'say what the job is';
+    }
+  },
+  delegateSent: (to: string, id: string): string => `handed to ${to} as ${id}`,
+  noteTimeout: (to: string, id: string, minutes: number): string =>
+    `System note: ${to} has not answered hand-off ${id} after ${minutes} minutes. Tell the person who asked.`,
+  noteLeft: (to: string, id: string): string =>
+    `System note: ${to} left the room before answering hand-off ${id}. Tell the person who asked.`,
+  noteLostLedger: (id: string): string =>
+    `System note: this is a result for hand-off ${id}, which I no longer have a record of.`,
+  noteResult: (to: string, id: string): string => `System note: ${to} finished hand-off ${id}. Review the result below.`,
   awayDefault: (): string => AWAY_DEFAULT,
   awayPhrase: (family: AwayFamily): string => AWAY_PHRASES[family],
   awayAutoReply: (line: string): string => orDefault(line.trim(), AWAY_DEFAULT),
