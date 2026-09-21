@@ -653,6 +653,13 @@ export class FakeOscarServer {
     this.record(conn.name, snac, conn.kind);
     const link = this.wrap(conn);
     if (link && (conn.kind === 'chatnav' || conn.kind === 'chat')) {
+      // One route table serves every connection kind (server/oscar/handler.go:1046,1202), so the
+      // liveness query is answered on a chatnav or room socket as well as on BOS.
+      const owner = this.sessions.get(conn.name);
+      if (snac.family === 1 && snac.subtype === 0x0e && owner) {
+        conn.snac(1, 0x0f, snac.requestId, this.userInfo(owner));
+        return;
+      }
       this.roomEngine.snac(link, snac.family, snac.subtype, snac.requestId, snac.body);
       return;
     }

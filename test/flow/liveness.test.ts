@@ -45,8 +45,8 @@ describe('a session that is meant to stay online', () => {
     for (let round = 0; round < 5; round++) await h.timers.advance(90_000);
     expect(h.session.rooms().map((r) => r.room.name)).toEqual(['testroom']);
     expect(server.occupants({ exchange: 4, name: 'testroom' })).toContain('botone');
-    // the room socket opened after the main one, so its rounds sit inside the window rather than on it
-    expect(userInfoQueries('chat') - atJoin).toBeGreaterThanOrEqual(4);
+    expect(userInfoQueries('chat') - atJoin).toBe(5);
+    expect(h.logs.lines.filter((l) => l.fields?.['kind'] === 'probe-timeout')).toEqual([]);
     expect(probesSent()).toBe(0);
   });
 
