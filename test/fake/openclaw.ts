@@ -75,7 +75,14 @@ async function runChannelInboundEvent(params: Rec): Promise<Rec> {
   const adapter = params.adapter as { ingest: (raw: unknown) => unknown; resolveTurn: (...a: unknown[]) => unknown };
   const input = (await adapter.ingest(params.raw)) as Rec | null;
   if (!input) return { admission: { kind: 'drop', reason: 'ingest-null' }, dispatched: false };
-  const turn = (await adapter.resolveTurn(input, { kind: 'message', canStartAgentTurn: true }, {})) as Rec;
+  const eventClass = { kind: 'message', canStartAgentTurn: true };
+  const preflightFn = (params.adapter as { preflight?: (input: unknown, eventClass: unknown) => unknown }).preflight;
+  const preflight = ((await preflightFn?.(input, eventClass)) ?? {}) as KernelPreflight;
+  if (preflight.admission && preflight.admission.kind !== 'dispatch' && preflight.admission.kind !== 'observeOnly') {
+    recordDroppedHistory(input as KernelInput, preflight);
+    return { admission: preflight.admission, dispatched: false };
+  }
+  const turn = (await adapter.resolveTurn(input, eventClass, preflight)) as Rec;
   const ctx = (turn.ctxPayload ?? {}) as Rec;
   const runId = `run-${sdk.inbound.length + 1}`;
   sdk.inbound.push({ channel: String(params.channel), accountId: params.accountId as string | undefined, input, turn, ctx, runId });
@@ -308,3 +315,96 @@ export const channelConfigSchema: Rec = {
     ...(options?.uiHints ? { uiHints: options.uiHints } : {}),
   }),
 };
+
+type KernelHistoryEntry = { sender: string; body: string; timestamp?: number; messageId?: string };
+type KernelInput = { id: string; timestamp?: number; rawText: string; textForAgent?: string };
+type KernelAdmission = { kind: 'dispatch' | 'observeOnly' | 'handled' | 'drop'; reason?: string; recordHistory?: boolean };
+type KernelPreflight = {
+  admission?: KernelAdmission;
+  message?: { senderLabel?: string; envelopeFrom?: string; bodyForAgent?: string; body?: string; rawBody?: string };
+  history?: { key: string; limit: number; historyMap: Map<string, KernelHistoryEntry[]>; recordOnDrop?: boolean };
+};
+type KernelParams = {
+  channel: string;
+  accountId?: string;
+  raw: unknown;
+  adapter: {
+    ingest: (raw: unknown) => unknown;
+    preflight?: (input: unknown, eventClass: unknown) => unknown;
+    resolveTurn: (input: unknown, eventClass: unknown, preflight: unknown) => unknown;
+  };
+};
+
+export type InboundKernelCall = {
+  channel: string;
+  accountId?: string;
+  messageId?: string;
+  admission: string;
+  reason?: string;
+  recordHistory: boolean;
+  historyKey?: string;
+  historyLimit?: number;
+};
+
+// What core does with a preflight drop (dist/kernel-BMsNZe7F.js:588-611 at openclaw 2026.7.1-2).
+function recordDroppedHistory(input: KernelInput, preflight: KernelPreflight): void {
+  const admission = preflight.admission;
+  const history = preflight.history;
+  if (!admission || admission.kind !== 'drop' || !history || history.limit <= 0) return;
+  if (admission.recordHistory !== true && history.recordOnDrop !== true) return;
+  const message = preflight.message ?? {};
+  const body = message.bodyForAgent ?? message.body ?? message.rawBody ?? input.textForAgent ?? input.rawText;
+  if (body.trim().length === 0) return;
+  const entries = history.historyMap.get(history.key) ?? [];
+  entries.push({
+    sender: message.senderLabel ?? message.envelopeFrom ?? 'unknown',
+    body,
+    timestamp: input.timestamp,
+    messageId: input.id,
+  });
+  if (entries.length > history.limit) entries.splice(0, entries.length - history.limit);
+  history.historyMap.set(history.key, entries);
+}
+
+export function createInboundKernel() {
+  const calls: InboundKernelCall[] = [];
+  const dispatched: unknown[] = [];
+
+  async function run(params: unknown): Promise<unknown> {
+    const p = params as KernelParams;
+    const input = (await p.adapter.ingest(p.raw)) as KernelInput | null;
+    if (!input) {
+      calls.push({ channel: p.channel, accountId: p.accountId, admission: 'drop', reason: 'ingest-null', recordHistory: false });
+      return { admission: { kind: 'drop', reason: 'ingest-null' }, dispatched: false };
+    }
+    const eventClass = { kind: 'message', canStartAgentTurn: true };
+    const preflight = ((await p.adapter.preflight?.(input, eventClass)) ?? {}) as KernelPreflight;
+    const admission = preflight.admission;
+    if (admission && admission.kind !== 'dispatch' && admission.kind !== 'observeOnly') {
+      recordDroppedHistory(input, preflight);
+      calls.push({
+        channel: p.channel,
+        accountId: p.accountId,
+        messageId: input.id,
+        admission: admission.kind,
+        reason: admission.reason,
+        recordHistory: admission.recordHistory === true,
+        historyKey: preflight.history?.key,
+        historyLimit: preflight.history?.limit,
+      });
+      return { admission, dispatched: false };
+    }
+    const resolved = await p.adapter.resolveTurn(input, eventClass, preflight);
+    dispatched.push(resolved);
+    calls.push({
+      channel: p.channel,
+      accountId: p.accountId,
+      messageId: input.id,
+      admission: admission?.kind ?? 'dispatch',
+      recordHistory: false,
+    });
+    return { admission: admission ?? { kind: 'dispatch' }, dispatched: true };
+  }
+
+  return { run, calls, dispatched };
+}
