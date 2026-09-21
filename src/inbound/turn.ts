@@ -12,6 +12,7 @@ import type { Logger } from '../oscar/index.js';
 import { sendMarkdown, typingFor } from '../outbound.js';
 import { neutralizeDirectives, roleOf } from '../policy.js';
 import { getRuntime } from '../runtime.js';
+import type { TurnRequest } from './room.js';
 
 export type ImTurn = {
   from: string; fromDisplay: string; text: string; cookie: bigint; at: number;
@@ -107,6 +108,86 @@ export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void
           },
         },
         ...(typingCallbacks ? { dispatcherOptions: { typingCallbacks } } : {}),
+        replyOptions: {
+          disableBlockStreaming: typeof account.blockStreaming === 'boolean' ? !account.blockStreaming : true,
+          sourceReplyDeliveryMode: 'automatic',
+          onAgentRunStart: (runId: string) => deps.onRunStart?.(runId, route.sessionKey),
+        },
+        record: {
+          onRecordError: (err) => {
+            deps.log.warn('session meta was not recorded', { error: err instanceof Error ? err.message : String(err) });
+          },
+        },
+      }),
+    },
+  });
+}
+
+export type RoomTurnDeps = Pick<TurnDeps, 'accountId' | 'getCfg' | 'log' | 'onRunStart'>;
+
+export async function dispatchRoomTurn(req: TurnRequest, deps: RoomTurnDeps): Promise<void> {
+  const peer = req.peer;
+  const group = req.group;
+  if (peer.kind !== 'room' || !group) throw new Error('a room turn needs a room peer and group facts');
+  const rawCfg = deps.getCfg();
+  const cfg = rawCfg as OpenClawConfig;
+  const policy = readPolicy(rawCfg);
+  const account = resolveAccount(rawCfg, deps.accountId);
+  const peerId = encodePeerId(peer);
+  const to = formatTarget({ kind: 'room', room: peer.room });
+  const route = resolveAgentRoute({ cfg, channel: CHANNEL_ID, accountId: deps.accountId, peer: { kind: 'group', id: peerId } });
+  getRuntime(deps.accountId)?.sessionKeys.set(route.sessionKey, { accountId: deps.accountId, peer });
+
+  const ctxPayload = buildChannelInboundEventContext({
+    channel: CHANNEL_ID,
+    accountId: deps.accountId,
+    messageId: req.messageId,
+    timestamp: req.timestamp,
+    from: `${CHANNEL_ID}:${req.sender.name}`,
+    sender: { id: req.sender.name, name: req.sender.display, isBot: req.sender.role === 'bot' },
+    conversation: { kind: 'group', id: peerId, label: group.label },
+    route: { agentId: route.agentId, accountId: deps.accountId, routeSessionKey: route.sessionKey },
+    reply: { to, originatingTo: to },
+    message: { rawBody: req.text, body: req.text, bodyForAgent: req.text, commandBody: req.text, inboundHistory: group.history },
+    access: {
+      commands: { authorized: req.commandAuthorized, allowTextCommands: true, useAccessGroups: false },
+      // Core never derives mention state; false here can make it drop a group dispatch silently.
+      mentions: { canDetectMention: true, wasMentioned: true, effectiveWasMentioned: true, requireMention: true },
+    },
+    supplemental: { untrustedContext: req.untrustedContext, groupSystemPrompt: group.systemPrompt },
+    channelContext: { sender: { id: req.sender.name }, chat: { id: peerId, accountId: deps.accountId, kind: 'room' } },
+    extra: { OwnerAllowFrom: [...policy.owners] },
+  });
+
+  await runChannelInboundEvent({
+    channel: CHANNEL_ID,
+    accountId: deps.accountId,
+    raw: req,
+    adapter: {
+      ingest: (raw) => ({ id: raw.messageId, timestamp: raw.timestamp, rawText: raw.text, textForAgent: raw.text, textForCommands: raw.text, raw }),
+      resolveTurn: () => ({
+        cfg,
+        channel: CHANNEL_ID,
+        accountId: deps.accountId,
+        agentId: route.agentId,
+        routeSessionKey: route.sessionKey,
+        storePath: resolveStorePath(cfg.session?.store, { agentId: route.agentId }),
+        ctxPayload,
+        recordInboundSession,
+        dispatchReplyWithBufferedBlockDispatcher,
+        messageId: req.messageId,
+        delivery: {
+          deliver: async (payload, info) => {
+            const text = payload.text?.trim();
+            if (!text) return;
+            const sent = await sendMarkdown({ cfg: deps.getCfg(), accountId: deps.accountId, to, markdown: text, kind: info.kind });
+            return { messageIds: sent.messageIds, visibleReplySent: sent.messageIds.length > 0 };
+          },
+          onError: (err, info) => {
+            deps.log.warn('room reply was not delivered', { to, kind: info.kind, error: err instanceof Error ? err.message : String(err) });
+          },
+        },
+        ...(req.botLoopProtection ? { botLoopProtection: req.botLoopProtection } : {}),
         replyOptions: {
           disableBlockStreaming: typeof account.blockStreaming === 'boolean' ? !account.blockStreaming : true,
           sourceReplyDeliveryMode: 'automatic',

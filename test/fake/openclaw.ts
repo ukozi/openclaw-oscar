@@ -130,6 +130,8 @@ function buildChannelInboundEventContext(params: Rec): Rec {
     ChatType: conversation.kind,
     ChatId: conversation.id,
     ConversationLabel: conversation.label,
+    GroupSubject: conversation.kind !== 'direct' ? conversation.label : undefined,
+    InboundHistory: message.inboundHistory,
     SenderName: sender.name ?? sender.displayLabel,
     SenderId: sender.id,
     SenderIsBot: sender.isBot,
