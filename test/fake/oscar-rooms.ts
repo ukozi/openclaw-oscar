@@ -100,6 +100,17 @@ const RATE_CLASSES = [
   [5, 10, 5500, 5300, 4200, 3000, 8000],
 ] as const;
 
+// foodgroup/chat.go:130-134 replaces a //roll line with the dice result and re-attributes it to the
+// pseudo user OnlineHost, keeping the message id the sender gave it. foodgroup/chat.go:177-191 writes
+// the text. The id surviving the rewrite is what lets a sender still recognise its own receipt.
+function diceLine(display: string): Tlv[] {
+  return [
+    { tag: CHAT_MSG_TLV_ENCODING, value: Buffer.from('us-ascii') },
+    { tag: CHAT_MSG_TLV_LANG, value: Buffer.from('en') },
+    { tag: CHAT_MSG_TLV_TEXT, value: Buffer.from(`<HTML><BODY>${display} rolled 2 6-sided dice: 3 4</BODY></HTML>`) },
+  ];
+}
+
 function u16(value: number): Buffer {
   const b = Buffer.alloc(2);
   b.writeUInt16BE(value, 0);
@@ -387,8 +398,8 @@ export class FakeRooms {
         ];
     const cookie = opts.toc ? 0n : (opts.cookie ?? randomBytes(8).readBigUInt64BE(0) | 1n);
     const whisperTo = opts.toc ? undefined : opts.whisperTo;
-    const sender = serverSeesRoll(text) ? 'OnlineHost' : display;
-    this.relay(found, name, sender, cookie, whisperTo === undefined, whisperTo, inner, text);
+    const rewritten = serverSeesRoll(text);
+    this.relay(found, name, rewritten ? 'OnlineHost' : display, cookie, whisperTo === undefined, whisperTo, rewritten ? diceLine(display) : inner, text);
   }
 
   peerInvite(display: string, to: string, room: RoomRef, text = 'Join me in this chat.'): void {
@@ -547,12 +558,7 @@ export class FakeRooms {
     const plain = Buffer.from(text).toString('utf8');
     const reflect = findTlv(tlvs, CHAT_TLV_REFLECT) !== undefined;
     if (serverSeesRoll(plain)) {
-      const dice: Tlv[] = [
-        { tag: CHAT_MSG_TLV_ENCODING, value: Buffer.from('us-ascii') },
-        { tag: CHAT_MSG_TLV_LANG, value: Buffer.from('en') },
-        { tag: CHAT_MSG_TLV_TEXT, value: Buffer.from(`<HTML><BODY>${occupant.display} rolled 2 6-sided dice: 3 4</BODY></HTML>`) },
-      ];
-      this.relay(room, occupant.name, 'OnlineHost', cookie, isPublic, whisperTo, dice, plain, reflect ? { conn, requestId } : undefined);
+      this.relay(room, occupant.name, 'OnlineHost', cookie, isPublic, whisperTo, diceLine(occupant.display), plain, reflect ? { conn, requestId } : undefined);
       return;
     }
     this.relay(room, occupant.name, occupant.display, cookie, isPublic, whisperTo, kept, plain, reflect ? { conn, requestId } : undefined);

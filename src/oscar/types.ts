@@ -39,6 +39,9 @@ export type RoomMessageEvent = {
   text: string;
   cookie: bigint;
   whisper: boolean;
+  // true when the server wrote this line itself in place of what a member sent, attributing it to its
+  // own pseudo user. It is a real room event, but nobody in the room said it.
+  serverGenerated: boolean;
 };
 export type RoomRosterEvent = { room: RoomRef; name: string; display: string };
 export type RoomClosedEvent = { room: RoomRef; willRejoin: boolean };

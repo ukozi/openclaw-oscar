@@ -212,7 +212,9 @@ describe('room receive', () => {
   it('delivers a public line as decoded plain text', async () => {
     const { link, events } = await joined();
     link.deliver({ family: FAMILY_CHAT, subtype: CHAT_MSG_TO_CLIENT, body: vector('roomRelayPublic') });
-    expect(events.message).toEqual([{ from: 'alice', fromDisplay: 'Alice', text: 'hello room', cookie: 0x1112131415161718n, whisper: false }]);
+    expect(events.message).toEqual([
+      { from: 'alice', fromDisplay: 'Alice', text: 'hello room', cookie: 0x1112131415161718n, whisper: false, serverGenerated: false },
+    ]);
   });
 
   it('flags a line without TLV 0x01 as a whisper', async () => {
@@ -234,10 +236,36 @@ describe('room receive', () => {
     expect(events.message[0]?.text).toBe('café');
   });
 
-  it('ignores OnlineHost', async () => {
+  it('surfaces an OnlineHost line, marked as one the server wrote', async () => {
     const { link, events } = await joined();
     link.deliver({ family: FAMILY_CHAT, subtype: CHAT_MSG_TO_CLIENT, body: relay({ from: 'OnlineHost', text: 'alice rolled 2 6-sided dice: 3 4' }) });
-    expect(events.message).toEqual([]);
+    expect(events.message).toEqual([
+      {
+        from: 'onlinehost',
+        fromDisplay: 'OnlineHost',
+        text: 'alice rolled 2 6-sided dice: 3 4',
+        cookie: 0x55n,
+        whisper: false,
+        serverGenerated: true,
+      },
+    ]);
+  });
+
+  it('takes its own receipt from a line the server rewrote into an OnlineHost line', async () => {
+    const { chat, link, events, sends } = await joined();
+    const receipt = chat.send('//roll');
+    await flush();
+    expect(sends()).toHaveLength(1);
+    link.deliver({
+      family: FAMILY_CHAT,
+      subtype: CHAT_MSG_TO_CLIENT,
+      body: relay({ from: 'OnlineHost', text: 'Bot One rolled 2 6-sided dice: 3 4', cookie: 0x1000n }),
+    });
+    await expect(receipt).resolves.toEqual({ id: '1000', storedOffline: false });
+    // the line went out once, and nothing read the missing receipt as a rate limit
+    expect(sends()).toHaveLength(1);
+    expect(events.rate).toEqual([]);
+    expect(events.message.map((m) => [m.from, m.serverGenerated])).toEqual([['onlinehost', true]]);
   });
 
   it('never surfaces its own lines', async () => {

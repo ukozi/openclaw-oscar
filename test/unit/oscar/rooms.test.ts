@@ -393,7 +393,9 @@ describe('leaving and sending', () => {
     await w.manager.joinRoom(testroom);
     w.state.chatLinks[0]?.deliver({ family: FAMILY_CHAT, subtype: CHAT_MSG_TO_CLIENT, body: vector('roomRelayWhisper') });
     w.state.chatLinks[0]?.deliver({ family: FAMILY_CHAT, subtype: CHAT_USERS_JOINED, body: encodeUserInfo({ name: 'Bob', warning: 0, tlvs: [] }) });
-    expect(w.seen.roomMessage).toEqual([{ room: testroom, from: 'alice', fromDisplay: 'Alice', text: 'psst', cookie: 0x1112131415161718n, whisper: true }]);
+    expect(w.seen.roomMessage).toEqual([
+      { room: testroom, from: 'alice', fromDisplay: 'Alice', text: 'psst', cookie: 0x1112131415161718n, whisper: true, serverGenerated: false },
+    ]);
     expect(w.seen.roomJoin).toEqual([{ room: testroom, name: 'bob', display: 'Bob' }]);
   });
 

@@ -74,7 +74,7 @@ export type ChatRoomOptions = {
 export type ChatRoomEvents = {
   join: { name: string; display: string };
   leave: { name: string; display: string };
-  message: { from: string; fromDisplay: string; text: string; cookie: bigint; whisper: boolean };
+  message: { from: string; fromDisplay: string; text: string; cookie: bigint; whisper: boolean; serverGenerated: boolean };
   rate: RoomRateStatus;
   closed: LinkClose;
 };
@@ -384,31 +384,40 @@ export class ChatRoom {
       return;
     }
     const from = normalizeScreenName(msg.sender.name);
-    if (from === ROOM_SERVER_SENDER) return;
-    if (from === this.self) {
-      const item = this.inflight;
-      if (item && item.cookie === msg.cookie) {
-        this.inflight = null;
-        if (item.timer) this.timers.clearTimeout(item.timer);
-        item.resolve({ id: msg.cookie.toString(16), storedOffline: false });
-        this.pump();
-        return;
-      }
-      // a reflection that lands after its timeout still proves the line went out; the queued retry would say it twice
-      const at = this.queue.findIndex((q) => q.tries > 0 && q.cookie === msg.cookie);
-      if (at !== -1) {
-        const [late] = this.queue.splice(at, 1);
-        late?.resolve({ id: msg.cookie.toString(16), storedOffline: false });
-      }
-      return;
-    }
+    const rewritten = from === ROOM_SERVER_SENDER;
+    // The server may replace a line and re-attribute it to the pseudo user OnlineHost, keeping the
+    // message id the line was sent with (foodgroup/chat.go:34,130-134). The id is what identifies a
+    // receipt, so it is matched before the sender is looked at. Filtering the sender first loses the
+    // receipt: the send is repeated and the pacer reads a rate limit that never happened.
+    if (rewritten || from === this.self) this.settleReceipt(msg.cookie);
+    // Our own line back is not news. A rewritten line is: every human in the room sees it, so it goes
+    // out as a room event carrying serverGenerated, and a caller keeps it out of anything that would
+    // read it back to an agent as something a person said.
+    if (from === this.self) return;
     this.emit('message', {
       from,
       fromDisplay: msg.sender.name,
       text: fromWireText(msg.text, msg.encoding),
       cookie: msg.cookie,
       whisper: !msg.isPublic,
+      serverGenerated: rewritten,
     });
+  }
+
+  private settleReceipt(cookie: bigint): void {
+    const item = this.inflight;
+    if (item && item.cookie === cookie) {
+      this.inflight = null;
+      if (item.timer) this.timers.clearTimeout(item.timer);
+      item.resolve({ id: cookie.toString(16), storedOffline: false });
+      this.pump();
+      return;
+    }
+    // a reflection that lands after its timeout still proves the line went out; the queued retry would say it twice
+    const at = this.queue.findIndex((q) => q.tries > 0 && q.cookie === cookie);
+    if (at === -1) return;
+    const [late] = this.queue.splice(at, 1);
+    late?.resolve({ id: cookie.toString(16), storedOffline: false });
   }
 
   private handleClose(info: LinkClose): void {

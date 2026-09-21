@@ -106,6 +106,18 @@ describe.skipIf(!liveEnabled)('against a real server', () => {
     expect((await heard).cookie).not.toBe(0n);
   });
 
+  it('takes its own receipt from a line the server rewrites, and both sides see the rewrite', async () => {
+    const room = { exchange: 4 as const, name: 'liveroom' };
+    const mine = nextEvent(botone, 'roomMessage', (m) => m.serverGenerated);
+    const theirs = nextEvent(bottwo, 'roomMessage', (m) => m.serverGenerated);
+    // the outbound converter guards a leading //roll; this is the raw HTML the server rewrites
+    const receipt = await botone.sendRoom(room, '//roll');
+    expect(receipt.id).not.toBe('0');
+    expect(await mine).toMatchObject({ from: 'onlinehost', serverGenerated: true });
+    expect((await mine).text).toContain('rolled');
+    expect(await theirs).toMatchObject({ from: 'onlinehost', serverGenerated: true });
+  });
+
   it('delivers a whisper to its target only, marked as a whisper', async () => {
     const room = { exchange: 4 as const, name: 'liveroom' };
     const heard = nextEvent(bottwo, 'roomMessage', (m) => m.text === 'psst');

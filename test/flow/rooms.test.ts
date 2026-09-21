@@ -94,7 +94,15 @@ describe('rooms', () => {
     await bot.session.joinRoom(testroom);
     alice.say(testroom, '<B>hello</B> room', { cookie: 77n });
     const line = await until(() => bot.seen.roomMessage[0], 'roomMessage');
-    expect(line).toEqual({ room: testroom, from: 'alice', fromDisplay: 'alice', text: 'hello room', cookie: 77n, whisper: false });
+    expect(line).toEqual({
+      room: testroom,
+      from: 'alice',
+      fromDisplay: 'alice',
+      text: 'hello room',
+      cookie: 77n,
+      whisper: false,
+      serverGenerated: false,
+    });
   });
 
   it('delivers every line from a TOC occupant: cookie 0, no encoding TLV, UTF-8 bytes', async () => {
@@ -119,14 +127,32 @@ describe('rooms', () => {
     expect(bot.seen.roomMessage).toHaveLength(1);
   });
 
-  it('ignores OnlineHost', async () => {
+  it('surfaces a line the server rewrote into an OnlineHost line, marked as the server\'s own', async () => {
     const alice = server.peer('alice');
     alice.joinRoom(testroom);
     await bot.session.joinRoom(testroom);
     alice.say(testroom, '//roll');
     alice.say(testroom, 'after the dice');
-    await until(() => bot.seen.roomMessage.length > 0, 'a line');
-    expect(bot.seen.roomMessage.map((m) => m.text)).toEqual(['after the dice']);
+    await until(() => bot.seen.roomMessage.length === 2, 'two lines');
+    expect(bot.seen.roomMessage.map((m) => [m.from, m.text, m.serverGenerated])).toEqual([
+      ['onlinehost', 'alice rolled 2 6-sided dice: 3 4', true],
+      ['alice', 'after the dice', false],
+    ]);
+  });
+
+  it('takes its own receipt from a line the server rewrote, sending it once and reading no rate limit', async () => {
+    const alice = server.peer('alice');
+    alice.joinRoom(testroom);
+    await bot.session.joinRoom(testroom);
+    // the outbound converter guards a leading //roll; this is the raw HTML the server would rewrite
+    const receipt = await bot.session.sendRoom(testroom, '//roll');
+    expect(chatSends(server, 'botone')).toHaveLength(1);
+    expect(Buffer.from(chatSends(server, 'botone')[0]!).readBigUInt64BE(0).toString(16)).toBe(receipt.id);
+    expect(bot.seen.rate).toEqual([]);
+    expect(bot.seen.roomMessage.map((m) => [m.from, m.serverGenerated])).toEqual([['onlinehost', true]]);
+    expect(alice.roomLines(testroom)).toEqual([
+      { from: 'onlinehost', text: '<HTML><BODY>botone rolled 2 6-sided dice: 3 4</BODY></HTML>', whisper: false },
+    ]);
   });
 
   it('sends with TLVs 0x01 and 0x06 and a non-zero cookie, takes the reflection as receipt, and never hears itself', async () => {
