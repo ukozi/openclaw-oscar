@@ -150,7 +150,8 @@ describe.skipIf(env.mode !== 'local')('must 3: chain of command', () => {
     await until(() => runsSince(t2, 'botone').length === 1, { timeoutMs: 20_000, what: 'the owner IM turn' });
     const context = JSON.parse(runsSince(t2, 'botone')[0]?.context ?? '[]') as { type?: string; payload?: { openHandoffs?: unknown[] } }[];
     const awareness = context.find((entry) => entry.type === 'awareness');
-    expect(JSON.stringify(awareness?.payload?.openHandoffs ?? [])).not.toContain(id);
+    expect(awareness?.payload?.openHandoffs).toBeDefined();
+    expect(JSON.stringify(awareness?.payload?.openHandoffs)).not.toContain(id);
   }, 120_000);
 
   it('hands a job down by text', async () => {
