@@ -450,7 +450,7 @@ describe('the away auto-reply through a live account', () => {
       channels: {
         oscar: {
           enabled: true, host: 'oscar.example.net', port: 5190,
-          owners: ['alice'], allowFrom: ['bob'],
+          owners: ['alice'], allowFrom: ['bob', 'bottwo'],
           chain: { roster: [{ screenName: 'botone' }, { screenName: 'bottwo' }] },
           accounts: { botone: { screenName: 'botone', password: 'hunter22', away } },
           defaultAccount: 'botone',
@@ -496,6 +496,8 @@ describe('the away auto-reply through a live account', () => {
     expect(h.wire.sent).toHaveLength(1);
   });
 
+  // bottwo is on the allowlist as well as the roster, so its silence is the chain-bot rule rather
+  // than the unlisted check that keeps the stranger quiet.
   it('answers neither a roster bot nor a stranger', async () => {
     const h = live();
     h.dispatch(ROSTER_BOT, 'bot');
