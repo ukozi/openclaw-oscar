@@ -114,7 +114,8 @@ describe('README style', () => {
 
   it('has no sales words, badges or bold-led bullets', () => {
     expect(prose).not.toMatch(/\b(robust|seamless|powerful|comprehensive|leverag\w+|delve|blazing|effortless\w*|cutting-edge|feature-rich)\b/i);
-    expect(text).not.toMatch(/!\[[^\]]*\]\(/);
+    // Screenshots are fine; badges are not.
+    expect(text).not.toMatch(/!\[[^\]]*\]\([^)]*(?:shields\.io|badgen|badge|travis-ci|circleci|codecov|app\.veyor)[^)]*\)/i);
     expect(lines.filter((l) => /^\s*[-*]\s+\*\*/.test(l))).toEqual([]);
   });
 

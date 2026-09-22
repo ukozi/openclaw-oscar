@@ -2,6 +2,8 @@
 
 The plugin gives an OpenClaw agent a screen name on an Open OSCAR Server, so you can reach it from an instant messenger client instead of a terminal. Open OSCAR Server is compatible with AOL Instant Messenger clients.
 
+![calyssa answering an instant message, with its away auto-response above the reply and the buddy list beside it](https://raw.githubusercontent.com/ukozi/openclaw-oscar/main/assets/screenshot.png)
+
 ## Messages
 
 Only people on the approved list can message the agent. Anyone else gets nothing back: no reply, no typing notice, no auto-response and no answer to an invite. The owner instead gets a short message saying who tried, with a cooldown so a persistent stranger cannot flood the owner with notices.
@@ -99,9 +101,7 @@ OpenClaw resets sessions daily at 04:00 by default, and the session store prunes
 
 ## Limits
 
-Hand-offs in progress, held messages, notice throttles and invited rooms live in memory and are lost when the gateway restarts. Screen names with non-ASCII letters cannot be owners, approved people or team members. Emoji reach some recipients degraded. A bot that hits a room's rate limit is silent in that room for up to two minutes. The plugin speaks the server's native protocol only: there is no TOC transport, no file transfer, no buddy icons and no media.
-
-Built and tested against OpenClaw 2026.7.1-2 and Open OSCAR Server v0.24.0 and main at 7bdd674.
+Hand-offs in progress, held messages, notice throttles and invited rooms live in memory and are lost when the gateway restarts. Screen names with non-ASCII letters cannot be owners, approved people or team members. Emoji reach some recipients degraded. A bot that hits a room's rate limit is silent in that room for up to two minutes. The plugin speaks the server's native protocol only: there is no TOC transport, no file transfer, no buddy icons and no media. Built and tested against OpenClaw 2026.7.1-2 and Open OSCAR Server v0.24.0 and main at 7bdd674.
 
 ## Licence
 
