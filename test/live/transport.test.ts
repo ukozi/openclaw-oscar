@@ -56,6 +56,8 @@ describe.skipIf(env.mode !== 'local')('transport matrix', () => {
         expect(stack.advertisedTap.framesToServer()).toEqual([]);
         return;
       }
+      const plainByBot = stack.advertisedTap.connections();
+      const tlsByBot = stack.advertisedTlsProxy?.connections() ?? 0;
       const alice = await startSession(stack.target, 'alice', ALICE_PASSWORD, { redirect: c.redirect, buddies: () => ['botone'] });
       sessions.push(alice);
 
@@ -88,10 +90,10 @@ describe.skipIf(env.mode !== 'local')('transport matrix', () => {
       if (c.tls) {
         expect(plainFollowed).toBe(0);
         // v0.24.0 answers a TLS login with SSL state 0, which makes "auto" pin
-        if (env.generation === 'main' && follows) expect(tlsFollowed).toBeGreaterThan(0);
+        if (env.generation === 'main' && follows) expect(tlsByBot).toBeGreaterThan(0);
         else expect(tlsFollowed).toBe(0);
       } else if (follows) {
-        expect(plainFollowed).toBeGreaterThan(0);
+        expect(plainByBot).toBeGreaterThan(0);
       } else {
         expect(plainFollowed).toBe(0);
       }
