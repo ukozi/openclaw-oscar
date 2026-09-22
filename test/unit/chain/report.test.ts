@@ -39,6 +39,8 @@ describe('chainIssues', () => {
     expect(issue).toMatchObject({ kind: 'runtime', severity: 'info', message: 'a hand-off to bottwo was not sent: bottwo is not in this room' });
     expect(issue?.fix).toBeTruthy();
     expect(chainIssues({ ...clean, lastRefusal }, NOW + 600_000)).toEqual([]);
+    expect(chainIssues({ ...clean, lastRefusal: { ...lastRefusal, at: NOW - 599_999 } }, NOW)).toHaveLength(1);
+    expect(chainIssues({ ...clean, lastRefusal: { ...lastRefusal, at: NOW - 600_000 } }, NOW)).toEqual([]);
   });
 });
 
