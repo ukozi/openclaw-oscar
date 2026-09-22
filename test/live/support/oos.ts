@@ -192,7 +192,8 @@ export class Oos {
 
   private async halt(): Promise<void> {
     const child = this.child;
-    if (!child || child.exitCode !== null) return;
+    // a child killed by a signal keeps exitCode null, so a second halt would wait for an exit that already happened
+    if (!child || child.exitCode !== null || child.signalCode !== null) return;
     const gone = new Promise<void>((resolve) => child.once('exit', () => resolve()));
     child.kill('SIGTERM');
     const force = setTimeout(() => child.kill('SIGKILL'), 5000);
