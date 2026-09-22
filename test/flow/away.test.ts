@@ -4,7 +4,7 @@ import { createAwayController, type AwayController } from '../../src/presence/aw
 import { forbiddenNames } from '../../src/presence/blurb.js';
 import {
   createOscarStatusTool, createSummarizer, hostConfig, imPeerFor, originOf, presenceActions, presenceDispatch, presenceToolHints,
-  registerPresence, startPresence, summarizeViaHost,
+  lifecycleStreamAvailable, registerPresence, startPresence, summarizeViaHost,
 } from '../../src/presence/register.js';
 import { RUN_QUIET_MS, TOOL_CAP_MS, createRunTracker } from '../../src/presence/runs.js';
 import { resetRuntimeForTests, setRuntime } from '../../src/runtime.js';
@@ -305,6 +305,15 @@ describe('wiring', () => {
     expect(fake.hookNames()).toEqual([
       'after_tool_call', 'before_prompt_build', 'before_tool_call', 'model_call_started', 'subagent_ended', 'subagent_spawned',
     ]);
+  });
+
+  it('still registers its hooks on a host with no agent event API', () => {
+    const fake = createFakeAgentApi();
+    // A host that predates the lifecycle stream, or a sandbox that mocks the SDK, has no api.agent.
+    delete (fake.api as unknown as { agent?: unknown }).agent;
+    expect(() => registerPresence(fake.api, { tracker: createRunTracker(), controllerFor: () => undefined })).not.toThrow();
+    expect(fake.hookNames()).toContain('before_tool_call');
+    expect(lifecycleStreamAvailable()).toBe(false);
   });
 
   it('registers nothing outside full mode', () => {

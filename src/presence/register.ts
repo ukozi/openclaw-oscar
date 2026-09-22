@@ -70,6 +70,13 @@ function lineFromToolCall(toolName: string, params: Record<string, unknown>): st
   return typeof params['awayMessage'] === 'string' ? params['awayMessage'] : null;
 }
 
+let lifecycleAvailable = true;
+
+/** False when the host has no agent lifecycle stream, so run starts and ends are not observed. */
+export function lifecycleStreamAvailable(): boolean {
+  return lifecycleAvailable;
+}
+
 export function registerPresence(api: OpenClawPluginApi, wiring: PresenceWiring): void {
   if (api.registrationMode !== 'full') return;
   const tracker = wiring.tracker ?? getRunTracker();
@@ -77,12 +84,18 @@ export function registerPresence(api: OpenClawPluginApi, wiring: PresenceWiring)
   slot.summarize = createSummarizer(api.runtime);
   slot.config = () => api.runtime.config.current();
 
-  api.agent.events.registerAgentEventSubscription({
-    id: 'oscar-presence',
-    description: 'Tracks agent runs for the away line',
-    streams: ['lifecycle'],
-    handle: (event) => handleLifecycle(tracker, event),
-  });
+  // Hosts that predate the lifecycle stream have no api.agent. Registering the rest still gives
+  // tool-driven away text, so skip the subscription and let status say the line will be coarse.
+  const events = api.agent?.events;
+  lifecycleAvailable = typeof events?.registerAgentEventSubscription === 'function';
+  if (lifecycleAvailable) {
+    events.registerAgentEventSubscription({
+      id: 'oscar-presence',
+      description: 'Tracks agent runs for the away line',
+      streams: ['lifecycle'],
+      handle: (event) => handleLifecycle(tracker, event),
+    });
+  }
 
   // At 2026.7.1-2 the model_call_started context has no trigger; before_prompt_build has it.
   api.on('before_prompt_build', (_event, ctx) => {

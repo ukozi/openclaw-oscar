@@ -6,6 +6,7 @@ import { CHANNEL_ID, PLUGIN_ID, TOOL_NAMES, configProblems, defaultAccountId, li
 import type { ResolvedAccount } from './config.js';
 import { roomIssues } from './inbound/issues.js';
 import { normalizeName } from './names.js';
+import { lifecycleStreamAvailable } from './presence/register.js';
 import type { SessionState, StateReason } from './oscar/index.js';
 import { getRuntime, liveConfig } from './runtime.js';
 import type { ProbeResult } from './runtime.js';
@@ -156,6 +157,14 @@ export function collectOscarIssues(input: IssueInput): OscarIssue[] {
   }
   if (!account.tls && !isPrivateHost(account.host)) {
     issues.push({ kind: 'config', severity: 'warning', message: `plaintext connection to ${account.host}: anyone on the network path can read messages and replay the login`, fix: 'Where the server offers TLS, set channels.oscar.tls: true and the TLS port.' });
+  }
+
+  if (!lifecycleStreamAvailable()) {
+    issues.push({
+      kind: 'config', severity: 'warning',
+      message: 'this host has no agent lifecycle stream: the away line follows tool calls only, so a run that calls no tool shows nothing',
+      fix: 'Upgrade OpenClaw to a version that provides api.agent.events.',
+    });
   }
 
   const policy = readPolicy(cfg);
