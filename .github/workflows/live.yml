@@ -15,14 +15,16 @@ concurrency:
 jobs:
   live:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         server:
           - name: v0.24.0
+            generation: v0.24
             sha: 8c0fab9f0576d60c3da6e0cacd3b4718ad4814b4
           - name: main-7bdd674
+            generation: main
             sha: 7bdd674afc482d700cc733be7c0b86a51f65883a
     steps:
       - uses: actions/checkout@v7
@@ -52,3 +54,4 @@ jobs:
       - run: npm run test:live
         env:
           OOS_BIN: ${{ github.workspace }}/server-bin/open_oscar_server
+          OOS_GENERATION: ${{ matrix.server.generation }}

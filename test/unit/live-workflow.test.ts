@@ -41,4 +41,14 @@ describe('live workflow', () => {
     expect(text).toContain('permissions:\n  contents: read');
     expect(text).not.toMatch(/secrets\./);
   });
+
+  it('tells the suite which server generation it has', () => {
+    expect(lines).toContain('generation: v0.24');
+    expect(lines).toContain('generation: main');
+    expect(text).toContain('OOS_GENERATION: ${{ matrix.server.generation }}');
+  });
+
+  it('leaves time for the seven-bot run', () => {
+    expect(lines).toContain('timeout-minutes: 90');
+  });
 });
