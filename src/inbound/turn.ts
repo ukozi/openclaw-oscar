@@ -85,7 +85,7 @@ export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void
     route: { agentId: route.agentId, accountId: deps.accountId, routeSessionKey: route.sessionKey },
     reply: { to, originatingTo: to },
     message: { rawBody: body, body, bodyForAgent: body, commandBody: body },
-    access: { commands: { authorized: owner && !turn.replayed, allowTextCommands: true, useAccessGroups: false } },
+    access: { commands: { authorized: owner && !turn.replayed } },
     supplemental: { untrustedContext: untrusted },
     channelContext: { sender: { id: turn.from }, chat: { id: peerId, accountId: deps.accountId, kind: 'im' } },
     extra: { OwnerAllowFrom: [...policy.owners] },
@@ -171,7 +171,7 @@ export async function dispatchRoomTurn(req: TurnRequest, deps: RoomTurnDeps): Pr
     reply: { to, originatingTo: to },
     message: { rawBody: req.text, body: req.text, bodyForAgent: req.text, commandBody: req.text, inboundHistory: group.history },
     access: {
-      commands: { authorized: req.commandAuthorized, allowTextCommands: true, useAccessGroups: false },
+      commands: { authorized: req.commandAuthorized },
       // Core never derives mention state; false here can make it drop a group dispatch silently.
       mentions: { canDetectMention: true, wasMentioned: true, effectiveWasMentioned: true, requireMention: true },
     },

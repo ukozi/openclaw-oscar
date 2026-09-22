@@ -2,7 +2,7 @@ import { buildChannelOutboundSessionRoute, createChatChannelPlugin, tryReadSecre
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
 import { createAccountStatusSink, createRunStateMachine } from 'openclaw/plugin-sdk/channel-lifecycle';
 import { createChannelMessageAdapterFromOutbound } from 'openclaw/plugin-sdk/channel-outbound';
-import type { ChannelGatewayContext } from 'openclaw/plugin-sdk/channel-runtime';
+import type { ChannelGatewayContext } from 'openclaw/plugin-sdk/channel-contract';
 import { normalizeSecretInputString } from 'openclaw/plugin-sdk/secret-input';
 import { chainToolPolicy, installChain, uninstallChain } from './chain/wiring.js';
 import {

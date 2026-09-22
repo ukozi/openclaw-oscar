@@ -33,10 +33,18 @@ jobs:
 
   sdk:
     runs-on: ubuntu-latest
+    # The 'latest' leg tracks whatever npm publishes, so an upstream release can
+    # break it without a commit here. It reports without failing the build.
+    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
       matrix:
-        openclaw: ['2026.7.34', '2026.9.5']
+        include:
+          - openclaw: '2026.7.34'
+          - openclaw: '2026.7.35'
+          - openclaw: '2026.9.5'
+          - openclaw: 'latest'
+            experimental: true
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

@@ -1,4 +1,4 @@
-import type { ChannelStatusAdapter } from 'openclaw/plugin-sdk/channel-runtime';
+import type { ChannelStatusAdapter } from 'openclaw/plugin-sdk/channel-contract';
 import { createComputedAccountStatusAdapter } from 'openclaw/plugin-sdk/status-helpers';
 import type { ChannelStatusIssue } from 'openclaw/plugin-sdk/status-helpers';
 import { chainIssues } from './chain/report.js';
