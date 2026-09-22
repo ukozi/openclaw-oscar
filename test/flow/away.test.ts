@@ -432,3 +432,77 @@ describe('account start and stop', () => {
     expect(status).toHaveLength(frozen);
   });
 });
+
+describe('the away auto-reply through a live account', () => {
+  const APPROVED = 'agent:main:oscar:group:botone/bob';
+  const ROSTER_BOT = 'agent:main:oscar:group:botone/bottwo';
+  const STRANGER = 'agent:main:oscar:group:botone/mallory';
+
+  function imKey(peer: string) {
+    return { accountId: 'botone', peer: { kind: 'im' as const, bot: 'botone', peer } };
+  }
+
+  function live() {
+    const away: AwayConfig = {
+      enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 2000, maxLength: 100, replyCooldownMinutes: 10,
+    };
+    const cfg = {
+      channels: {
+        oscar: {
+          enabled: true, host: 'oscar.example.net', port: 5190,
+          owners: ['alice'], allowFrom: ['bob'],
+          chain: { roster: [{ screenName: 'botone' }, { screenName: 'bottwo' }] },
+          accounts: { botone: { screenName: 'botone', password: 'hunter22', away } },
+          defaultAccount: 'botone',
+        },
+      },
+    };
+    const tracker = createRunTracker();
+    const fake = createFakeAgentApi({ config: () => cfg });
+    const controllers = new Map<string, AwayController>();
+    const wiring = { tracker, controllerFor: (id: string) => controllers.get(id) };
+    registerPresence(fake.api, wiring);
+    const wire = new FakeSession();
+    setRuntime({
+      accountId: 'botone', session: wire.asSession(), rooms: new Map(), lastReplyAt: new Map(),
+      counters: { droppedSends: 0, eventGaps: 0 },
+      sessionKeys: new Map([[APPROVED, imKey('bob')], [ROSTER_BOT, imKey('bottwo')], [STRANGER, imKey('mallory')]]),
+    });
+    const lifecycle = channelLifecycleMock();
+    const presence = startPresence({
+      accountId: 'botone', session: stubSession().session, getCfg: () => cfg, log: quietLog, tracker,
+      machine: lifecycle.createRunStateMachine({ setStatus: () => undefined }),
+    });
+    controllers.set('botone', presence.away);
+    const dispatch = (sessionKey: string, role: Parameters<typeof originOf>[0], text = 'can you look at the notes?') =>
+      presenceDispatch({ sessionKey, accountId: 'botone', origin: originOf(role), text }, wiring);
+    return { cfg, tracker, fake, wire, presence, dispatch };
+  }
+
+  it('answers an approved person once with the line the away feature chose', async () => {
+    const h = live();
+    h.dispatch(APPROVED, 'approved');
+    await h.fake.emitLifecycle('r1', 'start', APPROVED);
+    h.presence.away.offerLine('r1', 'Reading through a stack of notes');
+    await tick(1999);
+    expect(h.wire.sent).toEqual([]);
+    await tick(1);
+    expect(h.wire.sent).toEqual([{ to: 'bob', html: 'Reading through a stack of notes', priority: 'notice', auto: true }]);
+    await h.fake.emitLifecycle('r1', 'end', APPROVED);
+    await tick(MINUTE);
+    h.dispatch(APPROVED, 'approved');
+    await h.fake.emitLifecycle('r2', 'start', APPROVED);
+    await tick(5000);
+    expect(h.wire.sent).toHaveLength(1);
+  });
+
+  it('answers neither a roster bot nor a stranger', async () => {
+    const h = live();
+    h.dispatch(ROSTER_BOT, 'bot');
+    h.dispatch(STRANGER, 'unlisted');
+    await h.fake.emitLifecycle('r1', 'start', ROSTER_BOT);
+    await h.fake.emitLifecycle('r2', 'start', STRANGER);
+    await tick(10_000);
+    expect(h.wire.sent).toEqual([]);
+  });
+});
