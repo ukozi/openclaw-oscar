@@ -98,7 +98,7 @@ export async function bootGateway(opts: GatewayOptions): Promise<LiveGateway> {
 
   // The login budget hangs off the shared globalThis holder, so a fourth gateway in one file would
   // sit out the server's per-minute login allowance. A real process starts with a fresh one.
-  const holder = (globalThis as unknown as Record<symbol, { budget?: unknown } | undefined>)[Symbol.for('openclaw-oscar.runtime')];
+  const holder = (globalThis as unknown as Record<symbol, { budget?: unknown; host?: unknown } | undefined>)[Symbol.for('openclaw-oscar.runtime')];
   if (holder) delete holder.budget;
 
   const cfg = opts.cfg;
@@ -119,6 +119,10 @@ export async function bootGateway(opts: GatewayOptions): Promise<LiveGateway> {
     },
   };
   entry.register(api);
+  // The host runtime is one global slot, so a second gateway in the same process would hand its own
+  // config to the first one's accounts. Dropped, every account reads the config it was started with.
+  const started = (globalThis as unknown as Record<symbol, { host?: unknown } | undefined>)[Symbol.for('openclaw-oscar.runtime')];
+  if (started) delete started.host;
   if (!plugin) throw new Error('the plugin entry did not register a channel');
   const loaded: PluginShape = plugin;
 
