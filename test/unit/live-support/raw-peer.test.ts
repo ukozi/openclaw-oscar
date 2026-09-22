@@ -74,6 +74,14 @@ async function responder(password: string): Promise<{ port: number; seen: Seen[]
           } else if (name === 'botone') {
             const away = Buffer.concat([userInfo('BotOne', 0x0420), tlv(0x03, Buffer.from('text/aolrtf')), tlv(0x04, Buffer.from('Looking something up'))]);
             socket.write(snac(0x02, 0x06, requestId, Buffer.concat([u16(0), away]), 0x8000));
+          } else if (name === 'mallory') {
+            socket.write(snac(0x02, 0x06, requestId, userInfo('Mallory', 0x0030)));
+            const message = Buffer.concat([u16(0), u16(0), Buffer.from('away right now')]);
+            const fragments = Buffer.concat([Buffer.from([5, 1]), u16(3), Buffer.from([1, 1, 2]), Buffer.from([1, 1]), u16(message.length), message]);
+            socket.write(snac(0x04, 0x07, 0, Buffer.concat([Buffer.alloc(8, 2), u16(1), userInfo('Mallory', 0x0030), tlv(0x02, fragments), tlv(0x04, Buffer.alloc(0))])));
+          } else if (name === 'carol') {
+            socket.write(snac(0x02, 0x06, requestId, userInfo('Carol', 0x0010)));
+            socket.write(flap(4, Buffer.concat([tlv(0x09, Buffer.from([1])), tlv(0x0b, Buffer.from('https://example.net'))])));
           } else {
             socket.write(snac(0x02, 0x06, requestId, userInfo(name, 0x0010)));
             const message = Buffer.concat([u16(0), u16(0), Buffer.from('hello bob')]);
@@ -137,5 +145,22 @@ describe('raw peer', () => {
     expect(invite.body.readUInt16BE(19)).toBeGreaterThanOrEqual(26);
     expect(invite.body.includes(Buffer.from('748F2420628711D18222444553540000', 'hex'))).toBe(true);
     expect(invite.body.includes(Buffer.from('4-0-testroom', 'latin1'))).toBe(true);
+  });
+  it('marks an auto response and reads the sign-off that says another login took over', async () => {
+    const r = await responder('hunter22');
+    const bob = await RawPeer.signOn({ host: '127.0.0.1', port: r.port, screenName: 'bob', password: 'hunter22' });
+    cleanups.push(r.close, () => bob.signOff());
+
+    const mark = Date.now();
+    // receivedSince compares whole milliseconds, so step past the sign-on IM's own millisecond
+    const start = await until(() => { const t = Date.now(); return t > mark ? t : null; }, { timeoutMs: 1000, what: 'a fresh mark' });
+    await bob.userInfo('mallory');
+    const reply = await until(() => bob.ims().find((m) => m.from === 'mallory') ?? null, { timeoutMs: 1000, what: 'the auto reply' });
+    expect(reply).toEqual({ from: 'mallory', text: 'away right now', autoResponse: true });
+    expect(bob.receivedSince(start, 0x04).map((s) => s.subtype)).toEqual([0x07]);
+    expect(bob.kicked()).toBe(false);
+
+    await bob.userInfo('carol');
+    await until(() => (bob.kicked() ? true : null), { timeoutMs: 1000, what: 'the kick' });
   });
 });
