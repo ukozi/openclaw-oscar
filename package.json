@@ -33,7 +33,7 @@
     "test": "vitest run",
     "test:live": "vitest run --config vitest.live.config.ts",
     "pack:check": "vitest run test/pack.test.ts",
-    "plugin:ci": "plugin-inspector ci --no-openclaw --runtime --mock-sdk --allow-execute"
+    "plugin:ci": "rm -rf .pack && mkdir -p .pack && npm pack --pack-destination .pack >/dev/null && mkdir -p .pack/tree && tar xzf .pack/*.tgz -C .pack/tree --strip-components=1 && npm --prefix .pack/tree install --omit=dev --no-audit --no-fund >/dev/null && plugin-inspector ci --plugin-root .pack/tree --no-openclaw --runtime --mock-sdk --allow-execute"
   },
   "dependencies": {
     "zod": "4.6.5"
