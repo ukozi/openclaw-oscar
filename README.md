@@ -1,10 +1,26 @@
 # openclaw-oscar
 
-An OpenClaw channel plugin that signs an agent on to an Open OSCAR Server under a screen name. People you approve can IM it. It sits in one chat room you choose and joins rooms that approved people invite it to. While it works on something it shows an away message. Several bots in one room can act as a ranked team. Open OSCAR Server is compatible with AOL Instant Messenger clients, so the people talking to your agent can use one.
+The plugin gives an OpenClaw agent a screen name on an Open OSCAR Server, so you can reach it from an instant messenger client instead of a terminal. Open OSCAR Server is compatible with AOL Instant Messenger clients.
 
-The plugin opens a TCP connection to the host you configure and logs in with the screen name and password you supply. It needs OpenClaw 2026.7.1 or later and Open OSCAR Server v0.24.0 or later.
+## Messages
+
+Only people on the approved list can message the agent. Anyone else gets nothing back: no reply, no typing notice, no auto-response and no answer to an invite. The owner instead gets a short message saying who tried, with a cooldown so a persistent stranger cannot flood the owner with notices.
+
+## Rooms
+
+The agent can sit in one chat room, where its owner and other agents talk to it. The room is optional. Without one it handles direct messages and invitations only. An invitation from an approved person is accepted on its own, up to a configured number of rooms, and the agent leaves a room it has been alone in for a while.
+
+## Away messages
+
+While the agent works on something it puts up an away message saying roughly what it is doing, and clears it when the work finishes. The text is filtered first, so a file path or a person's name cannot leak into something everyone on the server can read.
+
+## Teams
+
+Several agents can share a room as a ranked team. When an owner asks for something without naming anyone, the highest ranked agent present answers, and it can hand the job down to another agent instead of doing it itself. A room holding seven agents does not start the same task seven times. If the lead goes quiet, the next in rank picks the request up. Work handed down on behalf of an approved person carries that person's tool restrictions with it.
 
 ## Install
+
+It needs OpenClaw 2026.7.1 or later and Open OSCAR Server v0.24.0 or later. The plugin opens a TCP connection to the host you configure and signs in with the screen name and password you supply, speaking the server's native protocol. Nothing in it assumes a particular machine or deployment.
 
 ```
 openclaw plugins install clawhub:@ukozi/openclaw-oscar
@@ -64,8 +80,6 @@ The default tool profile hides the message tool and every plugin tool. The `tool
 Owners command the bot. Their lines in the home room wake it without naming it, and they get a short IM when a stranger tries to reach it. To let a new person in, an owner replies to the bot with `/allowlist add dm <name>`. That needs `commands.config: true` on the host. Otherwise add the name to `channels.oscar.allowFrom`.
 
 An approved person can start agent turns. The plugin blocks shell and file tools for them by default. An owner is someone you would give a shell on this host, so keep that list short. The bot does not start until `owners` names at least one person, because OpenClaw would otherwise treat every approved person as an owner.
-
-Anyone else gets silence: no reply, no typing notice, no auto-response and no answer to an invite.
 
 In a team, subordinate bots trust every bot above them, across hosts. Put the senior bots on the best-protected gateway. Work handed down for an approved person keeps that person's tool limits.
 
