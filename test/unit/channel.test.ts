@@ -138,6 +138,14 @@ describe('groups hooks', () => {
     expect(plugin.groups.resolveRequireMention({ cfg: team, groupId: 'botthree#4.testroom' })).toBe(true);
     expect(plugin.groups.resolveRequireMention({ cfg: cfg(), groupId: 'x' })).toBeUndefined();
   });
+
+  it('a bot missing from its own roster waits to be named, and the lead follows a roster edit', () => {
+    const team = cfg({ chain: { roster: [{ screenName: 'botone' }, { screenName: 'bottwo' }] } });
+    expect(plugin.groups.resolveRequireMention({ cfg: team, groupId: 'botnine#4.testroom' })).toBe(true);
+    const swapped = cfg({ chain: { roster: [{ screenName: 'bottwo' }, { screenName: 'botone' }] } });
+    expect(plugin.groups.resolveRequireMention({ cfg: swapped, groupId: 'bottwo#4.testroom' })).toBe(false);
+    expect(plugin.groups.resolveRequireMention({ cfg: swapped, groupId: 'botone#4.testroom' })).toBe(true);
+  });
 });
 
 describe('allowlist adapter', () => {

@@ -1,6 +1,7 @@
 import type { ChannelStatusAdapter } from 'openclaw/plugin-sdk/channel-runtime';
 import { createComputedAccountStatusAdapter } from 'openclaw/plugin-sdk/status-helpers';
 import type { ChannelStatusIssue } from 'openclaw/plugin-sdk/status-helpers';
+import { chainIssues } from './chain/report.js';
 import { CHANNEL_ID, PLUGIN_ID, TOOL_NAMES, configProblems, defaultAccountId, listAccountIds, readPolicy } from './config.js';
 import type { ResolvedAccount } from './config.js';
 import { roomIssues } from './inbound/issues.js';
@@ -162,6 +163,7 @@ export function collectOscarIssues(input: IssueInput): OscarIssue[] {
     issues.push({ kind: 'config', severity: 'info', message: 'home room unset: the bot does IMs and invites only', fix: 'Optional: set channels.oscar.room.name.' });
   }
   issues.push(...roomIssues(getRuntime(account.accountId), policy, account.screenName));
+  issues.push(...chainIssues(getRuntime(account.accountId)?.chain?.facts(), Date.now()));
   if (policy.owners.length === 0) {
     issues.push({
       kind: 'config', severity: 'error',

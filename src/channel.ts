@@ -4,6 +4,7 @@ import { createAccountStatusSink, createRunStateMachine } from 'openclaw/plugin-
 import { createChannelMessageAdapterFromOutbound } from 'openclaw/plugin-sdk/channel-outbound';
 import type { ChannelGatewayContext } from 'openclaw/plugin-sdk/channel-runtime';
 import { normalizeSecretInputString } from 'openclaw/plugin-sdk/secret-input';
+import { chainToolPolicy, installChain, uninstallChain } from './chain/wiring.js';
 import {
   CHANNEL_ID, RELOAD_NOOP_PREFIXES, buddyList, defaultAccountId, listAccountIds, oscarChannelConfigSchema, readPolicy, resolveAccount,
 } from './config.js';
@@ -20,6 +21,7 @@ import type { Logger, SessionState } from './oscar/index.js';
 import { outboundBase, sendAdapterText } from './outbound.js';
 import { roleOf, roomRequiresMention, senderToolPolicy, toolDeny } from './policy.js';
 import { presenceActions, presenceToolHints, startPresence } from './presence/register.js';
+import { getRunTracker } from './presence/runs.js';
 import {
   clearRuntime, createPasswordGuard, currentGeneration, getRuntime, liveConfig, nextGeneration, setRuntime, sharedLoginBudget,
 } from './runtime.js';
@@ -71,7 +73,9 @@ function readPassword(account: ResolvedAccount): string {
   return value;
 }
 
-function resolveToolPolicy(params: { cfg: unknown; groupId?: string | null; senderId?: string | null }): ToolPolicy | undefined {
+function resolveToolPolicy(params: { cfg: unknown; groupId?: string | null; accountId?: string | null; senderId?: string | null }): ToolPolicy | undefined {
+  const chain = chainToolPolicy(params);
+  if (chain.handled) return chain.policy;
   const ref = decodePeerId(params.groupId ?? '');
   if (!ref) return undefined;
   const policy = readPolicy(liveConfig(params.cfg));
@@ -197,6 +201,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     },
     contacts: () => notices.ring().map((entry) => ({ name: entry.name, kind: entry.kind, at: entry.lastAt })),
   });
+  installChain({ rt, getCfg, tracker: getRunTracker(), log });
   const guard = createPasswordGuard({
     cacheKey: `${account.host}:${account.port}:${account.screenName}`,
     allowUnauthenticated: account.dangerouslyAllowUnauthenticatedServer,
@@ -228,6 +233,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
   ];
   stoppers.set(accountId, async () => {
     await rt.stopPresence?.();
+    uninstallChain(rt);
     detachRooms();
     for (const off of offs) off();
     guard.stop();

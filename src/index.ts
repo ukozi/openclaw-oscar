@@ -1,4 +1,5 @@
 import { defineChannelPluginEntry } from 'openclaw/plugin-sdk/channel-core';
+import { registerChainHooks } from './chain/wiring.js';
 import { oscarPlugin } from './channel.js';
 import { PLUGIN_ID, TOOL_NAMES } from './config.js';
 import { registerPresence, runtimeWiring } from './presence/register.js';
@@ -13,6 +14,7 @@ const entry: ReturnType<typeof defineChannelPluginEntry<typeof oscarPlugin>> = d
   setRuntime: (runtime) => setHost(runtime),
   registerFull(api) {
     registerPresence(api, runtimeWiring);
+    if (api.registrationMode === 'full') registerChainHooks(api);
     registerOscarTools(api);
     // registerFull also runs in tool-discovery, where there is no channel runtime.
     if (api.registrationMode !== 'full') return;
