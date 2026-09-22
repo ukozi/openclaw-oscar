@@ -2,6 +2,7 @@ import type { RootPolicy } from '../config.js';
 import { copy } from '../copy.js';
 import { normalizeName } from '../names.js';
 import type { RoomRef } from '../names.js';
+import { guardRoll, toAsciiEntities, toWireHtml } from '../oscar/text.js';
 import type { ImEvent, Logger, RateEvent, RoomMessageEvent, RoomRosterEvent, SendPriority, SendReceipt } from '../oscar/types.js';
 import { neutralizeDirectives, roleOf } from '../policy.js';
 import type { OriginClass, TurnOrigin } from '../policy.js';
@@ -89,17 +90,11 @@ export function resolveBot(raw: string, policy: RootPolicy): string | null {
   return null;
 }
 
-export function wireEstimate(markdown: string): number {
-  let n = 0;
-  for (const ch of markdown) {
-    const code = ch.codePointAt(0) ?? 0;
-    if (code > 0xffff) n += 10;
-    else if (code > 126) n += 8;
-    else if (ch === '\n') n += 4;
-    else if (ch === '<' || ch === '>' || ch === '&' || ch === '"') n += 6;
-    else n += 1;
-  }
-  return n;
+// What sendRoomLine puts on the wire, byte for byte: markup grows on the way out, so a link of
+// thirteen characters leaves as twenty four and a raw count would wave through a line that the
+// room then has to split.
+export function wireLength(markdown: string): number {
+  return guardRoll(toAsciiEntities(toWireHtml(markdown))).length;
 }
 
 const HANDOFF_SEND_MS = 20_000;
@@ -318,7 +313,7 @@ export class ChainController {
     let out = text;
     if (d && !d.stamped && meta.kind === 'final' && !wire) {
       const stamped = `${d.delegator}: ${text} [d:${d.id}]`;
-      if (wireEstimate(stamped) <= this.deps.roomChunkLimit()) {
+      if (wireLength(stamped) <= this.deps.roomChunkLimit()) {
         d.stamped = true;
         out = stamped;
       }
@@ -607,7 +602,7 @@ export class ChainController {
     if (!task) throw new Error(copy.delegateError('empty'));
     const id = mintId(myIdx + 1);
     const text = handoffLine(to, task, { id, hop, originator: rec.originator });
-    if (wireEstimate(text) > this.deps.roomChunkLimit()) throw new Error(copy.delegateError('too-long'));
+    if (wireLength(text) > this.deps.roomChunkLimit()) throw new Error(copy.delegateError('too-long'));
     if (this.roomLimited(roomKeyOf(room.ref))) throw new Error(copy.delegateError('rate'));
     let late = false;
     const sent = this.deps.say(room.ref, text).then(() => {

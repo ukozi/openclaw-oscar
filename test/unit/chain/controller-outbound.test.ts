@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { wireEstimate } from '../../../src/chain/controller.js';
+import { wireLength } from '../../../src/chain/controller.js';
+import { handoffLine } from '../../../src/chain/handoff.js';
 import { helloLine } from '../../../src/chain/hello.js';
 import type { OutboundMeta } from '../../../src/chain/types.js';
 import { ROOM } from './fixtures.js';
@@ -284,12 +285,42 @@ describe('delegate', () => {
   });
 });
 
-describe('wireEstimate', () => {
-  it('counts what conversion can add', () => {
-    expect(wireEstimate('abc')).toBe(3);
-    expect(wireEstimate('a<b')).toBe(8);
-    expect(wireEstimate('a\nb')).toBe(6);
-    expect(wireEstimate('é')).toBe(8);
-    expect(wireEstimate('\u{1F600}')).toBe(10);
+describe('wireLength', () => {
+  it('measures what the converters actually produce', () => {
+    expect(wireLength('abc')).toBe(3);
+    expect(wireLength('a<b')).toBe(6);
+    expect(wireLength('a\nb')).toBe(6);
+    expect(wireLength('é')).toBe(6);
+    expect(wireLength('\u{1F600}')).toBe(9);
+  });
+
+  it('counts the markup conversion adds', () => {
+    expect(wireLength('**bold**')).toBe(11);
+    expect(wireLength('[a](http://b)')).toBe(24);
+    expect(wireLength('*a*')).toBe(8);
+  });
+});
+
+describe('a hand-off that only fits before conversion', () => {
+  const LINK = '[the release notes](https://example.invalid/notes/2026-09/release)';
+  const TASK = `read ${LINK} and tighten the intro`;
+
+  it('is refused rather than sent and split', async () => {
+    const k = kit('botone');
+    const drawn = handoffLine('bottwo', TASK, { id: '1-k7f3', hop: 1, originator: 'alice' });
+    k.state.chunk = drawn.length;
+    expect(wireLength(drawn)).toBeGreaterThan(k.state.chunk);
+    await expect(k.c.delegate({ roomKey: RK, requester: 'alice', to: 'bottwo', task: TASK })).rejects.toThrow(
+      'the task is too long for one room message; shorten it',
+    );
+    expect(said(k.say)).toEqual([]);
+    expect(k.c.ledger.list()).toEqual([]);
+  });
+
+  it('goes out once the room can hold the converted line', async () => {
+    const k = kit('botone');
+    k.state.chunk = wireLength(handoffLine('bottwo', TASK, { id: '1-k7f3', hop: 1, originator: 'alice' }));
+    await expect(k.c.delegate({ roomKey: RK, requester: 'alice', to: 'bottwo', task: TASK })).resolves.toContain('handed to bottwo');
+    expect(said(k.say)).toHaveLength(1);
   });
 });
