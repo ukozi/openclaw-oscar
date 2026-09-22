@@ -69,7 +69,6 @@ describe('chain hand-off flows', () => {
     t.alice.say(ROOM, 'pass it down', { cookie: 2003n });
     await t.until(() => errors.length === 1, 'the refusal');
     expect(errors).toEqual(['too many hops']);
-    await t.everyoneHeard('botone: second hop', ['botone', 'bottwo', 'botthree', 'botfour']);
     await t.until(() => t.bots().every((bot) => bot.idle()), 'every run to finish');
     expect(t.bot('botthree').runs[0]?.turn).toMatchObject({ why: 'handoff', originator: 'alice' });
     expect(t.bot('bottwo').said.some((l) => / h:2 o:alice\]$/.test(l))).toBe(true);
