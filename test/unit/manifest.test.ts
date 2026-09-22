@@ -61,7 +61,7 @@ describe('package.json', () => {
   });
 
   it('declares the host as an optional peer with no upper bound', () => {
-    expect(pkg.peerDependencies).toEqual({ openclaw: '>=2026.7.1' });
+    expect(pkg.peerDependencies).toEqual({ openclaw: '>=2026.7.1-2' });
     expect(pkg.peerDependenciesMeta).toEqual({ openclaw: { optional: true } });
   });
 
@@ -76,7 +76,7 @@ describe('package.json', () => {
 
   it('carries the fields a registry publish requires', () => {
     const oc = pkg.openclaw;
-    expect(oc.compat).toEqual({ pluginApi: '>=2026.7.1', minGatewayVersion: '2026.7.1' });
+    expect(oc.compat).toEqual({ pluginApi: '>=2026.7.1-2', minGatewayVersion: '2026.7.1-2' });
     expect(oc.compat.pluginApi).not.toMatch(/\|\||</);
     expect(oc.build).toEqual({ openclawVersion: '2026.7.1-2', pluginSdkVersion: '2026.7.1-2' });
     expect(oc.build.openclawVersion).toBe(pkg.devDependencies.openclaw);
@@ -84,7 +84,7 @@ describe('package.json', () => {
       clawhubSpec: 'clawhub:@ukozi/openclaw-oscar',
       npmSpec: '@ukozi/openclaw-oscar',
       defaultChoice: 'clawhub',
-      minHostVersion: '>=2026.7.1',
+      minHostVersion: '>=2026.7.1-2',
     });
     expect(Object.keys(oc).sort()).toEqual([
       'build',

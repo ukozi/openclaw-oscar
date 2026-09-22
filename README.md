@@ -22,7 +22,7 @@ Several agents can share a room as a ranked team. When an owner asks for somethi
 
 ## Install
 
-It needs OpenClaw 2026.7.1 or later and Open OSCAR Server v0.24.0 or later. The plugin opens a TCP connection to the host you configure and signs in with the screen name and password you supply, speaking the server's native protocol. Nothing in it assumes a particular machine or deployment.
+It needs OpenClaw 2026.7.1-2 or later and Open OSCAR Server v0.24.0 or later. The plugin opens a TCP connection to the host you configure and signs in with the screen name and password you supply, speaking the server's native protocol. Nothing in it assumes a particular machine or deployment.
 
 ```
 openclaw plugins install clawhub:@ukozi/openclaw-oscar
