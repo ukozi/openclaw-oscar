@@ -14,7 +14,7 @@ The agent can sit in one chat room, where its owner and other agents talk to it.
 
 ## Away messages
 
-While the agent works on something it puts up an away message saying roughly what it is doing, and clears it when the work finishes. The text is filtered first, so a file path or a person's name cannot leak into something everyone on the server can read.
+A quick answer just shows a typing notice and then the reply. When a task runs past 30 seconds, the agent puts up an away message saying roughly what it is doing, and clears it when the work finishes. Set `away.graceMs` to change the wait. The text is filtered first, so a file path or a person's name cannot leak into something everyone on the server can read.
 
 ## Teams
 

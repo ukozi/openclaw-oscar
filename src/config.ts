@@ -282,7 +282,7 @@ export function resolveAccount(cfg: unknown, accountId?: string | null): Resolve
       enabled: bool(away.enabled, true),
       message: str(away.message) ?? copy.awayDefault(),
       blurb: oneOf(away.blurb, ['agent', 'phrases', 'summarize'] as const, 'agent'),
-      graceMs: num(away.graceMs, 2000),
+      graceMs: num(away.graceMs, 30_000),
       maxLength: num(away.maxLength, 100),
       replyCooldownMinutes: num(away.replyCooldownMinutes, 10),
     },
