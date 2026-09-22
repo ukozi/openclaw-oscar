@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AwayConfig } from '../../../src/config.js';
 import { createAutoReplier } from '../../../src/presence/auto-reply.js';
+import { createAwayController } from '../../../src/presence/away.js';
 import { createRunTracker } from '../../../src/presence/runs.js';
-import { quietLog } from '../../fake/stub-session.js';
+import { quietLog, stubSession } from '../../fake/stub-session.js';
 
 const IM = 'agent:main:oscar:group:botone/bob';
 const BOT = 'agent:main:oscar:group:botone/bottwo';
@@ -26,7 +27,7 @@ function harness(patch: Partial<AwayConfig> = {}) {
   const replier = createAutoReplier({
     accountId: 'botone',
     tracker,
-    away: { current: () => line },
+    away: { chosenLine: () => line ?? DEFAULT },
     config: () => cfg,
     peerFor: (key) => peers[key] ?? null,
     repliedAt: (peer) => replied.get(peer),
@@ -181,5 +182,57 @@ describe('away auto-reply', () => {
     await vi.advanceTimersByTimeAsync(5000);
     await h.replier.idle();
     expect(h.sent).toHaveLength(1);
+  });
+});
+
+// The away controller and the auto-replier are armed by the same run on the same grace delay, and
+// the tracker calls run listeners before busy listeners, so the reply timer is always the first one
+// in. The reply has to ask the away feature what line it has settled on rather than read the wire.
+function paired(patch: Partial<AwayConfig> = {}) {
+  const cfg: AwayConfig = {
+    enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 2000, maxLength: 100, replyCooldownMinutes: 10, ...patch,
+  };
+  const tracker = createRunTracker();
+  tracker.bind(IM, 'botone', 'approved');
+  const stub = stubSession();
+  const away = createAwayController({
+    accountId: 'botone', tracker, session: stub.session, config: () => cfg, forbidden: () => ['bob'], log: quietLog,
+  });
+  const sent: { to: string; text: string }[] = [];
+  const replier = createAutoReplier({
+    accountId: 'botone',
+    tracker,
+    away,
+    config: () => cfg,
+    peerFor: (key) => (key === IM ? 'bob' : null),
+    repliedAt: () => undefined,
+    send: async (to, text) => {
+      sent.push({ to, text });
+    },
+    log: quietLog,
+  });
+  return { cfg, tracker, away, stub, sent, replier };
+}
+
+describe('away auto-reply beside the real away line', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('carries the line the away feature chose, not the fallback', async () => {
+    const h = paired();
+    h.tracker.seen('r1', IM);
+    h.away.offerLine('r1', 'Working through a stack of notes');
+    await vi.advanceTimersByTimeAsync(2000);
+    await h.replier.idle();
+    expect(h.sent).toEqual([{ to: 'bob', text: 'Working through a stack of notes' }]);
+    expect(h.stub.calls).toEqual(['Working through a stack of notes']);
+  });
+
+  it('carries the operator message when the agent offered nothing', async () => {
+    const h = paired();
+    h.tracker.seen('r1', IM);
+    await vi.advanceTimersByTimeAsync(2000);
+    await h.replier.idle();
+    expect(h.sent).toEqual([{ to: 'bob', text: DEFAULT }]);
   });
 });

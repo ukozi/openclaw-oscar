@@ -1,14 +1,13 @@
 import type { AwayConfig } from '../config.js';
 import { copy } from '../copy.js';
 import type { Logger } from '../oscar/index.js';
-import { operatorAwayText } from './away.js';
 import type { AwayController } from './away.js';
 import type { RunTracker } from './runs.js';
 
 export type AutoReplyDeps = {
   accountId: string;
   tracker: Pick<RunTracker, 'onRun' | 'runInfo'>;
-  away: Pick<AwayController, 'current'>;
+  away: Pick<AwayController, 'chosenLine'>;
   config: () => AwayConfig;
   peerFor: (sessionKey: string) => string | null;
   repliedAt: (peer: string) => number | undefined;
@@ -62,7 +61,7 @@ export function createAutoReplier(deps: AutoReplyDeps): AutoReplier {
     const answered = deps.repliedAt(entry.peer);
     if (answered !== undefined && answered >= entry.startedAt) return;
     if (cooling(entry.peer, cfg)) return;
-    const line = copy.awayAutoReply(deps.away.current() ?? operatorAwayText(cfg));
+    const line = copy.awayAutoReply(deps.away.chosenLine());
     remember(entry.peer);
     tail = tail
       .then(() => deps.send(entry.peer, line))

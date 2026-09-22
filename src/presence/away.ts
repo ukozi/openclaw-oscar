@@ -14,6 +14,7 @@ export interface AwayController {
   offerLine(runId: string, raw: string, toolCallId?: string): LineVerdict;
   verdictFor(toolCallId: string): LineVerdict | undefined;
   current(): string | null;
+  chosenLine(): string;
   stop(): Promise<void>;
 }
 
@@ -240,6 +241,12 @@ export function createAwayController(deps: AwayDeps): AwayController {
     },
     current() {
       return wire;
+    },
+    // The line this feature has settled on. It is picked again here when nothing is on the wire yet,
+    // because the grace delay that arms the away line also arms the auto-reply, and the reply is
+    // always the first of the two to fire.
+    chosenLine() {
+      return wire ?? pickText(deps.config());
     },
     async stop() {
       if (stopped) return;
