@@ -2,7 +2,7 @@
 
 The plugin gives an OpenClaw agent a screen name on an Open OSCAR Server, so you can reach it from an instant messenger client instead of a terminal. Open OSCAR Server is compatible with AOL Instant Messenger clients.
 
-![calyssa answering an instant message, with its away auto-response above the reply and the buddy list beside it](https://raw.githubusercontent.com/ukozi/openclaw-oscar/main/assets/screenshot.png)
+![The bot answering an instant message, with its away auto-response above the reply and the buddy list beside it](https://raw.githubusercontent.com/ukozi/openclaw-oscar/main/assets/screenshot.png)
 
 ## Messages
 
