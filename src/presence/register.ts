@@ -203,14 +203,6 @@ export function originOf(role: Role): OriginClass {
   return role === 'owner' || role === 'bot' ? role : 'approved';
 }
 
-export function imPeerFor(accountId: string, sessionKey: string): string | null {
-  const keys = getRuntime(accountId)?.sessionKeys;
-  if (!keys) return null;
-  const wanted = sessionKey.toLowerCase();
-  const entry = keys.get(sessionKey) ?? [...keys.entries()].find(([key]) => key.toLowerCase() === wanted)?.[1];
-  return entry?.peer.kind === 'im' ? entry.peer.peer : null;
-}
-
 export function presenceDispatch(
   input: { sessionKey: string; accountId: string; origin: OriginClass; text: string },
   wiring: PresenceWiring,
@@ -248,7 +240,7 @@ export function startPresence(input: {
   machine: RunStateMachine;
   log: Logger;
   tracker?: RunTracker & RunFeed;
-}): { away: AwayController; stop(): Promise<void> } {
+}): { away: AwayController; contacted(peer: string): void; stop(): Promise<void> } {
   const { accountId, machine } = input;
   const tracker = input.tracker ?? getRunTracker();
   const cfg = input.getCfg;
@@ -268,7 +260,6 @@ export function startPresence(input: {
     tracker,
     away,
     config: () => resolveAccount(cfg(), accountId).away,
-    peerFor: (sessionKey) => imPeerFor(accountId, sessionKey),
     repliedAt: (peer) => getRuntime(accountId)?.lastReplyAt.get(peer),
     send: async (to, text) => {
       await sendAutoReply({ cfg: cfg(), accountId, to, text });
@@ -277,6 +268,7 @@ export function startPresence(input: {
   });
   return {
     away,
+    contacted: (peer) => autoReply.contacted(peer),
     async stop() {
       autoReply.stop();
       await autoReply.idle();

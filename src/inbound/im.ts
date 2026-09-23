@@ -52,6 +52,7 @@ export type ImDeps = {
   contact: (a: ContactAttempt) => void;
   replayed: (list: ContactAttempt[]) => void;
   lastReplyAt: (peer: string) => number | undefined;
+  contacted?: (peer: string) => void;
   updateBuddies: () => void;
 };
 
@@ -188,6 +189,7 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; stop()
       armReplay();
       return;
     }
+    deps.contacted?.(from);
 
     if (ev.text.trimStart().startsWith('/')) {
       flush(from);

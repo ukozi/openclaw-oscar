@@ -14,7 +14,7 @@ export interface AwayController {
   offerLine(runId: string, raw: string, toolCallId?: string): LineVerdict;
   verdictFor(toolCallId: string): LineVerdict | undefined;
   current(): string | null;
-  chosenLine(): string;
+  onShown(fn: (text: string) => void): () => void;
   stop(): Promise<void>;
 }
 
@@ -63,6 +63,7 @@ export function createAwayController(deps: AwayDeps): AwayController {
   let clearRetries = 0;
   let stopped = false;
   let lastPhase = session.getState().phase;
+  const shownListeners = new Set<(text: string) => void>();
 
   function stopTimer(timer: ReturnType<typeof setTimeout> | undefined): undefined {
     if (timer) clearTimeout(timer);
@@ -87,7 +88,18 @@ export function createAwayController(deps: AwayDeps): AwayController {
     chain = chain
       .then(() => session.setAway(text))
       .then(() => {
-        if (text === null) clearRetries = 0;
+        if (text === null) {
+          clearRetries = 0;
+          return;
+        }
+        if (wire !== text) return;
+        for (const fn of [...shownListeners]) {
+          try {
+            fn(text);
+          } catch (err) {
+            log.warn('away listener failed', { accountId, error: String(err) });
+          }
+        }
       })
       .catch((err: unknown) => {
         log.debug('away update failed', { accountId, error: String(err) });
@@ -242,11 +254,11 @@ export function createAwayController(deps: AwayDeps): AwayController {
     current() {
       return wire;
     },
-    // The line this feature has settled on. It is picked again here when nothing is on the wire yet,
-    // because the grace delay that arms the away line also arms the auto-reply, and the reply is
-    // always the first of the two to fire.
-    chosenLine() {
-      return wire ?? pickText(deps.config());
+    onShown(fn) {
+      shownListeners.add(fn);
+      return () => {
+        shownListeners.delete(fn);
+      };
     },
     async stop() {
       if (stopped) return;
@@ -255,6 +267,7 @@ export function createAwayController(deps: AwayDeps): AwayController {
       graceTimer = stopTimer(graceTimer);
       updateTimer = stopTimer(updateTimer);
       clearTimer = stopTimer(clearTimer);
+      shownListeners.clear();
       for (const blurb of blurbs.values()) blurb.abort?.abort();
       blurbs.clear();
       if (wire !== null) push(null);

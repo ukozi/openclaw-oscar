@@ -18,6 +18,7 @@ function setup() {
   const contacts: ContactAttempt[] = [];
   const replays: ContactAttempt[][] = [];
   const lastReply = new Map<string, number>();
+  const reached: string[] = [];
   let buddyUpdates = 0;
   let cfg: unknown = { channels: { oscar: { owners: ['Alice B', 'alice'], allowFrom: ['bob'], chain: { roster: [{ screenName: 'botone' }, { screenName: 'bottwo' }] } } } };
   const handler = createImHandler({
@@ -27,13 +28,14 @@ function setup() {
     contact: (a) => contacts.push(a),
     replayed: (list) => replays.push(list),
     lastReplyAt: (peer) => lastReply.get(peer),
+    contacted: (peer) => reached.push(peer),
     updateBuddies: () => { buddyUpdates += 1; },
   });
   const im = (from: string, text: string, patch: Partial<ImEvent> = {}): ImEvent => ({
     from, fromDisplay: from, text, cookie: 0n, autoResponse: false, offline: false, system: false, ...patch,
   });
   const settle = async (ms: number) => { await handler.idle(); await vi.advanceTimersByTimeAsync(ms); await handler.idle(); };
-  return { handler, turns, contacts, replays, lastReply, im, settle, setCfg: (next: unknown) => { cfg = next; }, buddyUpdates: () => buddyUpdates };
+  return { handler, turns, contacts, replays, lastReply, reached, im, settle, setCfg: (next: unknown) => { cfg = next; }, buddyUpdates: () => buddyUpdates };
 }
 
 beforeEach(() => {
@@ -73,6 +75,17 @@ describe('check order', () => {
     await t.settle(2000);
     expect(t.turns).toHaveLength(wantTurns);
     expect(t.contacts).toHaveLength(wantContacts);
+    expect(t.reached).toHaveLength(wantTurns);
+  });
+
+  it('tells the away auto-reply about each live message from someone it answers, before the debounce', async () => {
+    const t = setup();
+    t.handler.onIm(t.im('Bob', 'one'));
+    t.handler.onIm(t.im('bob', 'two'));
+    t.handler.onIm(t.im('bob', 'late', { offline: true }));
+    await t.handler.idle();
+    expect(t.reached).toEqual(['bob', 'bob']);
+    expect(t.turns).toEqual([]);
   });
 
   it('drops every IM from a roster bot when no control handler is installed', async () => {

@@ -179,6 +179,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     contact: (a) => notices.contact(a),
     replayed: (list) => notices.replayed(list),
     lastReplyAt: (peer) => rt.lastReplyAt.get(peer),
+    contacted: (peer) => presence.contacted(peer),
     updateBuddies: () => session.updateBuddies(),
   });
   const detachRooms = attachRooms(rt, {

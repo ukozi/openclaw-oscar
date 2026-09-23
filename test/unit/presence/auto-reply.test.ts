@@ -6,189 +6,10 @@ import { createRunTracker } from '../../../src/presence/runs.js';
 import { quietLog, stubSession } from '../../fake/stub-session.js';
 
 const IM = 'agent:main:oscar:group:botone/bob';
-const BOT = 'agent:main:oscar:group:botone/bottwo';
-const ROOM = 'agent:main:oscar:group:botone#4.testroom';
 const DEFAULT = 'Working on something. Back in a bit.';
 const MINUTE = 60_000;
 
 function harness(patch: Partial<AwayConfig> = {}) {
-  const cfg: AwayConfig = {
-    enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 2000, maxLength: 100, replyCooldownMinutes: 10, ...patch,
-  };
-  const tracker = createRunTracker();
-  tracker.bind(IM, 'botone', 'approved');
-  tracker.bind(BOT, 'botone', 'bot');
-  tracker.bind(ROOM, 'botone', 'approved');
-  const sent: { to: string; text: string }[] = [];
-  const replied = new Map<string, number>();
-  const peers: Record<string, string | null> = { [IM]: 'bob', [BOT]: 'bottwo', [ROOM]: null };
-  let line: string | null = null;
-  let fail = false;
-  const replier = createAutoReplier({
-    accountId: 'botone',
-    tracker,
-    away: { chosenLine: () => line ?? DEFAULT },
-    config: () => cfg,
-    peerFor: (key) => peers[key] ?? null,
-    repliedAt: (peer) => replied.get(peer),
-    send: async (to, text) => {
-      if (fail) throw new Error('not-online');
-      sent.push({ to, text });
-    },
-    log: quietLog,
-  });
-  return {
-    cfg, tracker, sent, replied, replier,
-    show: (text: string | null) => { line = text; },
-    breakSend: () => { fail = true; },
-  };
-}
-
-describe('away auto-reply', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it('sends the away line once the run outlasts the grace period', async () => {
-    const h = harness();
-    h.show('Working in some files');
-    h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(1999);
-    expect(h.sent).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1);
-    await h.replier.idle();
-    expect(h.sent).toEqual([{ to: 'bob', text: 'Working in some files' }]);
-  });
-
-  it('falls back to the configured message when no line is up yet', async () => {
-    const h = harness();
-    h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(2000);
-    await h.replier.idle();
-    expect(h.sent).toEqual([{ to: 'bob', text: DEFAULT }]);
-  });
-
-  it('sends nothing when the run ends inside the grace period', async () => {
-    const h = harness();
-    h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(1000);
-    h.tracker.ended('r1');
-    await vi.advanceTimersByTimeAsync(5000);
-    await h.replier.idle();
-    expect(h.sent).toEqual([]);
-  });
-
-  it('sends nothing to a roster bot', async () => {
-    const h = harness();
-    h.tracker.seen('r1', BOT);
-    await vi.advanceTimersByTimeAsync(5000);
-    await h.replier.idle();
-    expect(h.sent).toEqual([]);
-  });
-
-  it('sends nothing for a room turn', async () => {
-    const h = harness();
-    h.tracker.seen('r1', ROOM);
-    await vi.advanceTimersByTimeAsync(5000);
-    await h.replier.idle();
-    expect(h.sent).toEqual([]);
-  });
-
-  it('sends nothing when the away feature is off', async () => {
-    const h = harness({ enabled: false });
-    h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(5000);
-    await h.replier.idle();
-    expect(h.sent).toEqual([]);
-  });
-
-  it('sends nothing when the run already answered that person', async () => {
-    const h = harness();
-    h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(500);
-    h.replied.set('bob', Date.now());
-    await vi.advanceTimersByTimeAsync(1500);
-    await h.replier.idle();
-    expect(h.sent).toEqual([]);
-  });
-
-  it('still answers when the only reply to that person was before this run', async () => {
-    const h = harness();
-    h.replied.set('bob', Date.now());
-    await vi.advanceTimersByTimeAsync(1);
-    h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(2000);
-    await h.replier.idle();
-    expect(h.sent).toHaveLength(1);
-  });
-
-  it('sends one line per person per cooldown', async () => {
-    const h = harness();
-    h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(2000);
-    await h.replier.idle();
-    h.tracker.ended('r1');
-    await vi.advanceTimersByTimeAsync(MINUTE);
-    h.tracker.seen('r2', IM);
-    await vi.advanceTimersByTimeAsync(2000);
-    await h.replier.idle();
-    expect(h.sent).toHaveLength(1);
-  });
-
-  it('sends one line when two runs for the same person overlap', async () => {
-    const h = harness();
-    h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(1000);
-    h.tracker.seen('r2', IM);
-    await vi.advanceTimersByTimeAsync(2000);
-    await h.replier.idle();
-    expect(h.sent).toHaveLength(1);
-  });
-
-  it('sends again once the cooldown is up', async () => {
-    const h = harness();
-    h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(2000);
-    await h.replier.idle();
-    h.tracker.ended('r1');
-    await vi.advanceTimersByTimeAsync(10 * MINUTE);
-    h.tracker.seen('r2', IM);
-    await vi.advanceTimersByTimeAsync(2000);
-    await h.replier.idle();
-    expect(h.sent).toHaveLength(2);
-  });
-
-  it('keeps the cooldown when the send fails', async () => {
-    const h = harness();
-    h.breakSend();
-    h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(2000);
-    await h.replier.idle();
-    h.tracker.ended('r1');
-    await vi.advanceTimersByTimeAsync(MINUTE);
-    h.tracker.seen('r2', IM);
-    await vi.advanceTimersByTimeAsync(2000);
-    await h.replier.idle();
-    expect(h.sent).toEqual([]);
-  });
-
-  it('stops without dropping a send in flight and answers nothing after that', async () => {
-    const h = harness();
-    h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(2000);
-    h.replier.stop();
-    await h.replier.idle();
-    expect(h.sent).toHaveLength(1);
-    h.tracker.seen('r2', IM);
-    await vi.advanceTimersByTimeAsync(5000);
-    await h.replier.idle();
-    expect(h.sent).toHaveLength(1);
-  });
-});
-
-// The away controller and the auto-replier are armed by the same run on the same grace delay, and
-// the tracker calls run listeners before busy listeners, so the reply timer is always the first one
-// in. The reply has to ask the away feature what line it has settled on rather than read the wire.
-function paired(patch: Partial<AwayConfig> = {}) {
   const cfg: AwayConfig = {
     enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 2000, maxLength: 100, replyCooldownMinutes: 10, ...patch,
   };
@@ -199,40 +20,153 @@ function paired(patch: Partial<AwayConfig> = {}) {
     accountId: 'botone', tracker, session: stub.session, config: () => cfg, forbidden: () => ['bob'], log: quietLog,
   });
   const sent: { to: string; text: string }[] = [];
+  const replied = new Map<string, number>();
+  let fail = false;
   const replier = createAutoReplier({
     accountId: 'botone',
     tracker,
     away,
     config: () => cfg,
-    peerFor: (key) => (key === IM ? 'bob' : null),
-    repliedAt: () => undefined,
+    repliedAt: (peer) => replied.get(peer),
     send: async (to, text) => {
+      if (fail) throw new Error('not-online');
       sent.push({ to, text });
     },
     log: quietLog,
   });
-  return { cfg, tracker, away, stub, sent, replier };
+  const settle = async (ms = 0) => {
+    await vi.advanceTimersByTimeAsync(ms);
+    await replier.idle();
+  };
+  return {
+    cfg, tracker, away, stub, sent, replied, replier, settle,
+    breakSend: () => { fail = true; },
+  };
 }
 
-describe('away auto-reply beside the real away line', () => {
+describe('away auto-reply', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('carries the line the away feature chose, not the fallback', async () => {
-    const h = paired();
+  it('sends nothing to the person whose question is still being worked on', async () => {
+    const h = harness();
     h.tracker.seen('r1', IM);
-    h.away.offerLine('r1', 'Working through a stack of notes');
-    await vi.advanceTimersByTimeAsync(2000);
-    await h.replier.idle();
-    expect(h.sent).toEqual([{ to: 'bob', text: 'Working through a stack of notes' }]);
-    expect(h.stub.calls).toEqual(['Working through a stack of notes']);
+    await h.settle(10_000);
+    expect(h.stub.calls).toEqual([DEFAULT]);
+    expect(h.sent).toEqual([]);
   });
 
-  it('carries the operator message when the agent offered nothing', async () => {
-    const h = paired();
+  it('answers someone who writes while the away line is up', async () => {
+    const h = harness();
     h.tracker.seen('r1', IM);
-    await vi.advanceTimersByTimeAsync(2000);
-    await h.replier.idle();
+    h.away.offerLine('r1', 'Working through a stack of notes');
+    await h.settle(2000);
+    h.replier.contacted('carol');
+    await h.settle();
+    expect(h.sent).toEqual([{ to: 'carol', text: 'Working through a stack of notes' }]);
+  });
+
+  it('answers a follow-up from the person who asked once the away line goes up', async () => {
+    const h = harness();
+    h.tracker.seen('r1', IM);
+    await h.settle(500);
+    h.replier.contacted('bob');
+    await h.settle(1499);
+    expect(h.sent).toEqual([]);
+    await h.settle(1);
     expect(h.sent).toEqual([{ to: 'bob', text: DEFAULT }]);
+  });
+
+  it('sends nothing when the work ends before the away line goes up', async () => {
+    const h = harness();
+    h.tracker.seen('r1', IM);
+    h.replier.contacted('carol');
+    await h.settle(1000);
+    h.tracker.ended('r1');
+    await h.settle(5000);
+    expect(h.sent).toEqual([]);
+  });
+
+  it('sends nothing to someone who writes while nothing is running', async () => {
+    const h = harness();
+    h.replier.contacted('carol');
+    await h.settle(5000);
+    h.tracker.seen('r1', IM);
+    await h.settle(5000);
+    expect(h.sent).toEqual([]);
+  });
+
+  it('sends nothing when the away feature is off', async () => {
+    const h = harness({ enabled: false });
+    h.tracker.seen('r1', IM);
+    h.replier.contacted('carol');
+    await h.settle(5000);
+    expect(h.sent).toEqual([]);
+  });
+
+  it('sends nothing when that person got a real reply before the line went up', async () => {
+    const h = harness();
+    h.tracker.seen('r1', IM);
+    h.replier.contacted('carol');
+    await h.settle(500);
+    h.replied.set('carol', Date.now());
+    await h.settle(1500);
+    expect(h.sent).toEqual([]);
+  });
+
+  it('sends one line per person per cooldown', async () => {
+    const h = harness();
+    h.tracker.seen('r1', IM);
+    await h.settle(2000);
+    h.replier.contacted('carol');
+    h.replier.contacted('carol');
+    await h.settle();
+    h.tracker.ended('r1');
+    await h.settle(MINUTE);
+    h.tracker.seen('r2', IM);
+    await h.settle(2000);
+    h.replier.contacted('carol');
+    await h.settle();
+    expect(h.sent).toHaveLength(1);
+  });
+
+  it('sends again once the cooldown is up', async () => {
+    const h = harness();
+    h.tracker.seen('r1', IM);
+    await h.settle(2000);
+    h.replier.contacted('carol');
+    await h.settle();
+    h.tracker.ended('r1');
+    await h.settle(10 * MINUTE);
+    h.tracker.seen('r2', IM);
+    await h.settle(2000);
+    h.replier.contacted('carol');
+    await h.settle();
+    expect(h.sent).toHaveLength(2);
+  });
+
+  it('keeps the cooldown when the send fails', async () => {
+    const h = harness();
+    h.breakSend();
+    h.tracker.seen('r1', IM);
+    await h.settle(2000);
+    h.replier.contacted('carol');
+    await h.settle();
+    h.replier.contacted('carol');
+    await h.settle();
+    expect(h.sent).toEqual([]);
+  });
+
+  it('stops without dropping a send in flight and answers nothing after that', async () => {
+    const h = harness();
+    h.tracker.seen('r1', IM);
+    await h.settle(2000);
+    h.replier.contacted('carol');
+    h.replier.stop();
+    await h.settle();
+    expect(h.sent).toHaveLength(1);
+    h.replier.contacted('dave');
+    await h.settle(5000);
+    expect(h.sent).toHaveLength(1);
   });
 });

@@ -61,7 +61,6 @@ describe('the away auto-reply on the wire', () => {
     });
     const replier = createAutoReplier({
       accountId: 'botone', tracker, away: controller, config: () => away,
-      peerFor: (key) => (key === IM ? 'bob' : null),
       repliedAt: () => undefined,
       send: async (to, text) => {
         await session.sendIm(to, text, { priority: 'notice', auto: true });
@@ -82,23 +81,26 @@ describe('the away auto-reply on the wire', () => {
   }
 
   it('sends the away line back and marks it as an automatic reply', async () => {
-    const { session, tracker } = boot(30);
+    const { session, tracker, controller, replier } = boot(30);
     const ready = online(session);
     session.start();
     await ready;
     const bob = server.peer('bob');
     tracker.seen('r1', IM);
+    await vi.waitFor(() => expect(controller.current()).toBe(DEFAULT));
+    replier.contacted('bob');
     await vi.waitFor(() => expect(bob.ims().map((im) => im.text)).toEqual([DEFAULT]));
     expect(outgoingImTags(server).at(-1)).toContain(TLV_AUTO_RESPONSE);
   });
 
   it('sends nothing when the run ends inside the grace period', async () => {
-    const { session, tracker } = boot(3000);
+    const { session, tracker, replier } = boot(3000);
     const ready = online(session);
     session.start();
     await ready;
     const bob = server.peer('bob');
     tracker.seen('r1', IM);
+    replier.contacted('bob');
     tracker.ended('r1');
     await session.sendIm('bob', 'done');
     await vi.waitFor(() => expect(bob.ims()).toHaveLength(1));

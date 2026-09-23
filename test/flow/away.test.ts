@@ -3,7 +3,7 @@ import { readPolicy, resolveAccount, type AwayConfig } from '../../src/config.js
 import { createAwayController, type AwayController } from '../../src/presence/away.js';
 import { forbiddenNames } from '../../src/presence/blurb.js';
 import {
-  createOscarStatusTool, createSummarizer, hostConfig, imPeerFor, originOf, presenceActions, presenceDispatch, presenceToolHints,
+  createOscarStatusTool, createSummarizer, hostConfig, originOf, presenceActions, presenceDispatch, presenceToolHints,
   lifecycleStreamAvailable, registerPresence, startPresence, summarizeViaHost,
 } from '../../src/presence/register.js';
 import { RUN_QUIET_MS, TOOL_CAP_MS, createRunTracker } from '../../src/presence/runs.js';
@@ -329,22 +329,6 @@ describe('wiring', () => {
     await expect(summarizeViaHost('hello', new AbortController().signal)).resolves.toBe('Drafting a reply');
   });
 
-  it('finds the IM peer of a session key and nothing else', () => {
-    setRuntime({
-      accountId: 'botone', session: new FakeSession().asSession(), rooms: new Map(), lastReplyAt: new Map(),
-      counters: { droppedSends: 0, eventGaps: 0 },
-      sessionKeys: new Map([
-        [IM, { accountId: 'botone', peer: { kind: 'im' as const, bot: 'botone', peer: 'alice' } }],
-        [ROOM, { accountId: 'botone', peer: { kind: 'room' as const, bot: 'botone', room: { exchange: 4 as const, name: 'testroom' } } }],
-      ]),
-    });
-    expect(imPeerFor('botone', IM)).toBe('alice');
-    expect(imPeerFor('botone', IM.toUpperCase())).toBe('alice');
-    expect(imPeerFor('botone', ROOM)).toBe(null);
-    expect(imPeerFor('botone', 'agent:main:oscar:group:botone/bob')).toBe(null);
-    expect(imPeerFor('bottwo', IM)).toBe(null);
-  });
-
   it('maps roles to origin classes', () => {
     expect([originOf('owner'), originOf('approved'), originOf('bot'), originOf('unlisted')]).toEqual(['owner', 'approved', 'bot', 'approved']);
   });
@@ -488,20 +472,18 @@ describe('the away auto-reply through a live account', () => {
     return { cfg, tracker, fake, wire, presence, dispatch };
   }
 
-  it('answers an approved person once with the line the away feature chose', async () => {
+  it('leaves the asker alone and answers a follow-up once with the line the away feature chose', async () => {
     const h = live();
     h.dispatch(APPROVED, 'approved');
     await h.fake.emitLifecycle('r1', 'start', APPROVED);
     h.presence.away.offerLine('r1', 'Reading through a stack of notes');
-    await tick(1999);
-    expect(h.wire.sent).toEqual([]);
-    await tick(1);
-    expect(h.wire.sent).toEqual([{ to: 'bob', html: 'Reading through a stack of notes', priority: 'notice', auto: true }]);
-    await h.fake.emitLifecycle('r1', 'end', APPROVED);
-    await tick(MINUTE);
-    h.dispatch(APPROVED, 'approved');
-    await h.fake.emitLifecycle('r2', 'start', APPROVED);
     await tick(5000);
+    expect(h.wire.sent).toEqual([]);
+    h.presence.contacted('bob');
+    await tick(0);
+    expect(h.wire.sent).toEqual([{ to: 'bob', html: 'Reading through a stack of notes', priority: 'notice', auto: true }]);
+    h.presence.contacted('bob');
+    await tick(0);
     expect(h.wire.sent).toHaveLength(1);
   });
 

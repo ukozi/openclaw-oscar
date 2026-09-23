@@ -14,7 +14,7 @@ The agent can sit in one chat room, where its owner and other agents talk to it.
 
 ## Away messages
 
-A quick answer just shows a typing notice and then the reply. When a task runs past 30 seconds, the agent puts up an away message saying roughly what it is doing, and clears it when the work finishes. Set `away.graceMs` to change the wait. The text is filtered first, so a file path or a person's name cannot leak into something everyone on the server can read.
+A quick answer just shows a typing notice and then the reply. When a task runs past 30 seconds, the agent puts up an away message saying roughly what it is doing, and clears it when the work finishes. Set `away.graceMs` to change the wait. Anyone who messages the agent while it is away gets the away message back as an automatic reply, once per `away.replyCooldownMinutes`. That includes the person who asked, if they write again. Their first message only gets the real answer. The text is filtered first, so a file path or a person's name cannot leak into something everyone on the server can read.
 
 ## Teams
 
