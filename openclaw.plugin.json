@@ -194,6 +194,36 @@
             "minimum": 100,
             "maximum": 2000
           },
+          "fallback": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "screenName": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "channel": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "to": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "accountId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "screenName",
+                "channel",
+                "to"
+              ],
+              "additionalProperties": false
+            }
+          },
           "owners": {
             "type": "array",
             "items": {
@@ -617,6 +647,36 @@
                   "type": "integer",
                   "minimum": 100,
                   "maximum": 2000
+                },
+                "fallback": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "screenName": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "channel": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "to": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "accountId": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "screenName",
+                      "channel",
+                      "to"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "additionalProperties": false

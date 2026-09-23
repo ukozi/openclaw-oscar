@@ -25,7 +25,7 @@ export const RELOAD_NOOP_PREFIXES = [
   'room.historyFrom', 'room.notifyOnUnlistedJoin', 'invites', 'rooms',
   'away', 'typing', 'blockStreaming', 'awareness', 'textChunkLimit', 'roomTextChunkLimit',
   'chain.floorSeconds', 'chain.takeoverMs', 'chain.ackAfterMs', 'chain.ackText', 'chain.busyText',
-  'chain.maxHops', 'chain.resultTimeoutMinutes', 'chain.reviewResults',
+  'chain.maxHops', 'chain.resultTimeoutMinutes', 'chain.reviewResults', 'fallback',
 ].map((key) => `channels.${CHANNEL_ID}.${key}`);
 
 export const UI_HINTS = {
@@ -49,7 +49,9 @@ export type ResolvedAccount = {
   password?: unknown; passwordFile?: string;
   dangerouslyAllowUnauthenticatedServer: boolean;
   away: AwayConfig; typing: boolean; blockStreaming?: boolean; textChunkLimit: number; roomTextChunkLimit: number;
+  fallback: FallbackRoute[];
 };
+export type FallbackRoute = { screenName: string; channel: string; to: string; accountId?: string };
 export type RosterEntry = { screenName: string; role: string; aliases: string[] };
 export type ChainConfig = {
   roster: RosterEntry[]; floorSeconds: number; takeoverMs: number; ackAfterMs: number;
@@ -92,6 +94,13 @@ const awaySchema = z.object({
   replyCooldownMinutes: z.number().int().min(0).max(1440).optional(),
 }).strict();
 
+const fallbackSchema = z.array(z.object({
+  screenName: z.string().min(1),
+  channel: z.string().min(1),
+  to: z.string().min(1),
+  accountId: z.string().min(1).optional(),
+}).strict());
+
 const transportShape = {
   enabled: z.boolean().optional(),
   name: z.string().optional(),
@@ -109,6 +118,7 @@ const transportShape = {
   blockStreaming: z.boolean().optional(),
   textChunkLimit: z.number().int().min(200).max(4000).optional(),
   roomTextChunkLimit: z.number().int().min(100).max(2000).optional(),
+  fallback: fallbackSchema.optional(),
 };
 
 const names = z.array(z.string().min(1));
@@ -199,6 +209,18 @@ function crossFieldProblems(sec: Obj): Problem[] {
 
   const accounts = obj(sec.accounts);
   const ids = accounts ? Object.keys(accounts) : [];
+  const checkFallback = (at: (string | number)[], routes: unknown): void => {
+    const seenRoutes = new Set<string>();
+    list(routes).map(obj).forEach((r, i) => {
+      if (r?.channel === CHANNEL_ID) problems.push({ path: [...at, i, 'channel'], message: 'fallback cannot use the oscar channel' });
+      const key = typeof r?.screenName === 'string' ? normalizeName(r.screenName) : '';
+      if (!key) return;
+      if (seenRoutes.has(key)) problems.push({ path: [...at, i, 'screenName'], message: `"${key}" already has a fallback` });
+      seenRoutes.add(key);
+    });
+  };
+  checkFallback(['fallback'], sec.fallback);
+  for (const id of ids) checkFallback(['accounts', id, 'fallback'], obj(accounts?.[id])?.fallback);
   let wouldRun = false;
   const seen = new Map<string, string>();
   const rosterNames = new Set(roster.map((e) => normalizeName(typeof e?.screenName === 'string' ? e.screenName : '')));
@@ -290,6 +312,14 @@ export function resolveAccount(cfg: unknown, accountId?: string | null): Resolve
     ...(typeof merged.blockStreaming === 'boolean' ? { blockStreaming: merged.blockStreaming } : {}),
     textChunkLimit: num(merged.textChunkLimit, 1800),
     roomTextChunkLimit: Math.min(num(merged.roomTextChunkLimit, 900), ROOM_CHUNK_MAX),
+    fallback: list(merged.fallback).map(obj).filter((r): r is Obj => Boolean(r)).flatMap((r) => {
+      const screenName = normalizeName(str(r.screenName) ?? '');
+      const channel = str(r.channel);
+      const to = str(r.to);
+      if (!screenName || !channel || !to) return [];
+      const accountId = str(r.accountId);
+      return [{ screenName, channel, to, ...(accountId ? { accountId } : {}) }];
+    }),
   };
 }
 

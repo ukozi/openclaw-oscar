@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   RELOAD_NOOP_PREFIXES, ROOM_CHUNK_MAX, ROOT_ONLY_KEYS, buddyList, configProblems, defaultAccountId, listAccountIds,
-  oscarChannelConfigSchema, readPolicy, resolveAccount, rosterHash,
+  OscarConfigSchema, oscarChannelConfigSchema, readPolicy, resolveAccount, rosterHash,
 } from '../../src/config.js';
 import type { ChainConfig } from '../../src/config.js';
 
@@ -31,7 +31,7 @@ describe('accounts', () => {
     expect(a).toMatchObject({
       accountId: 'default', enabled: true, configured: true, screenName: 'botone', display: 'Bot One',
       host: 'oscar.example.net', port: 5190, tls: false, redirect: 'auto', dangerouslyAllowUnauthenticatedServer: false,
-      typing: true, textChunkLimit: 1800, roomTextChunkLimit: 900,
+      typing: true, textChunkLimit: 1800, roomTextChunkLimit: 900, fallback: [],
       away: { enabled: true, message: 'Working on something. Back in a bit.', blurb: 'agent', graceMs: 30000, maxLength: 100, replyCooldownMinutes: 10 },
     });
     expect(a.blockStreaming).toBeUndefined();
@@ -235,7 +235,7 @@ describe('buddies, reload and schema export', () => {
   });
 
   it('marks people keys as no-restart and transport keys as restart', () => {
-    for (const path of ['channels.oscar.allowFrom', 'channels.oscar.owners', 'channels.oscar.contactNotice', 'channels.oscar.away', 'channels.oscar.chain.ackText', 'channels.oscar.room.historyFrom']) {
+    for (const path of ['channels.oscar.allowFrom', 'channels.oscar.owners', 'channels.oscar.contactNotice', 'channels.oscar.away', 'channels.oscar.chain.ackText', 'channels.oscar.room.historyFrom', 'channels.oscar.fallback']) {
       expect(RELOAD_NOOP_PREFIXES).toContain(path);
     }
     for (const path of ['channels.oscar', 'channels.oscar.host', 'channels.oscar.password', 'channels.oscar.screenName', 'channels.oscar.room', 'channels.oscar.room.name', 'channels.oscar.chain', 'channels.oscar.chain.roster', 'channels.oscar.accounts']) {
@@ -250,5 +250,40 @@ describe('buddies, reload and schema export', () => {
       expect(schema.properties, key).toHaveProperty(key);
     }
     expect((oscarChannelConfigSchema.uiHints as Record<string, { sensitive?: boolean }>).password?.sensitive).toBe(true);
+  });
+});
+
+describe('fallback', () => {
+  const base = { host: 'h', password: 'p', owners: ['alice'] };
+  const route = { screenName: 'Al Ice', channel: 'signal', to: 'c1072e4a' };
+
+  it('resolves a per-account list with normalized names', () => {
+    const cfg = { channels: { oscar: { ...base, accounts: { a: { screenName: 'botone', fallback: [route] } } } } };
+    expect(resolveAccount(cfg, 'a').fallback).toEqual([{ screenName: 'alice', channel: 'signal', to: 'c1072e4a' }]);
+  });
+
+  it('is empty when unset', () => {
+    expect(resolveAccount({ channels: { oscar: { ...base, screenName: 'botone' } } }).fallback).toEqual([]);
+  });
+
+  it('keeps an accountId for the other channel', () => {
+    const cfg = { channels: { oscar: { ...base, screenName: 'botone', fallback: [{ ...route, accountId: 'main' }] } } };
+    expect(resolveAccount(cfg).fallback[0]?.accountId).toBe('main');
+  });
+
+  it.each([
+    [{ ...route, channel: 'oscar' }, 'fallback cannot use the oscar channel'],
+    [{ ...route, to: '' }, undefined],
+    [{ ...route, screenName: '' }, undefined],
+  ])('refuses a bad route %j', (bad, message) => {
+    const result = OscarConfigSchema.safeParse({ ...base, screenName: 'botone', fallback: [bad] });
+    expect(result.success).toBe(false);
+    if (message && !result.success) expect(result.error.issues.map((i) => i.message)).toContain(message);
+  });
+
+  it('refuses the same person twice', () => {
+    const result = OscarConfigSchema.safeParse({ ...base, screenName: 'botone', fallback: [route, { ...route, screenName: 'alice' }] });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues.map((i) => i.message)).toContain('"alice" already has a fallback');
   });
 });
