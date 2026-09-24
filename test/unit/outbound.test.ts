@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
 vi.mock('openclaw/plugin-sdk/channel-reply-pipeline', async () => (await import('../fake/openclaw.js')).channelReplyPipeline);
+vi.mock('openclaw/plugin-sdk/channel-outbound', async () => (await import('../fake/openclaw.js')).channelOutbound);
 
 import { toWireHtml } from '../../src/oscar/text.js';
 import { checkTarget, outboundBase, sendAdapterText, sendAutoReply, sendMarkdown, sendWire, setOutboundTextFilter, typingFor, withPriority } from '../../src/outbound.js';
@@ -174,5 +175,69 @@ describe('typing', () => {
     expect(typingFor({ cfg: cfg({ dmPolicy: 'open', dangerouslyAllowOpenDm: true }), accountId: 'default', peer: 'mallory' })).toBeUndefined();
     expect(typingFor({ cfg: cfg({ chain: { roster: [{ screenName: 'botone' }, { screenName: 'bottwo' }] } }), accountId: 'default', peer: 'bottwo' })).toBeUndefined();
     expect(typingFor({ cfg: cfg({ typing: false }), accountId: 'default', peer: 'bob' })).toBeUndefined();
+  });
+});
+
+describe('fallback', () => {
+  const withFallback = (patch: Record<string, unknown> = {}) => cfg({ fallback: [{ screenName: 'alice', channel: 'signal', to: 'c1072e4a' }], ...patch });
+
+  beforeEach(() => session.setState({ phase: 'online' }));
+
+  it('sends a reply to an away owner over the fallback only, in one piece', async () => {
+    session.setPresence('alice', { online: true, away: true });
+    const long = `**${'a'.repeat(150)}** ${'b'.repeat(150)}`;
+    const res = await sendMarkdown({ cfg: withFallback({ textChunkLimit: 200 }), to: 'alice', markdown: long });
+    expect(res.messageIds).toEqual(['fallback:signal']);
+    expect(sdk.foreign).toEqual([{ channel: 'signal', to: 'c1072e4a', text: long }]);
+    expect(session.sent).toEqual([]);
+    expect(getRuntime('default')?.lastReplyAt.has('alice')).toBe(true);
+  });
+
+  it('turns adapter html back into text', async () => {
+    session.setPresence('alice', { online: false });
+    const res = await sendAdapterText({ cfg: withFallback(), to: 'alice', text: toWireHtml('**hi** there\nsecond line') });
+    expect(res.messageId).toBe('fallback:signal');
+    expect(sdk.foreign.map((f) => f.text)).toEqual(['hi there\nsecond line']);
+    expect(session.sent).toEqual([]);
+  });
+
+  it('does not count a fallback notice as a reply', async () => {
+    session.setPresence('alice', { online: false });
+    await withPriority('notice', () => sendAdapterText({ cfg: withFallback(), to: 'alice', text: 'n' }));
+    expect(getRuntime('default')?.lastReplyAt.has('alice')).toBe(false);
+  });
+
+  it.each(['failed', 'throw'] as const)('goes to AIM when the fallback send %s', async (mode) => {
+    sdk.foreignFail = mode;
+    session.setPresence('alice', { online: true, away: true });
+    await sendMarkdown({ cfg: withFallback(), to: 'alice', markdown: 'hi' });
+    expect(session.sent.map((s) => s.to)).toEqual(['alice']);
+  });
+
+  it('keeps a present owner and unlisted people on AIM', async () => {
+    session.setPresence('alice', { online: true, away: false });
+    session.setPresence('bob', { online: false });
+    await sendMarkdown({ cfg: withFallback(), to: 'alice', markdown: 'hi' });
+    await sendAdapterText({ cfg: withFallback(), to: 'bob', text: 'yo' });
+    expect(sdk.foreign).toEqual([]);
+    expect(session.sent.map((s) => s.to)).toEqual(['alice', 'bob']);
+  });
+
+  it('sends nothing anywhere when the text filter drops the message', async () => {
+    session.setPresence('alice', { online: false });
+    setOutboundTextFilter('default', () => null);
+    await sendMarkdown({ cfg: withFallback(), to: 'alice', markdown: 'hi' });
+    setOutboundTextFilter('default', null);
+    expect(sdk.foreign).toEqual([]);
+    expect(session.sent).toEqual([]);
+  });
+
+  it('decides per adapter chunk', async () => {
+    session.setPresence('alice', { online: true, away: false });
+    await sendAdapterText({ cfg: withFallback(), to: 'alice', text: 'one' });
+    session.setPresence('alice', { away: true });
+    await sendAdapterText({ cfg: withFallback(), to: 'alice', text: 'two' });
+    expect(session.sent.map((s) => s.html)).toEqual(['one']);
+    expect(sdk.foreign.map((f) => f.text)).toEqual(['two']);
   });
 });

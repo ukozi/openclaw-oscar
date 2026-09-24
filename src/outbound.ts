@@ -2,11 +2,12 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createTypingCallbacks } from 'openclaw/plugin-sdk/channel-reply-pipeline';
 import type { TypingCallbacks } from 'openclaw/plugin-sdk/channel-reply-pipeline';
 import { chunkText } from 'openclaw/plugin-sdk/reply-chunking';
+import { fallbackFor, sendByFallback } from './fallback.js';
 import { ROOM_CHUNK_MAX, defaultAccountId, readPolicy, resolveAccount } from './config.js';
 import { formatTarget, normalizeName, parseTarget } from './names.js';
 import type { RoomRef, Target } from './names.js';
 import type { SendPriority, SendReceipt } from './oscar/index.js';
-import { guardRoll, toAsciiEntities, toWireHtml } from './oscar/text.js';
+import { guardRoll, htmlToText, toAsciiEntities, toWireHtml } from './oscar/text.js';
 import { outboundProblem, roleOf } from './policy.js';
 import { getRuntime, joinedRooms, liveConfig, roomKey } from './runtime.js';
 import type { AccountRuntime } from './runtime.js';
@@ -86,6 +87,17 @@ async function filtered(
   return filter ? filter({ accountId: checked.accountId, target: checked.target, kind, format }, body) : body;
 }
 
+async function viaFallback(cfg: unknown, accountId: string | null | undefined, to: string, text: string): Promise<string | null> {
+  const checked = checkTarget({ cfg, accountId, to });
+  if (!checked.ok) return null;
+  const decision = fallbackFor(cfg, checked.accountId, checked.target);
+  if (!decision || !(await sendByFallback(cfg, checked.accountId, decision, text))) return null;
+  if ((priorityScope.getStore() ?? 'reply') === 'reply' && checked.target.kind === 'im') {
+    getRuntime(checked.accountId)?.lastReplyAt.set(checked.target.name, Date.now());
+  }
+  return `fallback:${decision.route.channel}`;
+}
+
 export async function sendMarkdown(p: { cfg: unknown; accountId?: string | null; to: string; markdown: string; kind?: OutboundKind }): Promise<{ messageIds: string[] }> {
   const cfg = liveConfig(p.cfg);
   const markdown = await filtered({ cfg, accountId: p.accountId, to: p.to }, p.kind ?? 'final', 'markdown', p.markdown);
@@ -96,6 +108,8 @@ export async function sendMarkdown(p: { cfg: unknown; accountId?: string | null;
     const sent = await sendWire({ cfg, accountId: p.accountId, to: p.to, html: toWireHtml(markdown) });
     return { messageIds: sent.messageId === '' ? [] : [sent.messageId] };
   }
+  const rerouted = await viaFallback(cfg, p.accountId, p.to, markdown);
+  if (rerouted) return { messageIds: [rerouted] };
   const messageIds: string[] = [];
   for (const chunk of chunkText(toWireHtml(markdown), limit)) {
     if (chunk.trim().length === 0) continue;
@@ -146,6 +160,8 @@ export const outboundBase = {
 export async function sendAdapterText(ctx: { cfg: unknown; to: string; text: string; accountId?: string | null }): Promise<{ messageId: string; chatId: string }> {
   const html = await filtered(ctx, 'send', 'wire', ctx.text);
   if (html === null) return { messageId: '', chatId: ctx.to };
+  const rerouted = await viaFallback(ctx.cfg, ctx.accountId, ctx.to, htmlToText(html));
+  if (rerouted) return { messageId: rerouted, chatId: ctx.to };
   return sendWire({ cfg: ctx.cfg, accountId: ctx.accountId, to: ctx.to, html });
 }
 
