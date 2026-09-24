@@ -155,8 +155,9 @@ export function fromWireText(bytes: Uint8Array, charset: number | string | undef
   return htmlToText(decodeBytes(bytes, charset));
 }
 
+// Quotes stay raw: AIM 2.x shows &quot; literally, and link URLs never contain one.
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function formatInline(escaped: string): string {

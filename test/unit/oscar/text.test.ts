@@ -75,7 +75,10 @@ describe('fromWireText', () => {
 describe('toWireHtml', () => {
   const rows: [string, string, string][] = [
     ['plain', 'hello', 'hello'],
-    ['escapes html', 'a < b & c > "d"', 'a &lt; b &amp; c &gt; &quot;d&quot;'],
+    ['escapes html but leaves quotes readable', 'a < b & c > "d"', 'a &lt; b &amp; c &gt; "d"'],
+    ['quotes in link text stay plain', 'see ["the docs"](https://example.net/)', 'see <A HREF="https://example.net/">"the docs"</A>'],
+    ['a quote cannot reach an href', '[x](https://example.net/"onmouseover=1)', '[x](https://example.net/"onmouseover=1)'],
+    ['quotes in inline code stay plain', 'run `say "hi"`', 'run say "hi"'],
     ['escapes a typed tag', '<script>x</script>', '&lt;script&gt;x&lt;/script&gt;'],
     ['bold', 'a **bold** word', 'a <B>bold</B> word'],
     ['italic star', 'an *italic* word', 'an <I>italic</I> word'],
