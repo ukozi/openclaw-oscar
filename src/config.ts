@@ -215,6 +215,7 @@ function crossFieldProblems(sec: Obj): Problem[] {
       if (typeof r?.channel === 'string' && isOwnChannel(r.channel)) problems.push({ path: [...at, i, 'channel'], message: 'fallback cannot use the oscar channel' });
       const key = typeof r?.screenName === 'string' ? normalizeName(r.screenName) : '';
       if (!key) return;
+      if (!people.has(key)) problems.push({ path: [...at, i, 'screenName'], message: `"${key}" is not in owners or allowFrom, so the bot cannot see when they are away` });
       if (seenRoutes.has(key)) problems.push({ path: [...at, i, 'screenName'], message: `"${key}" already has a fallback` });
       seenRoutes.add(key);
     });

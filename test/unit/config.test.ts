@@ -289,6 +289,17 @@ describe('fallback', () => {
     expect(resolveAccount(cfg).fallback).toEqual([{ screenName: 'carol', channel: 'signal', to: 'c1072e4a' }]);
   });
 
+  it('refuses a person the bot does not watch', () => {
+    const ok = OscarConfigSchema.safeParse({ ...base, allowFrom: ['bob'], screenName: 'botone', fallback: [route, { ...route, screenName: 'Bob' }] });
+    expect(ok.success).toBe(true);
+    const result = OscarConfigSchema.safeParse({ ...base, screenName: 'botone', accounts: { a: { fallback: [{ ...route, screenName: 'Car Ol' }] } } });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const issue = result.error.issues.find((i) => i.path.join('.') === 'accounts.a.fallback.0.screenName');
+      expect(issue?.message).toBe('"carol" is not in owners or allowFrom, so the bot cannot see when they are away');
+    }
+  });
+
   it('refuses the same person twice', () => {
     const result = OscarConfigSchema.safeParse({ ...base, screenName: 'botone', fallback: [route, { ...route, screenName: 'alice' }] });
     expect(result.success).toBe(false);
