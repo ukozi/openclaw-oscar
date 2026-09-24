@@ -273,12 +273,20 @@ describe('fallback', () => {
 
   it.each([
     [{ ...route, channel: 'oscar' }, 'fallback cannot use the oscar channel'],
+    [{ ...route, channel: ' oscar' }, 'fallback cannot use the oscar channel'],
+    [{ ...route, channel: 'OSCAR' }, 'fallback cannot use the oscar channel'],
     [{ ...route, to: '' }, undefined],
     [{ ...route, screenName: '' }, undefined],
   ])('refuses a bad route %j', (bad, message) => {
     const result = OscarConfigSchema.safeParse({ ...base, screenName: 'botone', fallback: [bad] });
     expect(result.success).toBe(false);
     if (message && !result.success) expect(result.error.issues.map((i) => i.message)).toContain(message);
+  });
+
+  it('drops a route back into this channel however it is written', () => {
+    const routes = [{ ...route, channel: ' OSCAR ' }, { ...route, screenName: 'bob', channel: 'Oscar' }, { ...route, screenName: 'carol' }];
+    const cfg = { channels: { oscar: { ...base, screenName: 'botone', fallback: routes } } };
+    expect(resolveAccount(cfg).fallback).toEqual([{ screenName: 'carol', channel: 'signal', to: 'c1072e4a' }]);
   });
 
   it('refuses the same person twice', () => {

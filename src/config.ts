@@ -212,7 +212,7 @@ function crossFieldProblems(sec: Obj): Problem[] {
   const checkFallback = (at: (string | number)[], routes: unknown): void => {
     const seenRoutes = new Set<string>();
     list(routes).map(obj).forEach((r, i) => {
-      if (r?.channel === CHANNEL_ID) problems.push({ path: [...at, i, 'channel'], message: 'fallback cannot use the oscar channel' });
+      if (typeof r?.channel === 'string' && isOwnChannel(r.channel)) problems.push({ path: [...at, i, 'channel'], message: 'fallback cannot use the oscar channel' });
       const key = typeof r?.screenName === 'string' ? normalizeName(r.screenName) : '';
       if (!key) return;
       if (seenRoutes.has(key)) problems.push({ path: [...at, i, 'screenName'], message: `"${key}" already has a fallback` });
@@ -316,11 +316,15 @@ export function resolveAccount(cfg: unknown, accountId?: string | null): Resolve
       const screenName = normalizeName(str(r.screenName) ?? '');
       const channel = str(r.channel);
       const to = str(r.to);
-      if (!screenName || !channel || !to) return [];
+      if (!screenName || !channel || !to || isOwnChannel(channel)) return [];
       const accountId = str(r.accountId);
       return [{ screenName, channel, to, ...(accountId ? { accountId } : {}) }];
     }),
   };
+}
+
+function isOwnChannel(channel: string): boolean {
+  return channel.trim().toLowerCase() === CHANNEL_ID;
 }
 
 function nameList(v: unknown): string[] {
