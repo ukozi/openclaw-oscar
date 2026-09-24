@@ -150,6 +150,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     accountId, session, rooms: new Map(), sessionKeys: new Map(), lastReplyAt: new Map(), counters: { droppedSends: 0, eventGaps: 0 },
     away: presence.away,
     stopPresence: presence.stop,
+    log,
   };
   setRuntime(rt);
 

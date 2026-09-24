@@ -48,6 +48,8 @@ export const sdk = {
   ingress: [] as { params: Rec; decision: 'allow' | 'block' | 'pairing' }[],
   routes: [] as Rec[],
   typing: [] as Rec[],
+  foreign: [] as { channel: string; to: string; accountId?: string; text: string }[],
+  foreignFail: 'none' as 'none' | 'failed' | 'throw',
   sessions: new Set<string>(),
   secretFiles: new Map<string, string>(),
   agent: (() => []) as (ctx: Rec) => Promise<FakeReply[]> | FakeReply[],
@@ -67,6 +69,8 @@ export const sdk = {
     sdk.ingress.length = 0;
     sdk.routes.length = 0;
     sdk.typing.length = 0;
+    sdk.foreign.length = 0;
+    sdk.foreignFail = 'none';
     sdk.sessions.clear();
     sdk.secretFiles.clear();
     sdk.agent = () => [];
@@ -207,6 +211,14 @@ async function resolveStableChannelMessageIngress(params: Rec): Promise<Rec> {
 }
 
 async function sendDurableMessageBatch(params: Rec): Promise<Rec> {
+  if (params.channel !== undefined && params.channel !== 'oscar') {
+    if (sdk.foreignFail === 'throw') throw new Error('fake foreign send threw');
+    if (sdk.foreignFail === 'failed') return { status: 'failed', error: new Error('fake foreign send failed'), stage: 'platform_send' };
+    for (const payload of (params.payloads ?? []) as Rec[]) {
+      sdk.foreign.push({ channel: String(params.channel), to: String(params.to), ...(params.accountId ? { accountId: String(params.accountId) } : {}), text: String(payload.text ?? '') });
+    }
+    return { status: 'sent', results: [{ messageId: 'f1' }], receipt: {} };
+  }
   const mirror = params.mirror as { sessionKey: string } | undefined;
   sdk.durable.push({ params, mirrorFailed: Boolean(mirror) && !sdk.sessions.has(mirror?.sessionKey ?? '') });
   try {

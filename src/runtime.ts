@@ -23,6 +23,7 @@ export type AccountRuntime = {
   away?: AwayController;
   stopPresence?: () => Promise<void>;
   chain?: ChainController;
+  log?: Logger;
 };
 export type HostRuntime = { config: { current(): unknown } };
 export type Timers = TimerApi;
