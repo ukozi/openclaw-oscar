@@ -78,6 +78,11 @@ describe('sendByFallback', () => {
     expect(sdk.foreign).toEqual([{ channel: 'signal', to: 'c1072e4a', text: 'hello' }]);
   });
 
+  it('keeps the send out of the host retry queue', async () => {
+    await sendByFallback(cfg(), 'cal', decision, 'x');
+    expect(sdk.foreignParams[0]?.skipQueue).toBe(true);
+  });
+
   it('passes the other channel account through', async () => {
     await sendByFallback(cfg(), 'cal', { ...decision, route: { ...decision.route, accountId: 'main' } }, 'x');
     expect(sdk.foreign[0]?.accountId).toBe('main');

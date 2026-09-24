@@ -27,13 +27,16 @@ export async function sendByFallback(cfg: unknown, accountId: string, decision: 
   const { route, reason } = decision;
   const log = getRuntime(accountId)?.log;
   try {
-    const result = await sendDurableMessageBatch({
+    const params: Parameters<typeof sendDurableMessageBatch>[0] & { skipQueue?: boolean } = {
       cfg: liveConfig(cfg) as OpenClawConfig,
       channel: route.channel as never,
       to: route.to,
       ...(route.accountId ? { accountId: route.accountId } : {}),
       payloads: [{ text }],
-    });
+      // A queued retry would replay the text after we already fell back to AIM.
+      skipQueue: true,
+    };
+    const result = await sendDurableMessageBatch(params);
     if (result.status !== 'sent') {
       log?.warn('fallback send failed', { to: route.screenName, channel: route.channel, status: result.status });
       return false;

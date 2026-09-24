@@ -49,6 +49,7 @@ export const sdk = {
   routes: [] as Rec[],
   typing: [] as Rec[],
   foreign: [] as { channel: string; to: string; accountId?: string; text: string }[],
+  foreignParams: [] as Rec[],
   foreignFail: 'none' as 'none' | 'failed' | 'throw',
   sessions: new Set<string>(),
   secretFiles: new Map<string, string>(),
@@ -70,6 +71,7 @@ export const sdk = {
     sdk.routes.length = 0;
     sdk.typing.length = 0;
     sdk.foreign.length = 0;
+    sdk.foreignParams.length = 0;
     sdk.foreignFail = 'none';
     sdk.sessions.clear();
     sdk.secretFiles.clear();
@@ -212,6 +214,7 @@ async function resolveStableChannelMessageIngress(params: Rec): Promise<Rec> {
 
 async function sendDurableMessageBatch(params: Rec): Promise<Rec> {
   if (params.channel !== undefined && params.channel !== 'oscar') {
+    sdk.foreignParams.push(params);
     if (sdk.foreignFail === 'throw') throw new Error('fake foreign send threw');
     if (sdk.foreignFail === 'failed') return { status: 'failed', error: new Error('fake foreign send failed'), stage: 'platform_send' };
     for (const payload of (params.payloads ?? []) as Rec[]) {
