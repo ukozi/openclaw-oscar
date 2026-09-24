@@ -37,9 +37,17 @@ export async function sendByFallback(cfg: unknown, accountId: string, decision: 
       skipQueue: true,
     };
     const result = await sendDurableMessageBatch(params);
-    if (result.status !== 'sent') {
+    if (result.status === 'failed') {
       log?.warn('fallback send failed', { to: route.screenName, channel: route.channel, status: result.status });
       return false;
+    }
+    if (result.status === 'partial_failed') {
+      log?.warn(`fallback send to ${route.screenName} over ${route.channel} partly failed; some of it already arrived there, so it is not resent on AIM`);
+      return true;
+    }
+    if (result.status === 'suppressed') {
+      log?.info(`fallback send to ${route.screenName} over ${route.channel} was suppressed by the host`);
+      return true;
     }
     log?.info(`sent to ${route.screenName} over ${route.channel} (${reason})`);
     return true;

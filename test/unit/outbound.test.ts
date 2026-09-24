@@ -214,6 +214,15 @@ describe('fallback', () => {
     expect(session.sent.map((s) => s.to)).toEqual(['alice']);
   });
 
+  it.each(['partial', 'suppressed'] as const)('does not also send on AIM when the fallback send is %s', async (mode) => {
+    sdk.foreignFail = mode;
+    session.setPresence('alice', { online: true, away: true });
+    const res = await sendMarkdown({ cfg: withFallback(), to: 'alice', markdown: 'hi' });
+    await sendAdapterText({ cfg: withFallback(), to: 'alice', text: 'yo' });
+    expect(res.messageIds).toEqual(['fallback:signal']);
+    expect(session.sent).toEqual([]);
+  });
+
   it('keeps a present owner and unlisted people on AIM', async () => {
     session.setPresence('alice', { online: true, away: false });
     session.setPresence('bob', { online: false });

@@ -50,7 +50,7 @@ export const sdk = {
   typing: [] as Rec[],
   foreign: [] as { channel: string; to: string; accountId?: string; text: string }[],
   foreignParams: [] as Rec[],
-  foreignFail: 'none' as 'none' | 'failed' | 'throw',
+  foreignFail: 'none' as 'none' | 'failed' | 'throw' | 'partial' | 'suppressed',
   sessions: new Set<string>(),
   secretFiles: new Map<string, string>(),
   agent: (() => []) as (ctx: Rec) => Promise<FakeReply[]> | FakeReply[],
@@ -217,6 +217,12 @@ async function sendDurableMessageBatch(params: Rec): Promise<Rec> {
     sdk.foreignParams.push(params);
     if (sdk.foreignFail === 'throw') throw new Error('fake foreign send threw');
     if (sdk.foreignFail === 'failed') return { status: 'failed', error: new Error('fake foreign send failed'), stage: 'platform_send' };
+    if (sdk.foreignFail === 'suppressed') return { status: 'suppressed', results: [], receipt: {}, reason: 'cancelled_by_message_sending_hook' };
+    if (sdk.foreignFail === 'partial') {
+      const first = ((params.payloads ?? []) as Rec[])[0];
+      sdk.foreign.push({ channel: String(params.channel), to: String(params.to), text: String(first?.text ?? '') });
+      return { status: 'partial_failed', error: new Error('fake foreign send partly failed'), stage: 'platform_send', results: [{ messageId: 'f1' }], receipt: {} };
+    }
     for (const payload of (params.payloads ?? []) as Rec[]) {
       sdk.foreign.push({ channel: String(params.channel), to: String(params.to), ...(params.accountId ? { accountId: String(params.accountId) } : {}), text: String(payload.text ?? '') });
     }
