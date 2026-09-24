@@ -1,6 +1,6 @@
 {
   "name": "@ukozi/openclaw-oscar",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "OpenClaw channel plugin that speaks the native OSCAR protocol to an Open OSCAR Server.",
   "license": "MIT",
   "author": "Lucas Chumley",
