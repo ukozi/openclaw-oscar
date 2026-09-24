@@ -50,7 +50,7 @@ export const sdk = {
   typing: [] as Rec[],
   foreign: [] as { channel: string; to: string; accountId?: string; text: string }[],
   foreignParams: [] as Rec[],
-  foreignFail: 'none' as 'none' | 'failed' | 'throw' | 'partial' | 'suppressed',
+  foreignFail: 'none' as 'none' | 'failed' | 'throw' | 'partial' | 'suppressed' | 'failed-after-send',
   sessions: new Set<string>(),
   secretFiles: new Map<string, string>(),
   agent: (() => []) as (ctx: Rec) => Promise<FakeReply[]> | FakeReply[],
@@ -217,6 +217,7 @@ async function sendDurableMessageBatch(params: Rec): Promise<Rec> {
     sdk.foreignParams.push(params);
     if (sdk.foreignFail === 'throw') throw new Error('fake foreign send threw');
     if (sdk.foreignFail === 'failed') return { status: 'failed', error: new Error('fake foreign send failed'), stage: 'platform_send' };
+    if (sdk.foreignFail === 'failed-after-send') return { status: 'failed', error: Object.assign(new Error('fake timeout after dispatch'), { sentBeforeError: true }), stage: 'platform_send' };
     if (sdk.foreignFail === 'suppressed') return { status: 'suppressed', results: [], receipt: {}, reason: 'cancelled_by_message_sending_hook' };
     if (sdk.foreignFail === 'partial') {
       const first = ((params.payloads ?? []) as Rec[])[0];

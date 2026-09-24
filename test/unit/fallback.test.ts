@@ -88,7 +88,7 @@ describe('sendByFallback', () => {
     expect(sdk.foreign[0]?.accountId).toBe('main');
   });
 
-  it.each(['partial', 'suppressed'] as const)('reports handled when the send is %s', async (mode) => {
+  it.each(['partial', 'suppressed', 'failed-after-send'] as const)('reports handled when the send is %s', async (mode) => {
     sdk.foreignFail = mode;
     expect(await sendByFallback(cfg(), 'cal', decision, 'x')).toBe(true);
   });

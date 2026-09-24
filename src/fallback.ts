@@ -37,11 +37,11 @@ export async function sendByFallback(cfg: unknown, accountId: string, decision: 
       skipQueue: true,
     };
     const result = await sendDurableMessageBatch(params);
-    if (result.status === 'failed') {
+    if (result.status === 'failed' && !mayHaveArrived(result)) {
       log?.warn('fallback send failed', { to: route.screenName, channel: route.channel, status: result.status });
       return false;
     }
-    if (result.status === 'partial_failed') {
+    if (result.status === 'partial_failed' || result.status === 'failed') {
       log?.warn(`fallback send to ${route.screenName} over ${route.channel} partly failed; some of it already arrived there, so it is not resent on AIM`);
       return true;
     }
@@ -55,4 +55,10 @@ export async function sendByFallback(cfg: unknown, accountId: string, decision: 
     log?.warn('fallback send failed', { to: route.screenName, channel: route.channel, error: err instanceof Error ? err.message : String(err) });
     return false;
   }
+}
+
+function mayHaveArrived(result: { error?: unknown; payloadOutcomes?: unknown }): boolean {
+  const error = result.error as { sentBeforeError?: unknown } | undefined;
+  const outcomes = Array.isArray(result.payloadOutcomes) ? (result.payloadOutcomes as { sentBeforeError?: unknown }[]) : [];
+  return error?.sentBeforeError === true || outcomes.some((o) => o?.sentBeforeError === true);
 }
