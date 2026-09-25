@@ -86,7 +86,8 @@ async function responder(password: string): Promise<{ port: number; seen: Seen[]
             socket.write(snac(0x02, 0x06, requestId, userInfo(name, 0x0010)));
             const message = Buffer.concat([u16(0), u16(0), Buffer.from('hello bob')]);
             const fragments = Buffer.concat([Buffer.from([5, 1]), u16(3), Buffer.from([1, 1, 2]), Buffer.from([1, 1]), u16(message.length), message]);
-            socket.write(snac(0x04, 0x07, 0, Buffer.concat([Buffer.alloc(8, 1), u16(1), userInfo('Alice', 0x0010), tlv(0x02, fragments)])));
+            const im = snac(0x04, 0x07, 0, Buffer.concat([Buffer.alloc(8, 1), u16(1), userInfo('Alice', 0x0010), tlv(0x02, fragments)]));
+            setTimeout(() => socket.write(im), 20);
           }
         }
       }
@@ -116,7 +117,8 @@ describe('raw peer', () => {
 
     expect(await bob.userInfo('ghost')).toEqual({ online: false, away: null, flags: 0 });
     expect(await bob.userInfo('botone')).toEqual({ online: true, away: 'Looking something up', flags: 0x0420 });
-    expect(bob.ims()).toEqual([{ from: 'alice', text: 'hello bob', autoResponse: false }]);
+    expect(await until(() => (bob.ims().length > 0 ? bob.ims() : null), { timeoutMs: 1000, what: 'the sign-on IM' }))
+      .toEqual([{ from: 'alice', text: 'hello bob', autoResponse: false }]);
     expect(r.seen.map((s) => [s.family, s.subtype]).slice(0, 5)).toEqual([[0x17, 0x06], [0x17, 0x02], [0x02, 0x04], [0x13, 0x07], [0x01, 0x02]]);
   });
 
@@ -150,6 +152,7 @@ describe('raw peer', () => {
     const r = await responder('hunter22');
     const bob = await RawPeer.signOn({ host: '127.0.0.1', port: r.port, screenName: 'bob', password: 'hunter22' });
     cleanups.push(r.close, () => bob.signOff());
+    await until(() => (bob.ims().some((m) => m.from === 'alice') ? true : null), { timeoutMs: 1000, what: 'the sign-on IM' });
 
     const mark = Date.now();
     // receivedSince compares whole milliseconds, so step past the sign-on IM's own millisecond
