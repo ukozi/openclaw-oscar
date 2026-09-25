@@ -41,7 +41,10 @@ describe.skipIf(env.mode === 'off')('smoke', () => {
     owner.session.on('im', (m) => toOwner.push(m.text));
     owner.session.on('roomMessage', (m) => inRoom.push(`${m.from}: ${m.text}`));
     gateway = await bootGateway({
-      cfg: gatewayConfig({ target, accounts: { [a.screenName]: a.password }, owners: [b.screenName], allowFrom: [b.screenName], room: roomName }),
+      cfg: gatewayConfig({
+        target, accounts: { [a.screenName]: a.password }, owners: [b.screenName], allowFrom: [b.screenName], room: roomName,
+        channel: { away: { graceMs: 2000 } },
+      }),
     });
     gateway.setAgent(async (turn, agent) => {
       await agent.sleep(6000);
