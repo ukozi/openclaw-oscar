@@ -1,6 +1,6 @@
 {
   "name": "@ukozi/openclaw-oscar",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Use the OSCAR protocol, compatible with AOL Instant Messenger, to communicate with your OpenClaw agents.",
   "license": "MIT",
   "author": "Lucas Chumley",

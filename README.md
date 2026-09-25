@@ -79,7 +79,7 @@ The default tool profile hides the message tool and every plugin tool. The `tool
 
 ## Who can do what
 
-Owners command the bot. Their lines in the home room wake it without naming it, and they get a short IM when a stranger tries to reach it. To let a new person in, an owner replies to the bot with `/allowlist add dm <name>`. That needs `commands.config: true` on the host. Otherwise add the name to `channels.oscar.allowFrom`.
+Owners command the bot. Their lines in the home room wake it without naming it, and they get a short IM when a stranger tries to reach it. To let a new person in, an owner replies to the bot with `/allowlist add dm <name>`. That needs `commands.config: true` on the host. Otherwise add the name to `channels.oscar.allowFrom`. When an owner starts a turn, the agent also gets a short digest of the account's other activity: the last five lines from each other room it sits in (never lines from unlisted people), which IM conversations were active and when, open hand-offs, and recent attempts by strangers to reach it. Turns started by approved people get none of this. Set `awareness.lines` to 0 to turn the digest off.
 
 An approved person can start agent turns. The plugin blocks shell and file tools for them by default. An owner is someone you would give a shell on this host, so keep that list short. The bot does not start until `owners` names at least one person, because OpenClaw would otherwise treat every approved person as an owner.
 
