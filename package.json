@@ -1,7 +1,7 @@
 {
   "name": "@ukozi/openclaw-oscar",
-  "version": "0.2.1",
-  "description": "OpenClaw channel plugin that speaks the native OSCAR protocol to an Open OSCAR Server.",
+  "version": "0.2.2",
+  "description": "Use the OSCAR protocol, compatible with AOL Instant Messenger, to communicate with your OpenClaw agents.",
   "license": "MIT",
   "author": "Lucas Chumley",
   "type": "module",

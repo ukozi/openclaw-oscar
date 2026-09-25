@@ -125,4 +125,10 @@ describe('README style', () => {
     const rest = text.replace(allowed, '');
     expect(rest).not.toMatch(/\bAIM\b|\bAOL\b|Instant Messenger/);
   });
+
+  it('keeps the package description to the same rule', () => {
+    const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { description: string };
+    expect(pkg.description).toBe('Use the OSCAR protocol, compatible with AOL Instant Messenger, to communicate with your OpenClaw agents.');
+    expect(pkg.description.replace('compatible with AOL Instant Messenger', '')).not.toMatch(/\bAIM\b|\bAOL\b|Instant Messenger/);
+  });
 });
