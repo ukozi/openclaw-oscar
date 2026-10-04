@@ -24,16 +24,17 @@ function fakeApi(mode: Mode) {
   const registerChannel = vi.fn();
   const tools: (string[] | undefined)[] = [];
   const info: string[] = [];
+  const hooks: string[] = [];
   const api = {
     registrationMode: mode,
     registerChannel,
     runtime: { config: { current: () => ({ live: true }) }, llm: { complete: async () => ({ text: '' }) } },
-    on: () => undefined,
+    on: (name: string) => { hooks.push(name); },
     agent: { events: { registerAgentEventSubscription: () => undefined } },
     registerTool: (_factory: unknown, opts?: { names?: string[] }) => { tools.push(opts?.names); },
     logger: { info: (message: string) => { info.push(message); }, warn: () => undefined, error: () => undefined },
   } as unknown as OpenClawPluginApi;
-  return { api, registerChannel, tools, info };
+  return { api, registerChannel, tools, info, hooks };
 }
 
 beforeEach(() => resetRuntimeForTests());
@@ -71,6 +72,7 @@ describe('tools and host runtime', () => {
     expect(t.tools).toEqual(TOOL_NAMES.map((n) => [n]));
     expect(liveConfig({ live: false })).toEqual({ live: true });
     expect(t.info).toHaveLength(1);
+    expect(t.hooks).toContain('agent_end');
   });
 
   it('registers only tools in tool-discovery and touches nothing else', () => {
@@ -79,6 +81,7 @@ describe('tools and host runtime', () => {
     expect(t.tools).toEqual(TOOL_NAMES.map((n) => [n]));
     expect(liveConfig({ live: false })).toEqual({ live: false });
     expect(t.info).toEqual([]);
+    expect(t.hooks).not.toContain('agent_end');
   });
 
   it.each<[Mode]>([['setup-only'], ['setup-runtime'], ['discovery']])('keeps the host runtime but registers no tools in %s', (mode) => {
