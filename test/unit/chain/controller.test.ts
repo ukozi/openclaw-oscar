@@ -194,6 +194,7 @@ describe('room mode and rank', () => {
     lead.state.policy = ranked('team');
     lead.c.onRoomMessage(line('alice', 'what is the status?'));
     expect(lead.wakes[0]?.turn).toMatchObject({ why: 'lead', sender: 'alice' });
+    expect(lead.wakes[0]?.turn.systemPrompt).toContain('decide who should answer it');
     const next = kit('botone');
     next.state.policy = ranked('team');
     next.c.onRoomMessage(line('alice', 'what is the status?'));
@@ -216,6 +217,7 @@ describe('room mode and rank', () => {
       const k = kit(self);
       k.state.policy = ranked('lounge');
       k.c.onRoomMessage(line('alice', 'what is the status?'));
+      expect(k.wakes).toHaveLength(1);
       expect(k.wakes[0]?.turn.why).toBe('lounge');
       expect(k.wakes[0]?.turn.systemPrompt).toContain('one of several assistants');
     }
