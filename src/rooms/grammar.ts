@@ -58,7 +58,7 @@ function parseBody(words: string[], room: string | undefined, teammates: string[
   let trust: RoomTrust | undefined;
   const rank: string[] = [];
   for (const word of rest) {
-    if (isTrust(word) && trust === undefined && rank.length === 0) {
+    if (isTrust(word) && trust === undefined) {
       trust = word;
       continue;
     }
