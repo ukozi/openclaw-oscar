@@ -17,6 +17,13 @@ const OUTCOMES: Record<Outcome, string> = {
   failed: 'that failed on my side',
 };
 
+const TRUST_LINES = {
+  private:
+    'This room is private: only your owner and your teammates are here. You may talk about personal details your owner has shared with you.',
+  public:
+    'This room is public: anyone on the server can read it. Do not share personal details about your owner, such as where they live, family, money, health or contacts. Offer to continue by IM instead.',
+} as const;
+
 function orDefault(text: string, fallback: string): string {
   return text.trim().length > 0 ? text : fallback;
 }
@@ -92,4 +99,5 @@ export const copy = {
   awayDefault: (): string => AWAY_DEFAULT,
   awayPhrase: (family: AwayFamily): string => AWAY_PHRASES[family],
   awayAutoReply: (line: string): string => orDefault(line.trim(), AWAY_DEFAULT),
+  trustLine: (trust: keyof typeof TRUST_LINES): string => TRUST_LINES[trust],
 };

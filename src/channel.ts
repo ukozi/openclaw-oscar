@@ -22,6 +22,7 @@ import { outboundBase, sendAdapterText } from './outbound.js';
 import { roleOf, roomRequiresMention, senderToolPolicy, toolDeny } from './policy.js';
 import { presenceActions, presenceToolHints, startPresence } from './presence/register.js';
 import { getRunTracker } from './presence/runs.js';
+import { attachProfileStore, ProfileStore, profileStore, storeFileFor } from './rooms/profiles.js';
 import {
   clearRuntime, createPasswordGuard, currentGeneration, getRuntime, liveConfig, nextGeneration, setRuntime, sharedLoginBudget,
 } from './runtime.js';
@@ -153,6 +154,8 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     log,
   };
   setRuntime(rt);
+  const profiles = new ProfileStore({ file: storeFileFor(accountId), log, now });
+  attachProfileStore(accountId, profiles);
 
   const publish = (state: SessionState): void => {
     const online = state.phase === 'online' && !rt.halted;
@@ -243,6 +246,8 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     notices.stop();
     await session.stop();
     if (getRuntime(accountId) === rt) clearRuntime(accountId);
+    if (profileStore(accountId) === profiles) attachProfileStore(accountId, null);
+    await profiles.flush();
     ctx.setStatus({ ...ctx.getStatus(), accountId, running: false, connected: false, lastStopAt: now() });
   });
 
