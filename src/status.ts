@@ -71,7 +71,7 @@ export function boundAgentId(cfg: unknown, accountId: string): string | undefine
   )?.agentId;
 }
 
-function hostOwnerList(cfg: unknown): string[] {
+export function hostOwnerList(cfg: unknown): string[] {
   const entries = obj(obj(cfg)?.commands)?.ownerAllowFrom;
   return Array.isArray(entries) ? entries.map((e) => String(e).trim()).filter((e) => e.length > 0) : [];
 }

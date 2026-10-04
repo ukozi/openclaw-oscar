@@ -19,6 +19,7 @@ import { createNotices, sendNotice } from './notice.js';
 import { createOscarSession } from './oscar/index.js';
 import type { Logger, SessionState } from './oscar/index.js';
 import { outboundBase, sendAdapterText } from './outbound.js';
+import { maybeWarnOwners, ownerFixHandler } from './owners.js';
 import { roleOf, senderToolPolicy, toolDeny } from './policy.js';
 import { presenceActions, presenceToolHints, startPresence } from './presence/register.js';
 import { getRunTracker } from './presence/runs.js';
@@ -245,6 +246,10 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     },
   });
 
+  const tellOwner = (owner: string, text: string): Promise<void> =>
+    sendNotice({ cfg: getCfg(), accountId, bot: self(), owner, text }).catch((err: unknown) => {
+      log.warn('owner note was not delivered', { owner, error: err instanceof Error ? err.message : String(err) });
+    });
   let wasOnline = false;
   const offs = [
     session.on('roomReady', (p) => setup.onRoomReady(p.room)),
@@ -252,6 +257,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
       if (!ev.willRejoin) setup.forget(roomKey(ev.room));
     }),
     addImControlHandler(accountId, (ev) => setup.onIm(ev)),
+    addImControlHandler(accountId, ownerFixHandler({ accountId, getCfg, reply: (to, text) => void tellOwner(to, text) })),
     session.on('im', (ev) => im.onIm(ev)),
     session.on('presence', (p) => notices.ownerPresence(p.name, p.online)),
     session.on('state', (state) => {
@@ -261,7 +267,10 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
         rt.halted = { reason: 'unauthenticated-server', detail: state.detail ?? 'the server does not check passwords' };
       }
       publish(state);
-      if (state.phase === 'online') guard.onOnline();
+      if (state.phase === 'online') {
+        guard.onOnline();
+        maybeWarnOwners({ cfg: getCfg(), accountId, bot: self(), send: tellOwner });
+      }
     }),
   ];
   stoppers.set(accountId, async () => {

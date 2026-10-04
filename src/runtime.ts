@@ -25,7 +25,9 @@ export type AccountRuntime = {
   chain?: ChainController;
   log?: Logger;
 };
-export type HostRuntime = { config: { current(): unknown } };
+type MutationParams = { afterWrite: { mode: 'auto' }; mutate: (draft: Record<string, unknown>) => void };
+export type HostConfigMutation = (params: MutationParams) => Promise<unknown>;
+export type HostRuntime = { config: { current(): unknown; mutateConfigFile?(params: MutationParams): Promise<unknown> } };
 export type Timers = TimerApi;
 
 type Holder = {
@@ -90,6 +92,12 @@ export function liveConfig(fallback: unknown): unknown {
   } catch {
     return fallback;
   }
+}
+
+export function hostConfigMutation(): HostConfigMutation | undefined {
+  const config = holder().host?.config;
+  if (typeof config?.mutateConfigFile !== 'function') return undefined;
+  return (params) => config.mutateConfigFile!(params);
 }
 
 export function sharedLoginBudget(): LoginBudget {
