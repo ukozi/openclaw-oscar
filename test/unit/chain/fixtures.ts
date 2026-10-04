@@ -24,7 +24,7 @@ export function chainConfig(over: Partial<ChainConfig> = {}): ChainConfig {
 }
 
 export function policyFixture(over: Partial<RootPolicy> = {}): RootPolicy {
-  return {
+  const base: Omit<RootPolicy, 'teammates'> = {
     owners: ['alice'],
     allowFrom: ['alice', 'bob'],
     dmPolicy: 'allowlist',
@@ -38,6 +38,7 @@ export function policyFixture(over: Partial<RootPolicy> = {}): RootPolicy {
     chain: chainConfig(),
     ...over,
   };
+  return { ...base, teammates: over.teammates ?? base.chain.roster.map((e) => e.screenName) };
 }
 
 export function roomFixture(over: Partial<RoomState> = {}): RoomState {

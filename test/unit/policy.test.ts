@@ -14,6 +14,16 @@ describe('roleOf', () => {
     expect(roleOf(name, policy())).toBe(want);
   });
 
+  it('counts every account on the gateway and every roster name as a teammate', () => {
+    const p = readPolicy({ channels: { oscar: { owners: ['alice'], accounts: { a: { screenName: 'BotOne' }, b: { screenName: 'bottwo' } } } } });
+    expect(roleOf('bottwo', p)).toBe('bot');
+    expect(roleOf('botone', p)).toBe('bot');
+    expect(roleOf('mallory', p)).toBe('unlisted');
+    expect(roleOf('alice', p)).toBe('owner');
+    const r = readPolicy({ channels: { oscar: { owners: ['alice'], screenName: 'botone', chain: { roster: [{ screenName: 'botone' }, { screenName: 'botthree' }] } } } });
+    expect(roleOf('botthree', r)).toBe('bot');
+  });
+
   it('knows owners', () => {
     expect(isOwner('Alice B', policy())).toBe(true);
     expect(isOwner('bob', policy())).toBe(false);

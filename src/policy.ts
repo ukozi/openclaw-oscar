@@ -11,7 +11,7 @@ export function roleOf(name: string, policy: RootPolicy): Role {
   const key = normalizeName(name);
   if (!key) return 'unlisted';
   if (policy.owners.includes(key)) return 'owner';
-  if (policy.chain.roster.some((entry) => entry.screenName === key)) return 'bot';
+  if (policy.teammates.includes(key)) return 'bot';
   if (policy.allowFrom.includes(key)) return 'approved';
   return 'unlisted';
 }

@@ -234,6 +234,16 @@ describe('buddies, reload and schema export', () => {
     expect(buddyList(p, 'botone')).toEqual(['alice', 'bob', 'bottwo']);
   });
 
+  it('lists every account as a teammate and buddies them without self', () => {
+    const p = readPolicy(cfgOf({ owners: ['alice'], accounts: { a: { screenName: 'BotOne' }, b: { screenName: 'bottwo' } } }));
+    expect(p.teammates).toEqual(['botone', 'bottwo']);
+    expect(readPolicy(cfgOf(good())).teammates).toEqual(['botone']);
+    expect(readPolicy(cfgOf({ screenName: 'botone', chain: { roster: [{ screenName: 'Bot One' }, { screenName: 'botthree' }] } })).teammates).toEqual(['botone', 'botthree']);
+    expect(readPolicy(cfgOf({ accounts: { a: {} } })).teammates).toEqual([]);
+    expect(buddyList(p, 'botone')).toContain('bottwo');
+    expect(buddyList(p, 'botone')).not.toContain('botone');
+  });
+
   it('marks people keys as no-restart and transport keys as restart', () => {
     for (const path of ['channels.oscar.allowFrom', 'channels.oscar.owners', 'channels.oscar.contactNotice', 'channels.oscar.away', 'channels.oscar.chain.ackText', 'channels.oscar.room.historyFrom', 'channels.oscar.fallback']) {
       expect(RELOAD_NOOP_PREFIXES).toContain(path);

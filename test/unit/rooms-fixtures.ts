@@ -18,7 +18,7 @@ export const KEY = 'room:4:testroom';
 export const silentLog: Logger = { debug() {}, info() {}, warn() {}, error() {} };
 
 export function policyFixture(over: Partial<RootPolicy> = {}): RootPolicy {
-  return {
+  const base: Omit<RootPolicy, 'teammates'> = {
     owners: ['alice'],
     allowFrom: ['alice', 'bob'],
     dmPolicy: 'allowlist',
@@ -42,6 +42,7 @@ export function policyFixture(over: Partial<RootPolicy> = {}): RootPolicy {
     },
     ...over,
   };
+  return { ...base, teammates: over.teammates ?? base.chain.roster.map((e) => e.screenName) };
 }
 
 export function fakeSession(screenName = 'BotOne') {

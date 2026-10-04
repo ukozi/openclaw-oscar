@@ -68,6 +68,7 @@ export type RootPolicy = {
   rooms: Record<string, { toolsBySender?: Record<string, unknown>; systemPrompt?: string }>;
   awareness: { lines: number };
   chain: ChainConfig;
+  teammates: string[];
 };
 
 type Obj = Record<string, unknown>;
@@ -361,6 +362,15 @@ export function readPolicy(cfg: unknown): RootPolicy {
     const systemPrompt = str(entry.systemPrompt);
     rooms[normalizeRoom(key)] = { ...(toolsBySender ? { toolsBySender } : {}), ...(systemPrompt ? { systemPrompt } : {}) };
   }
+  const roster = list(chain.roster).map(obj).filter((e): e is Obj => Boolean(e && typeof e.screenName === 'string')).map((e) => ({
+    screenName: normalizeName(e.screenName as string),
+    role: str(e.role) ?? '',
+    aliases: nameList(e.aliases),
+  }));
+  const teammates: string[] = [];
+  for (const name of [...listAccountIds(cfg).map((id) => resolveAccount(cfg, id).screenName), ...roster.map((e) => e.screenName)]) {
+    if (name && !teammates.includes(name)) teammates.push(name);
+  }
   return {
     owners,
     allowFrom,
@@ -379,11 +389,7 @@ export function readPolicy(cfg: unknown): RootPolicy {
     rooms,
     awareness: { lines: num(obj(sec.awareness)?.lines, 5) },
     chain: {
-      roster: list(chain.roster).map(obj).filter((e): e is Obj => Boolean(e && typeof e.screenName === 'string')).map((e) => ({
-        screenName: normalizeName(e.screenName as string),
-        role: str(e.role) ?? '',
-        aliases: nameList(e.aliases),
-      })),
+      roster,
       floorSeconds: num(chain.floorSeconds, 120),
       takeoverMs: num(chain.takeoverMs, 10000),
       ackAfterMs: num(chain.ackAfterMs, 8000),
@@ -393,6 +399,7 @@ export function readPolicy(cfg: unknown): RootPolicy {
       resultTimeoutMinutes: num(chain.resultTimeoutMinutes, 20),
       reviewResults: bool(chain.reviewResults, false),
     },
+    teammates,
   };
 }
 
@@ -425,7 +432,7 @@ export function rosterHash(chain: ChainConfig): string {
 export function buddyList(policy: RootPolicy, self: string): string[] {
   const me = normalizeName(self);
   const out: string[] = [];
-  for (const name of [...policy.allowFrom, ...policy.chain.roster.map((e) => e.screenName)]) {
+  for (const name of [...policy.allowFrom, ...policy.teammates]) {
     if (name !== me && !out.includes(name)) out.push(name);
   }
   return out;
