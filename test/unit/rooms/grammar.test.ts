@@ -65,4 +65,21 @@ describe('parseSetupReply', () => {
       trust: 'private',
     });
   });
+
+  it('reads a room name with spaces as the room', () => {
+    const rooms = ['testroom', 'Test Room'];
+    expect(parse('test room team private', 0, rooms)).toEqual({
+      kind: 'settings',
+      room: 'test room',
+      mode: 'team',
+      trust: 'private',
+    });
+    expect(parse('leave Test Room', 0, rooms)).toEqual({ kind: 'leave', room: 'test room' });
+    expect(parse('test room was fun', 0, rooms)).toEqual({ kind: 'not-setup' });
+    expect(parse('test team private', 0, ['test', 'test team'])).toEqual({
+      kind: 'settings',
+      room: 'test team',
+      trust: 'private',
+    });
+  });
 });

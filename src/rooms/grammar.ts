@@ -17,18 +17,25 @@ const isTrust = (w: string): w is RoomTrust => TRUSTS.includes(w);
 const startsBody = (w: string | undefined): boolean =>
   w !== undefined && (isMode(w) || isTrust(w) || ALONE.includes(w));
 
+const splitWords = (text: string): string[] => text.toLowerCase().split(/[\s,]+/).filter(Boolean);
+const startsWith = (words: string[], prefix: string[]): boolean => prefix.every((w, i) => words[i] === w);
+const sameWords = (a: string[], b: string[]): boolean => a.length === b.length && startsWith(a, b);
+
 export function parseSetupReply(
   text: string,
   ctx: { rooms: string[]; pending: number; teammates: string[] },
 ): SetupReply {
-  const words = text.toLowerCase().split(/[\s,]+/).filter(Boolean);
-  const rooms = new Set(ctx.rooms.map(normalizeRoom));
-  const [first, second] = words;
+  const words = splitWords(text);
+  const [first] = words;
   if (first === undefined) return { kind: 'not-setup' };
-  if (rooms.has(first) && startsBody(second)) return parseBody(words.slice(1), first, ctx.teammates);
-  if (first === 'leave' && second !== undefined && words.length === 2 && rooms.has(second)) {
-    return { kind: 'leave', room: second };
-  }
+  const rooms = ctx.rooms
+    .map((r) => ({ name: normalizeRoom(r), words: splitWords(r) }))
+    .filter((r) => r.words.length > 0)
+    .sort((a, b) => b.words.length - a.words.length);
+  const named = rooms.find((r) => startsWith(words, r.words) && startsBody(words[r.words.length]));
+  if (named) return parseBody(words.slice(named.words.length), named.name, ctx.teammates);
+  const leaving = first === 'leave' ? rooms.find((r) => sameWords(words.slice(1), r.words)) : undefined;
+  if (leaving) return { kind: 'leave', room: leaving.name };
   if (ctx.pending === 0) return { kind: 'not-setup' };
   if (isMode(first) || isTrust(first)) return parseBody(words, undefined, ctx.teammates);
   if (words.length === 1 && ALONE.includes(first)) return parseBody(words, undefined, ctx.teammates);
