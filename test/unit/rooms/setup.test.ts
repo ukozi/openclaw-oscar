@@ -3,6 +3,7 @@ import type { RootPolicy } from '../../../src/config.js';
 import { copy } from '../../../src/copy.js';
 import type { RoomRef } from '../../../src/names.js';
 import type { ImEvent, RoomMessageEvent } from '../../../src/oscar/index.js';
+import type { LeaveResult } from '../../../src/rooms/leave.js';
 import { attachProfileStore, ProfileStore, storeFileFor } from '../../../src/rooms/profiles.js';
 import { HOLD_MAX, RoomSetup } from '../../../src/rooms/setup.js';
 import type { RoomState } from '../../../src/runtime.js';
@@ -30,7 +31,7 @@ function harness(over: Partial<RootPolicy> = {}) {
   const asks: { owner: string; text: string }[] = [];
   const recorded: string[] = [];
   const replayed: string[] = [];
-  const leave = vi.fn(async (_ref: RoomRef) => {});
+  const leave = vi.fn(async (ref: RoomRef): Promise<LeaveResult> => (ref.name === 'testroom' ? 'home' : 'left'));
   const setup = new RoomSetup({
     accountId,
     self: () => 'botone',
@@ -51,11 +52,15 @@ function harness(over: Partial<RootPolicy> = {}) {
     if (by) invited.set(`room:4:${ref.name}`, by);
     setup.onRoomReady(ref);
   };
-  const say = (from: string, text: string, room: RoomRef = DEN): 'pass' | 'consumed' =>
-    setup.onRoomLine({ room, from, fromDisplay: from, text, cookie: 1n, whisper: false, serverGenerated: false } as RoomMessageEvent);
+  const say = (from: string, text: string, room: RoomRef = DEN, whisper = false): 'pass' | 'consumed' =>
+    setup.onRoomLine({ room, from, fromDisplay: from, text, cookie: 1n, whisper, serverGenerated: false } as RoomMessageEvent);
   const im = (from: string, text: string): 'handled' | 'pass' =>
     setup.onIm({ from, fromDisplay: from, text, cookie: 2n } as ImEvent);
   return { accountId, store, setup, asks, recorded, replayed, leave, join, say, im, rooms };
+}
+
+async function flush(): Promise<void> {
+  for (let i = 0; i < 8; i++) await Promise.resolve();
 }
 
 afterEach(() => {
@@ -260,12 +265,13 @@ describe('answers', () => {
     expect(h.asks[0]?.text).toBe('testroom is set in my config.');
   });
 
-  it('leaves on leave and drops the held lines', () => {
+  it('leaves on leave and drops the held lines', async () => {
     const h = harness();
     h.join(DEN, 'alice');
     h.say('alice', 'held');
     h.asks.length = 0;
     expect(h.im('alice', 'leave')).toBe('handled');
+    await flush();
     expect(h.asks).toEqual([{ owner: 'alice', text: copy.setupLeaving('den') }]);
     expect(h.asks[0]?.text).toBe('Leaving den.');
     expect(h.leave).toHaveBeenCalledWith(DEN);
@@ -284,5 +290,74 @@ describe('answers', () => {
     const h = harness();
     h.join(DEN, 'alice');
     expect(h.im('alice', 'hello there')).toBe('pass');
+  });
+});
+
+describe('leave', () => {
+  it('leaves on an owner /leave and consumes the line', () => {
+    const h = harness();
+    h.rooms.set(DEN_KEY, roomState(DEN));
+    expect(h.say('alice', '/leave')).toBe('consumed');
+    expect(h.leave).toHaveBeenCalledWith(DEN);
+  });
+
+  it('leaves when the owner names this bot', () => {
+    const h = harness();
+    expect(h.say('alice', '/leave bottwo BotOne')).toBe('consumed');
+    expect(h.leave).toHaveBeenCalledWith(DEN);
+  });
+
+  it('stays, without waking anyone, when the owner names only others', () => {
+    const h = harness();
+    expect(h.say('alice', '/leave bottwo')).toBe('consumed');
+    expect(h.leave).not.toHaveBeenCalled();
+  });
+
+  it('treats /leave from anyone but an owner as an ordinary line', () => {
+    const h = harness();
+    expect(h.say('bob', '/leave')).toBe('pass');
+    expect(h.say('bottwo', '/leave botone')).toBe('pass');
+    expect(h.leave).not.toHaveBeenCalled();
+  });
+
+  it('ignores a whispered /leave', () => {
+    const h = harness();
+    expect(h.say('alice', '/leave', DEN, true)).toBe('pass');
+    expect(h.leave).not.toHaveBeenCalled();
+  });
+
+  it('drops the held lines of a pending room it leaves', async () => {
+    const h = harness();
+    h.join(DEN, 'alice');
+    h.say('alice', 'held');
+    h.asks.length = 0;
+    expect(h.say('alice', '/leave')).toBe('consumed');
+    await flush();
+    expect(h.leave).toHaveBeenCalledWith(DEN);
+    expect(h.setup.pendingCount()).toBe(0);
+    expect(h.replayed).toEqual([]);
+    expect(h.asks).toEqual([]);
+  });
+
+  it('tells the owner it will not leave the home room', async () => {
+    const h = harness();
+    expect(h.say('alice', '/leave', ROOM)).toBe('consumed');
+    await flush();
+    expect(h.asks).toEqual([{ owner: 'alice', text: copy.leaveHome('testroom') }]);
+    expect(h.asks[0]?.text).toBe('testroom is my home room; change channels.oscar.room to move me.');
+  });
+
+  it('answers an IM leave for the home room and for a room it is not in', async () => {
+    const h = harness();
+    expect(h.im('alice', 'leave testroom')).toBe('handled');
+    await flush();
+    expect(h.asks).toEqual([{ owner: 'alice', text: copy.leaveHome('testroom') }]);
+    h.asks.length = 0;
+    h.rooms.set(DEN_KEY, roomState(DEN));
+    h.leave.mockResolvedValueOnce('not-in');
+    expect(h.im('alice', 'leave den')).toBe('handled');
+    await flush();
+    expect(h.asks).toEqual([{ owner: 'alice', text: copy.notInRoom('den') }]);
+    expect(h.asks[0]?.text).toBe("I'm not in den.");
   });
 });

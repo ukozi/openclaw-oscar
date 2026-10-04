@@ -114,6 +114,8 @@ export const copy = {
   setupReminder: (room: string): string => `I'm waiting for your settings for ${room} before I talk there.`,
   setupApplied: (room: string, summary: string): string => `${room}: ${summary}.`,
   setupLeaving: (room: string): string => `Leaving ${room}.`,
+  leaveHome: (room: string): string => `${room} is my home room; change channels.oscar.room to move me.`,
+  notInRoom: (room: string): string => `I'm not in ${room}.`,
   setupNotUnderstood: (word: string): string =>
     `I didn't understand '${word}'. Reply team, lounge or watch, then private or public, or leave.`,
   setupWhichRoom: (room: string): string =>

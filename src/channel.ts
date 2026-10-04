@@ -23,9 +23,10 @@ import { roleOf, senderToolPolicy, toolDeny } from './policy.js';
 import { presenceActions, presenceToolHints, startPresence } from './presence/register.js';
 import { getRunTracker } from './presence/runs.js';
 import { attachProfileStore, ProfileStore, profileStore, storeFileFor } from './rooms/profiles.js';
+import { attachRoomSetup, leaveRoomNow } from './rooms/leave.js';
 import { RoomSetup } from './rooms/setup.js';
 import {
-  applyRoomClosed, clearRuntime, createPasswordGuard, currentGeneration, getRuntime, liveConfig, nextGeneration, roomKey, setRuntime, sharedLoginBudget,
+  clearRuntime, createPasswordGuard, currentGeneration, getRuntime, liveConfig, nextGeneration, roomKey, setRuntime, sharedLoginBudget,
 } from './runtime.js';
 import type { AccountRuntime, ProbeResult, Timers } from './runtime.js';
 import { channelSecrets } from './secret-contract-api.js';
@@ -217,12 +218,10 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     ask: (owner, text) => sendNotice({ cfg: getCfg(), accountId, bot: self(), owner, text }),
     record: (ev) => sink.record(ev),
     replay: (ev) => chain.onRoomMessage(ev),
-    leave: async (ref) => {
-      await session.leaveRoom(ref);
-      applyRoomClosed(rt, ref, false);
-    },
+    leave: (ref) => leaveRoomNow(rt, ref, readPolicy(getCfg())),
   });
   chain.setGate(setup);
+  attachRoomSetup(accountId, setup);
   const guard = createPasswordGuard({
     cacheKey: `${account.host}:${account.port}:${account.screenName}`,
     allowUnauthenticated: account.dangerouslyAllowUnauthenticatedServer,
@@ -268,6 +267,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     await session.stop();
     if (getRuntime(accountId) === rt) clearRuntime(accountId);
     if (profileStore(accountId) === profiles) attachProfileStore(accountId, null);
+    attachRoomSetup(accountId, null);
     await profiles.flush();
     ctx.setStatus({ ...ctx.getStatus(), accountId, running: false, connected: false, lastStopAt: now() });
   });

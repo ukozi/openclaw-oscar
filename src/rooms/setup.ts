@@ -5,6 +5,7 @@ import type { ImEvent, Logger, RoomMessageEvent } from '../oscar/index.js';
 import { roleOf } from '../policy.js';
 import { roomKey, type RoomState } from '../runtime.js';
 import { parseSetupReply } from './grammar.js';
+import { parseLeaveLine, type LeaveResult } from './leave.js';
 import { effectiveProfile, profileStore } from './profiles.js';
 
 export const HOLD_MAX = 20;
@@ -22,7 +23,7 @@ export type RoomSetupDeps = {
   ask: (owner: string, text: string) => Promise<void>;
   record: (ev: RoomMessageEvent) => void;
   replay: (ev: RoomMessageEvent) => void;
-  leave: (ref: RoomRef) => Promise<void>;
+  leave: (ref: RoomRef) => Promise<LeaveResult>;
 };
 
 type Waiting = { ref: RoomRef; held: RoomMessageEvent[]; reminded: boolean };
@@ -50,9 +51,15 @@ export class RoomSetup implements RoomGate {
   }
 
   onRoomLine(ev: RoomMessageEvent): 'pass' | 'consumed' {
+    const owner = roleOf(ev.from, this.deps.policy()) === 'owner';
+    const leave = owner && !ev.whisper ? parseLeaveLine(ev.text) : null;
+    if (leave) {
+      if ('all' in leave || leave.names.includes(normalizeName(this.deps.self()))) this.leaveFor(normalizeName(ev.from), ev.room, false);
+      return 'consumed';
+    }
     const waiting = this.pending.get(roomKey(ev.room));
     if (!waiting) return 'pass';
-    if (roleOf(ev.from, this.deps.policy()) !== 'owner') {
+    if (!owner) {
       this.deps.record(ev);
       return 'consumed';
     }
@@ -86,12 +93,7 @@ export class RoomSetup implements RoomGate {
     const key = roomKey(ref);
 
     if (reply.kind === 'leave') {
-      this.pending.delete(key);
-      this.settled.delete(key);
-      this.send(from, copy.setupLeaving(ref.name));
-      this.deps.leave(ref).catch((err: unknown) => {
-        this.deps.log.warn('room leave failed', { room: key, error: err instanceof Error ? err.message : String(err) });
-      });
+      this.leaveFor(from, ref, true);
       return 'handled';
     }
 
@@ -133,6 +135,20 @@ export class RoomSetup implements RoomGate {
 
   pendingCount(): number {
     return this.pending.size;
+  }
+
+  private leaveFor(owner: string, ref: RoomRef, confirm: boolean): void {
+    const key = roomKey(ref);
+    this.forget(key);
+    this.deps.leave(ref).then(
+      (result) => {
+        if (result === 'home') this.send(owner, copy.leaveHome(ref.name));
+        else if (confirm) this.send(owner, result === 'left' ? copy.setupLeaving(ref.name) : copy.notInRoom(ref.name));
+      },
+      (err: unknown) => {
+        this.deps.log.warn('room leave failed', { room: key, error: err instanceof Error ? err.message : String(err) });
+      },
+    );
   }
 
   private answer(owner: string, text: string): 'handled' {

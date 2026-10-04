@@ -32,6 +32,10 @@ export class HoldQueue<T> {
     return this.rooms.get(roomKey)?.length ?? 0;
   }
 
+  clearRoom(roomKey: string): void {
+    this.rooms.delete(roomKey);
+  }
+
   clear(): void {
     this.rooms.clear();
   }

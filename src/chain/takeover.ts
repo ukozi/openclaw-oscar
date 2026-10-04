@@ -79,6 +79,15 @@ export class Takeover {
     return n;
   }
 
+  clearRoom(roomKey: string): void {
+    for (const [id, entry] of this.known) {
+      if (entry.roomKey !== roomKey) continue;
+      this.cancel(entry);
+      this.known.delete(id);
+    }
+    for (const id of this.tooks.keys()) if (id.startsWith(`${roomKey}|`)) this.tooks.delete(id);
+  }
+
   clear(): void {
     for (const entry of this.known.values()) this.cancel(entry);
     this.known.clear();

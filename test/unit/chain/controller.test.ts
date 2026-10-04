@@ -248,6 +248,28 @@ describe('room mode and rank', () => {
 });
 
 describe('holds', () => {
+  it('resetRoom drops the held lines, the turn and the standbys of that room', async () => {
+    const k = kit('botone');
+    k.c.onRoomMessage(line('alice', 'botone: deploy it'));
+    k.c.onRoomMessage(line('bob', 'botone: and tell me a joke', { cookie: 78n }));
+    k.c.resetRoom(RK);
+    expect(k.c.turnOrigin(RK)).toBeNull();
+    k.wakes[0]?.resolve();
+    await flush();
+    expect(k.sink.wake).toHaveBeenCalledTimes(1);
+
+    const s = kit('botone');
+    s.c.onRoomMessage(line('bottwo', 'should the intro keep the quote?'));
+    s.c.onRoomMessage(line('alice', 'yes, keep it', { cookie: 78n }));
+    expect(s.c.standbys()).toBe(1);
+    s.c.resetRoom('room:4:elsewhere');
+    expect(s.c.standbys()).toBe(1);
+    s.c.resetRoom(RK);
+    expect(s.c.standbys()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(s.sink.wake).not.toHaveBeenCalled();
+  });
+
   it('approved wake is held behind an owner run', async () => {
     const k = kit('botone');
     k.c.onRoomMessage(line('alice', 'botone: deploy it'));

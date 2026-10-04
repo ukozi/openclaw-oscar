@@ -355,6 +355,16 @@ export class ChainController {
     };
   }
 
+  resetRoom(roomKey: string): void {
+    this.turns.delete(roomKey);
+    this.asked.delete(roomKey);
+    this.holds.clearRoom(roomKey);
+    this.inflight.delete(roomKey);
+    this.limitedUntil.delete(roomKey);
+    this.takeover.clearRoom(roomKey);
+    this.lounge.clear(roomKey);
+  }
+
   stop(): void {
     this.takeover.clear();
     this.ack.clear();

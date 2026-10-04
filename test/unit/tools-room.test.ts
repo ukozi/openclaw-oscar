@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ChainController } from '../../src/chain/controller.js';
 import type { RootPolicy } from '../../src/config.js';
 import type { RoomRef } from '../../src/names.js';
 import { applyRoomClosed, applyRoomReady, clearRuntime, roomsExt, setRuntime } from '../../src/runtime.js';
@@ -108,10 +109,31 @@ describe('join and leave', () => {
     const tool = createRoomTool(ctx({ senderIsOwner: false, requesterSenderId: 'bob' }), env());
     await expect(tool?.execute('t1', { action: 'join', room: 'bobsden' })).rejects.toThrow('only an owner');
     await expect(tool?.execute('t2', { action: 'leave', room: 'testroom' })).rejects.toThrow('only an owner');
-    const unknown = createRoomTool(ctx({ senderIsOwner: undefined }), env());
+    const unknown = createRoomTool(ctx({ senderIsOwner: undefined, requesterSenderId: undefined }), env());
     await expect(unknown?.execute('t3', { action: 'join', room: 'bobsden' })).rejects.toThrow('only an owner');
     expect(fake.calls.joinRoom).toEqual([]);
     expect(fake.calls.leaveRoom).toEqual([]);
+  });
+
+  it('takes an owner from the requester when the host does not mark one', async () => {
+    const { fake, rt } = running();
+    applyRoomReady(rt, DEN, ['botone', 'bob'], 'botone', 1);
+    const tool = createRoomTool(ctx({ senderIsOwner: false, requesterSenderId: 'alice' }), env());
+    expect((await tool?.execute('t1', { action: 'leave', room: 'bobsden' }))?.content[0]?.text).toBe(`left ${DEN_KEY}`);
+    expect(fake.calls.leaveRoom).toEqual([DEN]);
+    applyRoomReady(rt, DEN, ['botone', 'bob'], 'botone', 1);
+    const bob = createRoomTool(ctx({ senderIsOwner: false, requesterSenderId: 'bob' }), env());
+    await expect(bob?.execute('t2', { action: 'leave', room: 'bobsden' })).rejects.toThrow('only an owner can ask me to join or leave a room');
+    expect(fake.calls.leaveRoom).toEqual([DEN]);
+  });
+
+  it('clears the chain state of a room it leaves', async () => {
+    const { rt } = running();
+    applyRoomReady(rt, DEN, ['botone', 'bob'], 'botone', 1);
+    const resetRoom = vi.fn();
+    rt.chain = { resetRoom } as unknown as ChainController;
+    await createRoomTool(ctx(), env())?.execute('t1', { action: 'leave', room: 'bobsden' });
+    expect(resetRoom).toHaveBeenCalledWith(DEN_KEY);
   });
 
   it('joins a session room for an owner and records who asked', async () => {

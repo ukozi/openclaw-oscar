@@ -9,7 +9,8 @@ import { escapeNonAscii, normalizeName, parseTarget, roomNameProblem } from './n
 import type { RoomRef } from './names.js';
 import { roleOf } from './policy.js';
 import { STATUS_TOOL, createOscarStatusTool, runtimeWiring } from './presence/register.js';
-import { applyRoomClosed, getRuntime, roomKey, roomsExt, runtimeForSessionKey } from './runtime.js';
+import { leaveRoomNow } from './rooms/leave.js';
+import { getRuntime, roomKey, roomsExt, runtimeForSessionKey } from './runtime.js';
 
 export type ToolName = (typeof TOOL_NAMES)[number];
 export type ToolBuilder = (ctx: OpenClawPluginToolContext) => AnyAgentTool | null;
@@ -89,7 +90,6 @@ export function createRoomTool(ctx: RoomToolContext, env: RoomToolEnv = {}): Roo
   if (!accountIds().includes(accountId)) return null;
   const policy = env.policy ?? (() => readPolicy(cfg()));
   const now = env.now ?? Date.now;
-  const owner = ctx.senderIsOwner === true;
   const by = ctx.requesterSenderId ? normalizeName(ctx.requesterSenderId) : undefined;
 
   return {
@@ -106,6 +106,7 @@ export function createRoomTool(ctx: RoomToolContext, env: RoomToolEnv = {}): Roo
       const self = normalizeName(rt.session.selfInfo()?.screenName ?? accountId);
       const home = live.room ? roomKey(live.room.ref) : null;
       const ext = roomsExt(rt);
+      const owner = ctx.senderIsOwner === true || (by !== undefined && roleOf(by, live) === 'owner');
 
       if (input.action === 'list') {
         const rooms = [...rt.rooms.entries()]
@@ -136,10 +137,9 @@ export function createRoomTool(ctx: RoomToolContext, env: RoomToolEnv = {}): Roo
         return roomToolResult(outcome === 'joined' ? `joined ${key}` : `already in ${key}`, { room: key, outcome });
       }
 
-      if (key === home) throw new Error('that is my home room; change channels.oscar.room to move me');
-      if (!rt.rooms.has(key)) throw new Error(`not in ${key}`);
-      await rt.session.leaveRoom(ref);
-      applyRoomClosed(rt, ref, false);
+      const left = await leaveRoomNow(rt, ref, live);
+      if (left === 'home') throw new Error('that is my home room; change channels.oscar.room to move me');
+      if (left === 'not-in') throw new Error(`not in ${key}`);
       return roomToolResult(`left ${key}`, { room: key, outcome: 'left' });
     },
   };
