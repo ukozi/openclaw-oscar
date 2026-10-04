@@ -10,8 +10,8 @@ import {
 } from './config.js';
 import type { ResolvedAccount } from './config.js';
 import { attachRooms } from './inbound/home.js';
-import { admitSender, createImHandler } from './inbound/im.js';
-import { recordRoomLine } from './inbound/room.js';
+import { addImControlHandler, admitSender, createImHandler } from './inbound/im.js';
+import { recordRoomLine, roomSink } from './inbound/room.js';
 import { dispatchImTurn, dispatchRoomTurn } from './inbound/turn.js';
 import { decodePeerId, encodePeerId, formatTarget, isAsciiName, normalizeName, parseTarget } from './names.js';
 import type { PeerRef } from './names.js';
@@ -23,8 +23,9 @@ import { roleOf, senderToolPolicy, toolDeny } from './policy.js';
 import { presenceActions, presenceToolHints, startPresence } from './presence/register.js';
 import { getRunTracker } from './presence/runs.js';
 import { attachProfileStore, ProfileStore, profileStore, storeFileFor } from './rooms/profiles.js';
+import { RoomSetup } from './rooms/setup.js';
 import {
-  clearRuntime, createPasswordGuard, currentGeneration, getRuntime, liveConfig, nextGeneration, setRuntime, sharedLoginBudget,
+  applyRoomClosed, clearRuntime, createPasswordGuard, currentGeneration, getRuntime, liveConfig, nextGeneration, roomKey, setRuntime, sharedLoginBudget,
 } from './runtime.js';
 import type { AccountRuntime, ProbeResult, Timers } from './runtime.js';
 import { channelSecrets } from './secret-contract-api.js';
@@ -206,7 +207,22 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     },
     contacts: () => notices.ring().map((entry) => ({ name: entry.name, kind: entry.kind, at: entry.lastAt })),
   });
-  installChain({ rt, getCfg, tracker: getRunTracker(), log });
+  const chain = installChain({ rt, getCfg, tracker: getRunTracker(), log });
+  const sink = roomSink(accountId);
+  const setup = new RoomSetup({
+    accountId, self, now, log,
+    policy: () => readPolicy(getCfg()),
+    rooms: () => rt.rooms,
+    invitedBy: (key) => rt.rooms.get(key)?.invitedBy,
+    ask: (owner, text) => sendNotice({ cfg: getCfg(), accountId, bot: self(), owner, text }),
+    record: (ev) => sink.record(ev),
+    replay: (ev) => chain.onRoomMessage(ev),
+    leave: async (ref) => {
+      await session.leaveRoom(ref);
+      applyRoomClosed(rt, ref, false);
+    },
+  });
+  chain.setGate(setup);
   const guard = createPasswordGuard({
     cacheKey: `${account.host}:${account.port}:${account.screenName}`,
     allowUnauthenticated: account.dangerouslyAllowUnauthenticatedServer,
@@ -224,6 +240,11 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
 
   let wasOnline = false;
   const offs = [
+    session.on('roomReady', (p) => setup.onRoomReady(p.room)),
+    session.on('roomClosed', (ev) => {
+      if (!ev.willRejoin) setup.forget(roomKey(ev.room));
+    }),
+    addImControlHandler(accountId, (ev) => setup.onIm(ev)),
     session.on('im', (ev) => im.onIm(ev)),
     session.on('presence', (p) => notices.ownerPresence(p.name, p.online)),
     session.on('state', (state) => {

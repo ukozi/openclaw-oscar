@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('openclaw/plugin-sdk/channel-ingress-runtime', async () => (await import('../fake/openclaw.js')).channelIngressRuntime);
 
 import { readPolicy } from '../../src/config.js';
-import { IM_TIMING, admitSender, createImHandler, ingressParams, setImControlHandler } from '../../src/inbound/im.js';
+import { IM_TIMING, admitSender, createImHandler, ingressParams, addImControlHandler } from '../../src/inbound/im.js';
 import type { ImTurn } from '../../src/inbound/turn.js';
 import type { ContactAttempt } from '../../src/notice.js';
 import type { ImEvent } from '../../src/oscar/index.js';
@@ -44,9 +44,14 @@ beforeEach(() => {
   vi.setSystemTime(T0);
   Object.assign(IM_TIMING, { debounceMs: 2000, replyCooldownMs: 2000, replaySettleMs: 3000, dedupeMs: 60_000, replayMaxAgeMs: 4 * 3600_000 });
 });
+const removers: (() => void)[] = [];
+const control = (accountId: string, fn: Parameters<typeof addImControlHandler>[1]): (() => void) => {
+  const off = addImControlHandler(accountId, fn);
+  removers.push(off);
+  return off;
+};
 afterEach(() => {
-  setImControlHandler('default', null);
-  setImControlHandler('other', null);
+  for (const off of removers.splice(0)) off();
   vi.useRealTimers();
 });
 
@@ -100,7 +105,7 @@ describe('check order', () => {
   it('asks the control handler after the notice and own-name checks and before everything else', async () => {
     const t = setup();
     const seen: string[] = [];
-    setImControlHandler('default', (ev) => {
+    control('default', (ev) => {
       seen.push(`${ev.from}|${ev.text}`);
       return ev.text.startsWith('#oc ') ? 'handled' : 'pass';
     });
@@ -121,12 +126,33 @@ describe('check order', () => {
 
   it('keeps control handlers apart by account and forgets one that is removed', async () => {
     const t = setup();
-    setImControlHandler('other', () => 'handled');
-    setImControlHandler('default', () => 'handled');
-    setImControlHandler('default', null);
+    control('other', () => 'handled');
+    const off = control('default', () => 'handled');
+    off();
     t.handler.onIm(t.im('alice', 'hello'));
     await t.settle(2000);
     expect(t.turns).toHaveLength(1);
+  });
+
+  it('runs control handlers in order and stops at the first that handles the IM', async () => {
+    const t = setup();
+    const seen: string[] = [];
+    control('default', () => {
+      seen.push('first');
+      return 'pass';
+    });
+    control('default', () => {
+      seen.push('second');
+      return 'handled';
+    });
+    control('default', () => {
+      seen.push('third');
+      return 'handled';
+    });
+    t.handler.onIm(t.im('alice', 'team private'));
+    await t.settle(2000);
+    expect(seen).toEqual(['first', 'second']);
+    expect(t.turns).toEqual([]);
   });
 
   it('records a stranger as an im contact with the display name', async () => {

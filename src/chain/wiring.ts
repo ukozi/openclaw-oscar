@@ -1,7 +1,7 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/core';
 import { registerAwarenessSource } from '../awareness.js';
 import { listAccountIds, readPolicy, resolveAccount } from '../config.js';
-import { setImControlHandler } from '../inbound/im.js';
+import { addImControlHandler } from '../inbound/im.js';
 import { roomSink, setRoomBrain } from '../inbound/room.js';
 import { decodePeerId, normalizeName } from '../names.js';
 import { toWireHtml } from '../oscar/text.js';
@@ -58,8 +58,8 @@ export function installChain(opts: { rt: AccountRuntime; getCfg: () => unknown; 
   rt.chain = controller;
   setRoomBrain(accountId, { onRoomMessage: (ev) => controller.onRoomMessage(ev) });
   setOutboundTextFilter(accountId, (meta, markdown) => controller.filterOutbound(meta, markdown));
-  setImControlHandler(accountId, (ev) => controller.onIm(ev));
   unsubscribers.set(rt, [
+    addImControlHandler(accountId, (ev) => controller.onIm(ev)),
     rt.session.on('roomReady', (p) => controller.onRoomReady(p.room, p.occupants)),
     rt.session.on('roomJoin', (ev) => controller.onRoomJoin(ev)),
     rt.session.on('roomLeave', (ev) => controller.onRoomLeave(ev)),
@@ -76,7 +76,6 @@ export function uninstallChain(rt: AccountRuntime): void {
   unsubscribers.delete(rt);
   setRoomBrain(rt.accountId, null);
   setOutboundTextFilter(rt.accountId, null);
-  setImControlHandler(rt.accountId, null);
 }
 
 export type GroupHookParams = { cfg: unknown; groupId?: string | null; accountId?: string | null; senderId?: string | null };

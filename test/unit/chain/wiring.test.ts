@@ -29,7 +29,10 @@ vi.mock('../../../src/outbound.js', () => ({
   sendRoomLine: seams.sendRoomLine,
 }));
 vi.mock('../../../src/inbound/im.js', () => ({
-  setImControlHandler: (_id: string, fn: unknown) => { seams.im = fn; },
+  addImControlHandler: (_id: string, fn: unknown) => {
+    seams.im = fn;
+    return () => { if (seams.im === fn) seams.im = null; };
+  },
 }));
 vi.mock('../../../src/status.js', () => ({ hostOwnerListHasStar: () => seams.star }));
 vi.mock('../../../src/presence/away.js', () => ({

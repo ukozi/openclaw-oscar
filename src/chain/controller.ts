@@ -8,6 +8,7 @@ import { neutralizeDirectives, roleOf } from '../policy.js';
 import type { OriginClass, TurnOrigin } from '../policy.js';
 import type { RunChange, RunInfo, RunTerminal } from '../presence/runs.js';
 import { effectiveProfile } from '../rooms/profiles.js';
+import type { RoomGate } from '../rooms/setup.js';
 import type { RoomState } from '../runtime.js';
 import { AckTimers } from './ack.js';
 import { RoomLoopGuard, botLoopFacts } from './guards.js';
@@ -45,6 +46,7 @@ export type ChainDeps = {
   say(room: RoomRef, markdown: string, opts?: { whisperTo?: string; priority?: SendPriority }): Promise<SendReceipt>;
   sendIm(to: string, line: string): void;
   rosterPresence?: () => TeammatePresence[];
+  gate?: RoomGate;
   log: Logger;
   timers?: Timers;
   now?: Clock;
@@ -133,11 +135,13 @@ export class ChainController {
   private readonly timers: Timers;
   private lastHashCheck = 0;
   private lounge = new LoungeCounter();
+  private gate: RoomGate | undefined;
 
   constructor(private readonly deps: ChainDeps) {
     const timers = deps.timers ?? realTimers;
     this.timers = timers;
     this.now = deps.now ?? (() => Date.now());
+    this.gate = deps.gate;
     this.unsubRun = deps.tracker.onRun((change) => {
       if (change.kind !== 'start') return;
       const roomKey = deps.roomKeyForSession(change.run.sessionKey);
@@ -183,6 +187,7 @@ export class ChainController {
     const roomKey = roomKeyOf(ev.room);
     const room = this.deps.room(roomKey);
     if (!room) return;
+    if (this.gate?.onRoomLine(ev) === 'consumed') return;
     const { policy, profile } = this.roomScope(ev.room);
     const self = this.deps.self();
     const now = this.now();
@@ -249,6 +254,10 @@ export class ChainController {
         return;
       }
     }
+  }
+
+  setGate(gate: RoomGate | undefined): void {
+    this.gate = gate;
   }
 
   onRoomReady(_room: RoomRef, occupants: string[]): void {

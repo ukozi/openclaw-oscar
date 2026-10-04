@@ -181,6 +181,29 @@ describe('wake and standby', () => {
   });
 });
 
+describe('room gate', () => {
+  it('a gate that consumes the line stops routing, and one that passes it lets it route', () => {
+    const verdict: { v: 'pass' | 'consumed' } = { v: 'consumed' };
+    const seen: string[] = [];
+    const k = kit('botone', { gate: { onRoomLine: (ev) => { seen.push(ev.text); return verdict.v; } } });
+    k.c.onRoomMessage(line('alice', 'what is the status?'));
+    expect(seen).toEqual(['what is the status?']);
+    expect(k.sink.wake).not.toHaveBeenCalled();
+    expect(k.sink.record).not.toHaveBeenCalled();
+    expect(k.say).not.toHaveBeenCalled();
+    verdict.v = 'pass';
+    k.c.onRoomMessage(line('alice', 'what is the status?'));
+    expect(k.sink.wake).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes a gate set after construction', () => {
+    const k = kit('botone');
+    k.c.setGate({ onRoomLine: () => 'consumed' });
+    k.c.onRoomMessage(line('alice', 'what is the status?'));
+    expect(k.sink.wake).not.toHaveBeenCalled();
+  });
+});
+
 describe('room mode and rank', () => {
   const ranked = (mode: 'team' | 'lounge' | 'watch') => policyFixture({
     chain: chainConfig({ roster: [] }),

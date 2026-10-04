@@ -16,11 +16,19 @@ const REPEAT_WINDOW = 3;
 
 export type ImControlHandler = (ev: ImEvent) => 'handled' | 'pass';
 
-const controlHandlers = new Map<string, ImControlHandler>();
+const controlHandlers = new Map<string, ImControlHandler[]>();
 
-export function setImControlHandler(accountId: string, fn: ImControlHandler | null): void {
-  if (fn) controlHandlers.set(accountId, fn);
-  else controlHandlers.delete(accountId);
+export function addImControlHandler(accountId: string, fn: ImControlHandler): () => void {
+  controlHandlers.set(accountId, [...(controlHandlers.get(accountId) ?? []), fn]);
+  return () => {
+    const rest = (controlHandlers.get(accountId) ?? []).filter((h) => h !== fn);
+    if (rest.length > 0) controlHandlers.set(accountId, rest);
+    else controlHandlers.delete(accountId);
+  };
+}
+
+function controlled(accountId: string, ev: ImEvent): boolean {
+  return (controlHandlers.get(accountId) ?? []).some((fn) => fn(ev) === 'handled');
 }
 
 export function ingressParams(accountId: string, from: string, policy: RootPolicy): ResolveStableChannelMessageIngressParams {
@@ -157,7 +165,7 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; stop()
       return;
     }
     if (from === self) return;
-    if (controlHandlers.get(deps.accountId)?.({ ...ev, from }) === 'handled') return;
+    if (controlled(deps.accountId, { ...ev, from })) return;
     if (roleOf(from, policy) === 'bot') return;
     if (ev.autoResponse) {
       deps.log.debug('dropped an auto-response', { from });

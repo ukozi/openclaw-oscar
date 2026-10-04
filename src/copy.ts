@@ -1,3 +1,5 @@
+import type { RoomProfile } from './config.js';
+
 export type AwayFamily = 'shell' | 'files' | 'web' | 'handoff' | 'memory';
 export type Outcome = 'done' | 'none' | 'failed';
 
@@ -100,4 +102,21 @@ export const copy = {
   awayPhrase: (family: AwayFamily): string => AWAY_PHRASES[family],
   awayAutoReply: (line: string): string => orDefault(line.trim(), AWAY_DEFAULT),
   trustLine: (trust: keyof typeof TRUST_LINES): string => TRUST_LINES[trust],
+  profileSummary: (profile: RoomProfile, rankWord: boolean): string =>
+    [profile.mode, profile.trust, profile.rank?.length ? `${rankWord ? 'rank ' : ''}${profile.rank.join(' ')}` : undefined]
+      .filter(Boolean)
+      .join(', '),
+  setupAskNew: (room: string, teammates: string[], inviter?: string): string =>
+    `I joined ${room}${inviter ? ` (invited by ${inviter})` : ''}. How should I act here? Reply team, lounge or watch, then private or public. ` +
+    `Add a rank like '${['team', ...teammates].join(' ')}'. Reply leave to send me away.`,
+  setupAskBack: (room: string, summary: string): string =>
+    `I'm back in ${room}. Last time: ${summary}. Reply same, new settings, or leave.`,
+  setupReminder: (room: string): string => `I'm waiting for your settings for ${room} before I talk there.`,
+  setupApplied: (room: string, summary: string): string => `${room}: ${summary}.`,
+  setupLeaving: (room: string): string => `Leaving ${room}.`,
+  setupNotUnderstood: (word: string): string =>
+    `I didn't understand '${word}'. Reply team, lounge or watch, then private or public, or leave.`,
+  setupWhichRoom: (room: string): string =>
+    `More than one room is waiting. Start with the room name, like '${room} team private'.`,
+  setupConfigRoom: (room: string): string => `${room} is set in my config.`,
 };
