@@ -19,7 +19,7 @@ import { createNotices, sendNotice } from './notice.js';
 import { createOscarSession } from './oscar/index.js';
 import type { Logger, SessionState } from './oscar/index.js';
 import { outboundBase, sendAdapterText } from './outbound.js';
-import { roleOf, roomRequiresMention, senderToolPolicy, toolDeny } from './policy.js';
+import { roleOf, senderToolPolicy, toolDeny } from './policy.js';
 import { presenceActions, presenceToolHints, startPresence } from './presence/register.js';
 import { getRunTracker } from './presence/runs.js';
 import { attachProfileStore, ProfileStore, profileStore, storeFileFor } from './rooms/profiles.js';
@@ -292,11 +292,8 @@ export const oscarPlugin: ChannelPlugin<ResolvedAccount, { passwordCheck: ProbeR
     setupWizard: oscarSetupWizard,
     groups: {
       resolveToolPolicy: (params) => resolveToolPolicy(params),
-      resolveRequireMention: (params) => {
-        const ref = decodePeerId(params.groupId ?? '');
-        if (!ref) return undefined;
-        return ref.kind === 'room' ? roomRequiresMention(ref.bot, readPolicy(liveConfig(params.cfg))) : false;
-      },
+      // The plugin makes every room wake itself and reports each one as mentioned; a host mention gate would only drop them.
+      resolveRequireMention: (params) => (decodePeerId(params.groupId ?? '') ? false : undefined),
     },
     commands: { enforceOwnerForCommands: true },
     allowlist: {

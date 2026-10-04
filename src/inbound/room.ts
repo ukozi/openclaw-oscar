@@ -9,6 +9,7 @@ import type { PeerRef, RoomRef } from '../names.js';
 import type { Logger, RoomMessageEvent } from '../oscar/index.js';
 import { neutralizeDirectives, roleOf } from '../policy.js';
 import type { OriginClass, Role } from '../policy.js';
+import { effectiveProfile, trustPrompt } from '../rooms/profiles.js';
 import { pushRecentLine, roomKey, roomsExt, touchActivity } from '../runtime.js';
 import type { AccountRuntime, RoomState } from '../runtime.js';
 import { soloPrompt, soloRoute } from './solo.js';
@@ -194,6 +195,8 @@ async function wakeTurn(rt: AccountRuntime, deps: RoomDeps, turn: RoomTurn): Pro
   state.omittedCount = 0;
   const peer: PeerRef = { kind: 'room', bot: self, room: turn.room };
   const operatorPrompt = policy.rooms[normalizeRoom(turn.room.name)]?.systemPrompt?.trim() ?? '';
+  const eff = effectiveProfile(rt.accountId, policy, turn.room);
+  const trust = eff.source === 'pending' ? '' : trustPrompt(eff.profile.trust);
   const request: TurnRequest = {
     accountId: rt.accountId,
     peer,
@@ -210,7 +213,7 @@ async function wakeTurn(rt: AccountRuntime, deps: RoomDeps, turn: RoomTurn): Pro
     ],
     group: {
       label: turn.room.name,
-      systemPrompt: operatorPrompt === '' ? turn.systemPrompt : `${turn.systemPrompt}\n\n${operatorPrompt}`,
+      systemPrompt: [turn.systemPrompt, operatorPrompt, trust].filter((part) => part !== '').join('\n\n'),
       history: history.slice(-ROOM_HISTORY_LIMIT),
     },
   };

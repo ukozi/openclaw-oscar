@@ -3,7 +3,7 @@ import { normalizeName } from '../names.js';
 import { rosterNames } from './route.js';
 import type { WakeWhy } from './types.js';
 
-export type PromptVariant = 'chair' | 'worker' | 'handoff' | 'solo';
+export type PromptVariant = 'chair' | 'worker' | 'handoff' | 'solo' | 'lounge';
 
 const ROUTED = 'This line was routed to you on purpose: answer it, or reply NO_REPLY only if it needs no answer at all. Do not wait to be named.';
 const CHAIR_JOB = 'This line was routed to you because it named nobody, and your first job is to decide who should answer it, not to answer it yourself.';
@@ -15,6 +15,8 @@ const CHAIR_NO_REPLY = 'Reply NO_REPLY only when the line needs no answer from a
 const WORKER_RULE = 'You answer when someone names you, hands you a job, or answers a question you asked.';
 const HAND = 'Hand a job over by calling oscar_delegate, or by writing a line that starts with their name and a colon; '
   + 'that is a teammate, which is a different thing from a subagent.';
+const LOUNGE = 'Every assistant here reads each line. '
+  + 'Answer only when you have something to add that the others have not said; otherwise reply NO_REPLY.';
 const PUBLIC = 'Anyone may be reading this room: never post secrets, credentials or file contents.';
 
 export const TEAM_FACT_NOTE = 'This list holds only the hand-offs I have seen in this room, for as long as I have been in it. '
@@ -22,6 +24,7 @@ export const TEAM_FACT_NOTE = 'This list holds only the hand-offs I have seen in
   + 'When it is empty or looks out of date, ask rather than assume a teammate is free.';
 
 export function promptVariant(why: WakeWhy, policy: RootPolicy): PromptVariant {
+  if (why === 'lounge') return 'lounge';
   if (policy.chain.roster.length === 0) return 'solo';
   if (why === 'handoff') return 'handoff';
   if (why === 'lead' || why === 'invited' || why === 'takeover') return 'chair';
@@ -49,7 +52,9 @@ export function roomSystemPrompt(input: {
   const variant = promptVariant(input.why, policy);
   const team = teammatesBelow(self, policy);
   const parts: string[] = [];
-  if (variant === 'solo' || (variant === 'chair' && team.length === 0)) {
+  if (variant === 'lounge') {
+    parts.push(`You are ${self}, one of several assistants in this chat room.`, LOUNGE);
+  } else if (variant === 'solo' || (variant === 'chair' && team.length === 0)) {
     parts.push(`You are ${self}, an assistant in this chat room.`, ROUTED);
   } else if (variant === 'chair') {
     parts.push(

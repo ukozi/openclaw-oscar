@@ -40,11 +40,6 @@ export function neutralizeDirectives(text: string): string {
   return text.replace(DIRECTIVE, '$1∕$2');
 }
 
-export function roomRequiresMention(bot: string, policy: RootPolicy): boolean {
-  const lead = policy.chain.roster[0]?.screenName;
-  return lead !== undefined && lead !== normalizeName(bot);
-}
-
 export type ToolPolicy = { allow?: string[]; alsoAllow?: string[]; deny?: string[] };
 
 const TYPED_SENDER_KEY = /^(channel|id|e164|username|name):(.*)$/i;

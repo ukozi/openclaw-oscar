@@ -28,7 +28,7 @@ export type RouteInput = {
 export type RouteResult =
   | {
       kind: 'wake';
-      why: 'named' | 'lead' | 'floor' | 'invited' | 'handoff' | 'review';
+      why: 'named' | 'lead' | 'floor' | 'invited' | 'handoff' | 'review' | 'lounge';
       origin: OriginClass;
       key: string;
       order?: string[];

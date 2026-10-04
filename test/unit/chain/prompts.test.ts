@@ -94,6 +94,20 @@ describe('roomSystemPrompt', () => {
   });
 });
 
+describe('lounge', () => {
+  it('lounge, word for word', () => {
+    expect(roomSystemPrompt({ self: 'bottwo', policy, why: 'lounge' })).toBe(
+      'You are bottwo, one of several assistants in this chat room. Every assistant here reads each line. '
+      + 'Answer only when you have something to add that the others have not said; otherwise reply NO_REPLY. '
+      + PUBLIC,
+    );
+  });
+
+  it('is the lounge variant', () => {
+    expect(promptVariant('lounge', policy)).toBe('lounge');
+  });
+});
+
 describe('the team fact note', () => {
   it('says what the team fact is worth', () => {
     expect(TEAM_FACT_NOTE).toContain('only the hand-offs I have seen');

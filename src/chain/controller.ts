@@ -1,4 +1,4 @@
-import type { RootPolicy } from '../config.js';
+import type { RoomProfile, RootPolicy } from '../config.js';
 import { copy } from '../copy.js';
 import { normalizeName } from '../names.js';
 import type { RoomRef } from '../names.js';
@@ -7,6 +7,7 @@ import type { ImEvent, Logger, RateEvent, RoomMessageEvent, RoomRosterEvent, Sen
 import { neutralizeDirectives, roleOf } from '../policy.js';
 import type { OriginClass, TurnOrigin } from '../policy.js';
 import type { RunChange, RunInfo, RunTerminal } from '../presence/runs.js';
+import { effectiveProfile } from '../rooms/profiles.js';
 import type { RoomState } from '../runtime.js';
 import { AckTimers } from './ack.js';
 import { RoomLoopGuard, botLoopFacts } from './guards.js';
@@ -14,6 +15,7 @@ import { HandoffLedger, JobBoard, addressedLine, frameTask, handoffLine, mintId,
 import type { OpenHandoff, Trailer } from './handoff.js';
 import { HelloExchange } from './hello.js';
 import { HoldQueue, mustHold } from './holds.js';
+import { LoungeCounter, roomPolicy, routeLounge, routeWatch } from './modes.js';
 import { TEAM_FACT_NOTE, promptVariant, roomSystemPrompt } from './prompts.js';
 import { candidateOrder, noteRoomLine, rosterNames, route } from './route.js';
 import type { Asked } from './route.js';
@@ -130,6 +132,7 @@ export class ChainController {
   private readonly limitedUntil = new Map<string, number>();
   private readonly timers: Timers;
   private lastHashCheck = 0;
+  private lounge = new LoungeCounter();
 
   constructor(private readonly deps: ChainDeps) {
     const timers = deps.timers ?? realTimers;
@@ -180,7 +183,7 @@ export class ChainController {
     const roomKey = roomKeyOf(ev.room);
     const room = this.deps.room(roomKey);
     if (!room) return;
-    const policy = this.deps.policy();
+    const { policy, profile } = this.roomScope(ev.room);
     const self = this.deps.self();
     const now = this.now();
     this.checkHash(now);
@@ -197,11 +200,13 @@ export class ChainController {
     }
 
     const mismatched = this.hello.mismatchedIn(room.occupants);
-    const result = route({
+    const input = {
       self, now, policy, room, rosterMismatch: mismatched.length > 0, message: ev,
       asked: this.askedIn(roomKey),
       openHandoffIds: this.ledger.openKeys(ev.room), seenHandoffs: this.ledger.seenKeys(),
-    });
+    };
+    const result = profile.mode === 'lounge' ? routeLounge(input, this.lounge, roomKey)
+      : profile.mode === 'watch' ? routeWatch(input) : route(input);
     if (mismatched.length > 0) this.announceMismatch(room, mismatched, now);
     if (!ev.whisper) {
       const seen = { from: ev.from, text: ev.text, at: now };
@@ -355,6 +360,14 @@ export class ChainController {
     this.asked.clear();
     this.inflight.clear();
     this.limitedUntil.clear();
+    this.lounge = new LoungeCounter();
+  }
+
+  private roomScope(ref: RoomRef): { policy: RootPolicy; profile: RoomProfile } {
+    const policy = this.deps.policy();
+    const eff = effectiveProfile(this.deps.accountId, policy, ref);
+    const profile: RoomProfile = eff.source === 'pending' ? { mode: 'team' } : eff.profile;
+    return { policy: roomPolicy(policy, profile), profile };
   }
 
   private post(room: RoomState, text: string): Promise<void> {
@@ -374,7 +387,7 @@ export class ChainController {
     const now = this.now();
     const seen = { from: this.deps.self(), text, at: now };
     room.lastBotLine = { from: seen.from, at: now };
-    noteRoomLine(this.askedIn(roomKeyOf(room.ref)), seen, this.deps.policy());
+    noteRoomLine(this.askedIn(roomKeyOf(room.ref)), seen, this.roomScope(room.ref).policy);
     this.board.note(room.ref, seen);
   }
 
@@ -403,7 +416,7 @@ export class ChainController {
 
   private announceMismatch(room: RoomState, mismatched: string[], now: number): void {
     const self = this.deps.self();
-    if (candidateOrder(self, now, this.deps.policy(), room, true, this.askedIn(roomKeyOf(room.ref)))[0] !== self) return;
+    if (candidateOrder(self, now, this.roomScope(room.ref).policy, room, true, this.askedIn(roomKeyOf(room.ref)))[0] !== self) return;
     for (const peer of mismatched) {
       const tag = `${roomKeyOf(room.ref)}|${peer}|${this.hello.hashOf(peer) ?? ''}`;
       if (this.announced.has(tag)) continue;
@@ -423,7 +436,7 @@ export class ChainController {
 
   private reviewWake(h: OpenHandoff, note: string): void {
     const self = this.deps.self();
-    const policy = this.deps.policy();
+    const { policy } = this.roomScope(h.room);
     const roomKey = roomKeyOf(h.room);
     const now = this.now();
     if (!this.guard.allow(this.deps.accountId, roomKey, self, now)) return;
@@ -440,7 +453,7 @@ export class ChainController {
   }
 
   private pendingFor(ev: RoomMessageEvent, w: WakeSpec): Pending {
-    const policy = this.deps.policy();
+    const { policy } = this.roomScope(ev.room);
     const self = this.deps.self();
     const roomKey = roomKeyOf(ev.room);
     let originator = ev.from;
@@ -556,7 +569,7 @@ export class ChainController {
   private async stampHandoffLines(room: RoomState, rec: TurnRecord, text: string, wire: boolean): Promise<string> {
     const keep: string[] = [];
     for (const textLine of wire ? text.split(WIRE_BREAK) : text.split('\n')) {
-      const target = this.handoffTarget(wire ? plainOfWire(textLine) : textLine);
+      const target = this.handoffTarget(room.ref, wire ? plainOfWire(textLine) : textLine);
       if (!target) {
         keep.push(textLine);
         continue;
@@ -573,10 +586,10 @@ export class ChainController {
     return keep.join(wire ? '<BR>' : '\n');
   }
 
-  private handoffTarget(textLine: string): { to: string; task: string } | null {
+  private handoffTarget(ref: RoomRef, textLine: string): { to: string; task: string } | null {
     const addressed = addressedLine(textLine);
     if (!addressed) return null;
-    const policy = this.deps.policy();
+    const { policy } = this.roomScope(ref);
     const to = resolveBot(addressed.to, policy);
     if (!to) return null;
     const roster = rosterNames(policy);
@@ -586,7 +599,7 @@ export class ChainController {
   }
 
   private async sendHandoff(room: RoomState, rec: TurnRecord, toRaw: string, taskRaw: string): Promise<{ id: string; to: string }> {
-    const policy = this.deps.policy();
+    const { policy } = this.roomScope(room.ref);
     const roster = rosterNames(policy);
     const myIdx = roster.indexOf(this.deps.self());
     if (this.deps.ownerWildcard()) throw new Error(copy.delegateError('wildcard'));

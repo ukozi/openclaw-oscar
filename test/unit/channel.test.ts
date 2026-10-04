@@ -128,23 +128,14 @@ describe('groups hooks', () => {
     expect(plugin.groups.resolveToolPolicy({ cfg: c, groupId: 'botone#4.testroom', senderId: 'alice' })).toEqual({ deny: ['browser'] });
   });
 
-  it('never requires a mention in an IM, nor in a room for a solo bot or the lead; every other bot waits to be named', () => {
+  it('never requires a mention: the plugin decides every room wake itself', () => {
     const team = cfg({ chain: { roster: [{ screenName: 'botone' }, { screenName: 'bottwo' }, { screenName: 'botthree' }] } });
     expect(plugin.groups.resolveRequireMention({ cfg: cfg(), groupId: 'botone/alice' })).toBe(false);
     expect(plugin.groups.resolveRequireMention({ cfg: team, groupId: 'bottwo/alice' })).toBe(false);
-    expect(plugin.groups.resolveRequireMention({ cfg: cfg(), groupId: 'botone#4.testroom' })).toBe(false);
-    expect(plugin.groups.resolveRequireMention({ cfg: team, groupId: 'botone#4.testroom' })).toBe(false);
-    expect(plugin.groups.resolveRequireMention({ cfg: team, groupId: 'bottwo#4.testroom' })).toBe(true);
-    expect(plugin.groups.resolveRequireMention({ cfg: team, groupId: 'botthree#4.testroom' })).toBe(true);
+    for (const bot of ['botone', 'bottwo', 'botthree', 'botnine']) {
+      expect(plugin.groups.resolveRequireMention({ cfg: team, groupId: `${bot}#4.testroom` })).toBe(false);
+    }
     expect(plugin.groups.resolveRequireMention({ cfg: cfg(), groupId: 'x' })).toBeUndefined();
-  });
-
-  it('a bot missing from its own roster waits to be named, and the lead follows a roster edit', () => {
-    const team = cfg({ chain: { roster: [{ screenName: 'botone' }, { screenName: 'bottwo' }] } });
-    expect(plugin.groups.resolveRequireMention({ cfg: team, groupId: 'botnine#4.testroom' })).toBe(true);
-    const swapped = cfg({ chain: { roster: [{ screenName: 'bottwo' }, { screenName: 'botone' }] } });
-    expect(plugin.groups.resolveRequireMention({ cfg: swapped, groupId: 'bottwo#4.testroom' })).toBe(false);
-    expect(plugin.groups.resolveRequireMention({ cfg: swapped, groupId: 'botone#4.testroom' })).toBe(true);
   });
 });
 

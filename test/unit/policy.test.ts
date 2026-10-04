@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readPolicy } from '../../src/config.js';
-import { isOwner, neutralizeDirectives, outboundProblem, roleOf, roomRequiresMention, toolDeny } from '../../src/policy.js';
+import { isOwner, neutralizeDirectives, outboundProblem, roleOf, toolDeny } from '../../src/policy.js';
 
 const policy = (patch: Record<string, unknown> = {}) => readPolicy({
   channels: { oscar: { owners: ['Alice B', 'alice'], allowFrom: ['bob'], chain: { roster: [{ screenName: 'botone' }, { screenName: 'Bot Two' }] }, ...patch } },
@@ -61,22 +61,6 @@ describe('outboundProblem', () => {
     [{ kind: 'room', room }, {}, [{ exchange: 4, name: 'TestRoom' }], null],
   ] as const)('%j with %j', (target, patch, joined, want) => {
     expect(outboundProblem(target, policy(patch), [...joined])).toBe(want);
-  });
-});
-
-describe('roomRequiresMention', () => {
-  it.each([
-    ['botone', {}, false],
-    ['Bot One', {}, false],
-    ['oscar:botone', {}, false],
-    ['bottwo', {}, true],
-    ['botnine', {}, true],
-    ['botone', { chain: { roster: [] } }, false],
-    ['bottwo', { chain: { roster: [] } }, false],
-    ['bottwo', { chain: { roster: [{ screenName: 'Bot Two' }, { screenName: 'botone' }] } }, false],
-    ['botone', { chain: { roster: [{ screenName: 'Bot Two' }, { screenName: 'botone' }] } }, true],
-  ] as const)('%j with %j is %s', (bot, patch, want) => {
-    expect(roomRequiresMention(bot, policy(patch))).toBe(want);
   });
 });
 

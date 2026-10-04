@@ -181,6 +181,47 @@ describe('wake and standby', () => {
   });
 });
 
+describe('room mode and rank', () => {
+  const ranked = (mode: 'team' | 'lounge' | 'watch') => policyFixture({
+    chain: chainConfig({ roster: [] }),
+    teammates: ['botone', 'bottwo', 'botthree'],
+    room: undefined,
+    rooms: { testroom: { profile: { mode, rank: ['bottwo', 'botone'] } } },
+  });
+
+  it('team mode routes over the room rank', () => {
+    const lead = kit('bottwo');
+    lead.state.policy = ranked('team');
+    lead.c.onRoomMessage(line('alice', 'what is the status?'));
+    expect(lead.wakes[0]?.turn).toMatchObject({ why: 'lead', sender: 'alice' });
+    const next = kit('botone');
+    next.state.policy = ranked('team');
+    next.c.onRoomMessage(line('alice', 'what is the status?'));
+    expect(next.sink.wake).not.toHaveBeenCalled();
+    expect(next.c.standbys()).toBe(1);
+  });
+
+  it('watch mode wakes nobody on an unnamed owner line', () => {
+    for (const self of ['botone', 'bottwo', 'botthree']) {
+      const k = kit(self);
+      k.state.policy = ranked('watch');
+      k.c.onRoomMessage(line('alice', 'what is the status?'));
+      expect(k.sink.wake).not.toHaveBeenCalled();
+      expect(k.sink.record).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('lounge mode wakes every teammate with the lounge prompt', () => {
+    for (const self of ['botone', 'bottwo', 'botthree']) {
+      const k = kit(self);
+      k.state.policy = ranked('lounge');
+      k.c.onRoomMessage(line('alice', 'what is the status?'));
+      expect(k.wakes[0]?.turn.why).toBe('lounge');
+      expect(k.wakes[0]?.turn.systemPrompt).toContain('one of several assistants');
+    }
+  });
+});
+
 describe('holds', () => {
   it('approved wake is held behind an owner run', async () => {
     const k = kit('botone');

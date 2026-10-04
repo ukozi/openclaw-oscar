@@ -296,6 +296,23 @@ describe('brain seam and sink', () => {
     expect(s.turns[0]?.untrustedContext[0]?.payload).toMatchObject({ omitted: omittedLine(1) });
   });
 
+  it('ends the system prompt with the trust line after the operator prompt', async () => {
+    const s = setup({
+      room: { ref: ROOM, historyFrom: 'listed', notifyOnUnlistedJoin: true, profile: { mode: 'team', trust: 'private' } },
+      rooms: { testroom: { systemPrompt: 'Keep answers short.', profile: { mode: 'team' } } },
+    });
+    await roomSink('botone').wake(turn());
+    expect(s.turns[0]?.group?.systemPrompt).toBe('P\n\nKeep answers short.\n\n'
+      + 'This room is private: only your owner and your teammates are here. '
+      + 'You may talk about personal details your owner has shared with you.');
+  });
+
+  it('leaves the system prompt alone when the room has no trust', async () => {
+    const s = setup({ rooms: { testroom: { systemPrompt: 'Keep answers short.', profile: { mode: 'team' } } } });
+    await roomSink('botone').wake(turn());
+    expect(s.turns[0]?.group?.systemPrompt).toBe('P\n\nKeep answers short.');
+  });
+
   it('puts the facts a brain adds after the room entry and nowhere else', async () => {
     const s = setup();
     const teammates = { label: 'Teammates', source: 'oscar', type: 'oscar_roster_presence', payload: { teammates: [] } };

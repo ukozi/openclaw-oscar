@@ -15,7 +15,7 @@ export const realTimers: Timers = {
 };
 export type Clock = () => number;
 
-export type WakeWhy = 'named' | 'lead' | 'floor' | 'invited' | 'handoff' | 'review' | 'takeover';
+export type WakeWhy = 'named' | 'lead' | 'floor' | 'invited' | 'handoff' | 'review' | 'takeover' | 'lounge';
 
 export type UntrustedFact = { label: string; source?: string; type?: string; payload: unknown };
 

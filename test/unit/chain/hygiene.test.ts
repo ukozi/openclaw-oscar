@@ -10,7 +10,7 @@ describe('chain modules', () => {
   it('has every module the plan lists', () => {
     expect(files.sort()).toEqual([
       'ack.ts', 'address.ts', 'controller.ts', 'guards.ts', 'handoff.ts', 'hello.ts', 'holds.ts',
-      'prompts.ts', 'report.ts', 'route.ts', 'takeover.ts', 'types.ts', 'wiring.ts',
+      'modes.ts', 'prompts.ts', 'report.ts', 'route.ts', 'takeover.ts', 'types.ts', 'wiring.ts',
     ]);
   });
 
@@ -30,7 +30,7 @@ describe('chain modules', () => {
   });
 
   it('pure cores import no timers, sockets or SDK runtime', () => {
-    for (const f of ['address.ts', 'route.ts', 'prompts.ts', 'report.ts', 'holds.ts']) {
+    for (const f of ['address.ts', 'route.ts', 'modes.ts', 'prompts.ts', 'report.ts', 'holds.ts']) {
       const text = read(f);
       expect(/setTimeout|node:net|node:tls/.test(text), `${f} is not pure`).toBe(false);
       expect(/^import (?!type)[^;]*from 'openclaw\//m.test(text), `${f} has a runtime SDK import`).toBe(false);
