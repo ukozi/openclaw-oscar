@@ -76,6 +76,7 @@ export type RoomDeps = {
   record: (line: RoomLineRecord) => Promise<void>;
   noticeStranger: (name: string, display: string) => void;
   tellOwners: (text: string) => Promise<void>;
+  tellEveryOwner: (text: string) => Promise<void>;
   contacts: () => ContactAttemptView[];
 };
 

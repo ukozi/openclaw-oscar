@@ -206,6 +206,14 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
         });
       }
     },
+    tellEveryOwner: async (text) => {
+      for (const owner of readPolicy(getCfg()).owners) {
+        if (owner === self()) continue;
+        await sendNotice({ cfg: getCfg(), accountId, bot: self(), owner, text }).catch((err: unknown) => {
+          log.warn('owner note was not delivered', { owner, error: err instanceof Error ? err.message : String(err) });
+        });
+      }
+    },
     contacts: () => notices.ring().map((entry) => ({ name: entry.name, kind: entry.kind, at: entry.lastAt })),
   });
   const chain = installChain({ rt, getCfg, tracker: getRunTracker(), log });

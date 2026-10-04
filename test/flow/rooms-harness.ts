@@ -80,6 +80,9 @@ export async function startRoomFlow(
     tellOwners: async (text) => {
       ownerNotes.push(text);
     },
+    tellEveryOwner: async (text) => {
+      ownerNotes.push(text);
+    },
     contacts: () => [],
   };
 

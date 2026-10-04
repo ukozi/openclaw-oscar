@@ -121,4 +121,6 @@ export const copy = {
   setupWhichRoom: (room: string): string =>
     `More than one room is waiting. Start with the room name, like '${room} team private'.`,
   setupConfigRoom: (room: string): string => `${room} is set in my config.`,
+  trustDowngraded: (name: string, room: string): string =>
+    `${name} joined ${room}, who isn't on my lists. I'm treating ${room} as public now. Reply '${room} private' to change it back.`,
 };

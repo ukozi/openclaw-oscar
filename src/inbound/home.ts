@@ -3,6 +3,7 @@ import { copy } from '../copy.js';
 import { isAsciiName, normalizeName } from '../names.js';
 import type { RoomRef } from '../names.js';
 import { roleOf } from '../policy.js';
+import { onUnlistedJoin } from '../rooms/trust.js';
 import { applyRoomClosed, applyRoomJoin, applyRoomLeave, applyRoomReady, roomKey, roomsExt } from '../runtime.js';
 import type { AccountRuntime } from '../runtime.js';
 import { clearAloneTimers, handleInvite, watchAlone } from './invite.js';
@@ -96,7 +97,13 @@ export function attachRooms(rt: AccountRuntime, deps: RoomDeps): () => void {
       const name = normalizeName(ev.name);
       applyRoomJoin(rt, ev.room, name, self(), deps.now());
       watchAlone(rt, deps, ev.room);
-      if (name !== self()) noteUnlistedJoin(rt, deps, ev.room, name, ev.display);
+      if (name === self()) return;
+      const tell = (text: string): void => {
+        deps.tellEveryOwner(text).catch((err: unknown) => {
+          deps.log.warn('trust downgrade note failed', { room: roomKey(ev.room), error: errText(err) });
+        });
+      };
+      if (!onUnlistedJoin(rt.accountId, deps.policy(), ev.room, name, ev.display, tell)) noteUnlistedJoin(rt, deps, ev.room, name, ev.display);
     }),
     rt.session.on('roomLeave', (ev) => {
       applyRoomLeave(rt, ev.room, ev.name, self(), deps.now());

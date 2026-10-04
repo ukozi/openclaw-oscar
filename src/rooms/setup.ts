@@ -1,4 +1,4 @@
-import type { RoomProfile, RootPolicy } from '../config.js';
+import type { RoomProfile, RoomTrust, RootPolicy } from '../config.js';
 import { copy } from '../copy.js';
 import { normalizeName, normalizeRoom, type RoomRef } from '../names.js';
 import type { ImEvent, Logger, RoomMessageEvent } from '../oscar/index.js';
@@ -98,7 +98,10 @@ export class RoomSetup implements RoomGate {
     }
 
     const eff = effectiveProfile(this.deps.accountId, policy, ref);
-    if (eff.source === 'config') return this.answer(from, copy.setupConfigRoom(ref.name));
+    if (eff.source === 'config') {
+      if (reply.kind !== 'settings' || reply.mode !== undefined || !reply.trust) return this.answer(from, copy.setupConfigRoom(ref.name));
+      return this.restoreConfigTrust(from, policy, ref, reply.trust);
+    }
     const existing = eff.source === 'stored' ? eff.profile : undefined;
     let profile: RoomProfile;
     if (reply.kind === 'same') {
@@ -126,6 +129,17 @@ export class RoomSetup implements RoomGate {
     this.settled.add(key);
     for (const line of waiting?.held ?? []) this.deps.replay(line);
     return 'handled';
+  }
+
+  private restoreConfigTrust(owner: string, policy: RootPolicy, ref: RoomRef, trust: RoomTrust): 'handled' {
+    const store = profileStore(this.deps.accountId);
+    if (!store) {
+      this.deps.log.warn('room trust not saved: no store', { room: roomKey(ref) });
+      return 'handled';
+    }
+    store.setTrustOverride(roomKey(ref), trust === 'public' ? 'public' : null);
+    const eff = effectiveProfile(this.deps.accountId, policy, ref);
+    return this.answer(owner, copy.setupApplied(ref.name, eff.source === 'pending' ? trust : copy.profileSummary(eff.profile, true)));
   }
 
   forget(roomKey: string): void {

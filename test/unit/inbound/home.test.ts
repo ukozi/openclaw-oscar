@@ -8,6 +8,7 @@ import { attachRooms } from '../../../src/inbound/home.js';
 import { roomIssues } from '../../../src/inbound/issues.js';
 import { setRoomBrain } from '../../../src/inbound/room.js';
 import type { RoomRef } from '../../../src/names.js';
+import { attachProfileStore, ProfileStore, storeFileFor } from '../../../src/rooms/profiles.js';
 import { applyRoomReady, roomsExt } from '../../../src/runtime.js';
 import { KEY, ROOM, fakeSession, flush, line, makeRt, manualTimers, policyFixture, roomDeps } from '../rooms-fixtures.js';
 
@@ -200,6 +201,19 @@ describe('unlisted-join note', () => {
     s.fake.emit('roomJoin', { room: ROOM, name: 'mallory', display: 'Mallory' });
     await flush();
     expect(s.ownerNotes).toEqual([]);
+  });
+
+  it('sends the downgrade instead of the note when a private home room turns public', async () => {
+    const s = setup({ owners: ['alice', 'bob'], room: { ref: ROOM, historyFrom: 'listed', notifyOnUnlistedJoin: true, profile: { mode: 'team' as const, trust: 'private' as const } } });
+    const store = new ProfileStore({ file: storeFileFor('home-trust'), log: { debug() {}, info() {}, warn() {}, error() {} }, now: () => 1 });
+    attachProfileStore(s.rt.accountId, store);
+    s.fake.emit('roomReady', { room: ROOM, occupants: ['botone', 'alice'] });
+    s.fake.emit('roomJoin', { room: ROOM, name: 'mallory', display: 'Mallory' });
+    await flush();
+    attachProfileStore(s.rt.accountId, null);
+    expect(store.get(KEY)?.trustOverride).toBe('public');
+    expect(s.ownerNotes).toEqual([]);
+    expect(s.everyOwnerNotes).toEqual([copy.trustDowngraded('Mallory', 'testroom')]);
   });
 
   it('stops at the hourly cap', async () => {

@@ -157,6 +157,7 @@ export function roomDeps(over: Partial<RoomDeps> = {}) {
   const records: RoomLineRecord[] = [];
   const notices: { name: string; display: string }[] = [];
   const ownerNotes: string[] = [];
+  const everyOwnerNotes: string[] = [];
   let policy = policyFixture();
   let nowMs = 10_000;
   const deps: RoomDeps = {
@@ -180,6 +181,9 @@ export function roomDeps(over: Partial<RoomDeps> = {}) {
     tellOwners: async (text) => {
       ownerNotes.push(text);
     },
+    tellEveryOwner: async (text) => {
+      everyOwnerNotes.push(text);
+    },
     contacts: () => [],
     ...over,
   };
@@ -189,6 +193,7 @@ export function roomDeps(over: Partial<RoomDeps> = {}) {
     records,
     notices,
     ownerNotes,
+    everyOwnerNotes,
     setPolicy(next: RootPolicy) {
       policy = next;
     },
