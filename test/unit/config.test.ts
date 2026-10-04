@@ -206,9 +206,55 @@ describe('readPolicy', () => {
       room: { name: ' TestRoom ', exchange: 5, historyFrom: 'all', notifyOnUnlistedJoin: false },
       chain: { roster: [{ screenName: 'Bot One', role: 'lead', aliases: ['One'] }, { screenName: 'bottwo' }], maxHops: 3 },
     }));
-    expect(p.room).toEqual({ ref: { exchange: 5, name: 'testroom' }, historyFrom: 'all', notifyOnUnlistedJoin: false });
+    expect(p.room).toEqual({ ref: { exchange: 5, name: 'testroom' }, historyFrom: 'all', notifyOnUnlistedJoin: false, profile: { mode: 'team' } });
     expect(p.chain.roster).toEqual([{ screenName: 'botone', role: 'lead', aliases: ['one'] }, { screenName: 'bottwo', role: '', aliases: [] }]);
     expect(p.chain.maxHops).toBe(3);
+  });
+});
+
+describe('room profiles', () => {
+  const team = (patch: Sec = {}): Sec => ({ ...good(), chain: { roster: [{ screenName: 'botone' }, { screenName: 'bottwo' }] }, ...patch });
+
+  it('accepts mode, trust and rank on the home room and on rooms', () => {
+    expect(configProblems(cfgOf(team({
+      room: { name: 'homeroom', mode: 'watch', trust: 'public', rank: ['botone'] },
+      rooms: { TestRoom: { mode: 'lounge', trust: 'private', rank: ['BotTwo', 'botone'] } },
+    })))).toEqual([]);
+  });
+
+  it('reads a profile for each configured room', () => {
+    const p = readPolicy(cfgOf(team({
+      room: { name: 'homeroom', trust: 'public' },
+      rooms: { TestRoom: { mode: 'lounge', trust: 'private', rank: ['BotTwo', 'botone'] }, Other: { systemPrompt: 'hi' } },
+    })));
+    expect(p.rooms.testroom?.profile).toEqual({ mode: 'lounge', trust: 'private', rank: ['bottwo', 'botone'] });
+    expect(p.rooms.other).toEqual({ systemPrompt: 'hi', profile: { mode: 'team' } });
+    expect(p.room?.profile).toEqual({ mode: 'team', trust: 'public' });
+  });
+
+  it.each([
+    ['a rank name that is not a teammate', ['botthree'], 'channels.oscar.rooms.testroom.rank.0: "botthree" is not one of this gateway\'s accounts or chain.roster'],
+    ['a rank name listed twice', ['bottwo', 'Bot Two'], 'channels.oscar.rooms.testroom.rank.1: "bottwo" is listed twice'],
+    ['a non-ASCII rank name', ['bøtone'], 'channels.oscar.rooms.testroom.rank.0: names must be ASCII'],
+  ])('refuses %s', (_label, rank, problem) => {
+    expect(configProblems(cfgOf(team({ rooms: { testroom: { rank } } })))).toEqual([problem]);
+  });
+
+  it('checks the home room rank against every account', () => {
+    const sec = { host: 'h', password: 'hunter22', owners: ['alice'], accounts: { a: { screenName: 'botone' }, b: { screenName: 'bottwo' } } };
+    expect(configProblems(cfgOf({ ...sec, room: { name: 'homeroom', rank: ['bottwo', 'botone'] } }))).toEqual([]);
+    expect(configProblems(cfgOf({ ...sec, room: { name: 'homeroom', rank: ['botthree'] } }))).toEqual([
+      'channels.oscar.room.rank.0: "botthree" is not one of this gateway\'s accounts or chain.roster',
+    ]);
+  });
+
+  it('refuses an unknown mode', () => {
+    const problems = configProblems(cfgOf(team({ rooms: { testroom: { mode: 'party' } } })));
+    expect(problems.some((p) => p.startsWith('channels.oscar.rooms.testroom.mode:')), problems.join(' | ')).toBe(true);
+  });
+
+  it('reloads room profile keys without a restart', () => {
+    for (const key of ['mode', 'trust', 'rank']) expect(RELOAD_NOOP_PREFIXES).toContain(`channels.oscar.room.${key}`);
   });
 });
 

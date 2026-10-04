@@ -44,7 +44,7 @@ describe('handoffToolPolicy', () => {
   });
 
   it('an operator entry for the delegating bot narrows an owner hand-off too', () => {
-    const narrowed = policyFixture({ rooms: { testroom: { toolsBySender: { 'id:botone': { deny: ['exec'] } } } } });
+    const narrowed = policyFixture({ rooms: { testroom: { toolsBySender: { 'id:botone': { deny: ['exec'] } }, profile: { mode: 'team' as const } } } });
     const viaBot = senderToolPolicy('botone', narrowed, 'testroom');
     expect(viaBot).toEqual({ deny: ['exec'] });
     expect(handoffToolPolicy({ originator: 'alice', delegator: 'botone' }, narrowed, 'testroom')).toEqual(viaBot);

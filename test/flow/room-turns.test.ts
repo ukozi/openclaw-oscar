@@ -81,7 +81,7 @@ describe('home room', () => {
 
   it('reports a missing exchange 5 room as a status issue', async () => {
     const ref: RoomRef = { exchange: 5, name: 'testroom' };
-    flow = await startRoomFlow({ policy: { room: { ref, historyFrom: 'listed', notifyOnUnlistedJoin: true } } });
+    flow = await startRoomFlow({ policy: { room: { ref, historyFrom: 'listed', notifyOnUnlistedJoin: true, profile: { mode: 'team' as const } } } });
     const f = flow;
     await vi.waitFor(() => expect(roomsExt(f.rt).home.status).toBe('missing'), WAIT);
     const issues = roomIssues(f.rt, f.policy(), 'botone');

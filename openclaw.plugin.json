@@ -314,6 +314,28 @@
               },
               "notifyOnUnlistedJoin": {
                 "type": "boolean"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "team",
+                  "lounge",
+                  "watch"
+                ]
+              },
+              "trust": {
+                "type": "string",
+                "enum": [
+                  "private",
+                  "public"
+                ]
+              },
+              "rank": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
               }
             },
             "required": [
@@ -385,6 +407,28 @@
                 },
                 "systemPrompt": {
                   "type": "string"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "team",
+                    "lounge",
+                    "watch"
+                  ]
+                },
+                "trust": {
+                  "type": "string",
+                  "enum": [
+                    "private",
+                    "public"
+                  ]
+                },
+                "rank": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
                 }
               },
               "additionalProperties": false

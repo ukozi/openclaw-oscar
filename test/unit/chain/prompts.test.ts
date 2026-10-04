@@ -81,7 +81,7 @@ describe('roomSystemPrompt', () => {
   });
 
   it('never carries room text or the operator prompt, which the room sink appends', () => {
-    const withRoom = policyFixture({ rooms: { testroom: { systemPrompt: 'Keep answers short.' } } });
+    const withRoom = policyFixture({ rooms: { testroom: { systemPrompt: 'Keep answers short.', profile: { mode: 'team' as const } } } });
     expect(roomSystemPrompt({ self: 'botone', policy: withRoom, why: 'lead' })).toBe(roomSystemPrompt({ self: 'botone', policy, why: 'lead' }));
   });
 

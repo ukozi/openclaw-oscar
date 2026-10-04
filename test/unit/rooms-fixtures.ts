@@ -25,7 +25,7 @@ export function policyFixture(over: Partial<RootPolicy> = {}): RootPolicy {
     contactNotice: { cooldownHours: 6, maxPerHour: 5 },
     nonOwnerTools: { deny: ['group:runtime', 'group:fs', 'group:automation', 'group:nodes', 'sessions_spawn'] },
     outbound: { allowUnlisted: false },
-    room: { ref: ROOM, historyFrom: 'listed', notifyOnUnlistedJoin: true },
+    room: { ref: ROOM, historyFrom: 'listed', notifyOnUnlistedJoin: true, profile: { mode: 'team' as const } },
     invites: { accept: 'approved', maxRooms: 5, leaveWhenAloneMinutes: 10 },
     rooms: {},
     awareness: { lines: 5 },

@@ -148,7 +148,7 @@ describe('record and count', () => {
   });
 
   it('records unlisted lines under historyFrom all, escaped and outside recent lines', async () => {
-    const s = setup({ room: { ref: ROOM, historyFrom: 'all', notifyOnUnlistedJoin: true } });
+    const s = setup({ room: { ref: ROOM, historyFrom: 'all', notifyOnUnlistedJoin: true, profile: { mode: 'team' as const } } });
     onRoomMessage(s.rt, s.deps, line('lucаs', 'hi there'));
     await settle(s.rt);
     expect(s.records.map((r) => r.senderLabel)).toEqual(['luc\\u{430}s (unlisted)']);
@@ -172,7 +172,7 @@ describe('record and count', () => {
 
 describe('wake', () => {
   it('wakes for an owner line with the prompts, history, occupants and the omitted line', async () => {
-    const s = setup({ rooms: { testroom: { systemPrompt: 'Keep answers short.' } } });
+    const s = setup({ rooms: { testroom: { systemPrompt: 'Keep answers short.', profile: { mode: 'team' as const } } } });
     onRoomMessage(s.rt, s.deps, line('bob', 'earlier'));
     onRoomMessage(s.rt, s.deps, line('mallory', 'noise'));
     onRoomMessage(s.rt, s.deps, line('alice', 'what now?', { cookie: 9n }));

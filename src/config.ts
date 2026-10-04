@@ -22,7 +22,7 @@ export const ROOT_ONLY_KEYS = [
 
 export const RELOAD_NOOP_PREFIXES = [
   'owners', 'allowFrom', 'dmPolicy', 'dangerouslyAllowOpenDm', 'contactNotice', 'nonOwnerTools', 'outbound',
-  'room.historyFrom', 'room.notifyOnUnlistedJoin', 'invites', 'rooms',
+  'room.historyFrom', 'room.notifyOnUnlistedJoin', 'room.mode', 'room.trust', 'room.rank', 'invites', 'rooms',
   'away', 'typing', 'blockStreaming', 'awareness', 'textChunkLimit', 'roomTextChunkLimit',
   'chain.floorSeconds', 'chain.takeoverMs', 'chain.ackAfterMs', 'chain.ackText', 'chain.busyText',
   'chain.maxHops', 'chain.resultTimeoutMinutes', 'chain.reviewResults', 'fallback',
@@ -57,15 +57,19 @@ export type ChainConfig = {
   roster: RosterEntry[]; floorSeconds: number; takeoverMs: number; ackAfterMs: number;
   ackText: string; busyText: string; maxHops: number; resultTimeoutMinutes: number; reviewResults: boolean;
 };
+export type RoomMode = 'team' | 'lounge' | 'watch';
+export type RoomTrust = 'private' | 'public';
+export type RoomProfile = { mode: RoomMode; trust?: RoomTrust; rank?: string[] };
+
 export type RootPolicy = {
   owners: string[]; allowFrom: string[];
   dmPolicy: 'allowlist' | 'disabled' | 'open';
   contactNotice: { cooldownHours: number; maxPerHour: number };
   nonOwnerTools: { deny: string[] };
   outbound: { allowUnlisted: boolean };
-  room?: { ref: RoomRef; historyFrom: 'listed' | 'all'; notifyOnUnlistedJoin: boolean };
+  room?: { ref: RoomRef; historyFrom: 'listed' | 'all'; notifyOnUnlistedJoin: boolean; profile: RoomProfile };
   invites: { accept: 'approved' | 'owners' | 'off'; maxRooms: number; leaveWhenAloneMinutes: number };
-  rooms: Record<string, { toolsBySender?: Record<string, unknown>; systemPrompt?: string }>;
+  rooms: Record<string, { toolsBySender?: Record<string, unknown>; systemPrompt?: string; profile: RoomProfile }>;
   awareness: { lines: number };
   chain: ChainConfig;
   teammates: string[];
@@ -123,6 +127,11 @@ const transportShape = {
 };
 
 const names = z.array(z.string().min(1));
+const profileShape = {
+  mode: z.enum(['team', 'lounge', 'watch']).optional(),
+  trust: z.enum(['private', 'public']).optional(),
+  rank: z.array(z.string().min(1)).optional(),
+};
 const toolPolicy = z.object({ allow: z.array(z.string()).optional(), alsoAllow: z.array(z.string()).optional(), deny: z.array(z.string()).optional() }).strict();
 
 const rootShape = {
@@ -139,13 +148,14 @@ const rootShape = {
     exchange: z.union([z.literal(4), z.literal(5)]).optional(),
     historyFrom: z.enum(['listed', 'all']).optional(),
     notifyOnUnlistedJoin: z.boolean().optional(),
+    ...profileShape,
   }).strict().optional(),
   invites: z.object({
     accept: z.enum(['approved', 'owners', 'off']).optional(),
     maxRooms: z.number().int().min(0).max(20).optional(),
     leaveWhenAloneMinutes: z.number().min(0).max(1440).optional(),
   }).strict().optional(),
-  rooms: z.record(z.string(), z.object({ toolsBySender: z.record(z.string(), toolPolicy).optional(), systemPrompt: z.string().optional() }).strict()).optional(),
+  rooms: z.record(z.string(), z.object({ toolsBySender: z.record(z.string(), toolPolicy).optional(), systemPrompt: z.string().optional(), ...profileShape }).strict()).optional(),
   awareness: z.object({ lines: z.number().int().min(0).max(20).optional() }).strict().optional(),
   chain: z.object({
     roster: z.array(z.object({ screenName: z.string().min(1), role: z.string().optional(), aliases: names.optional() }).strict()).optional(),
@@ -244,6 +254,25 @@ function crossFieldProblems(sec: Obj): Problem[] {
   };
   if (ids.length === 0) check(null, {});
   else for (const id of ids) check(id, obj(accounts?.[id]) ?? {});
+  const teammates = new Set(rosterNames);
+  for (const own of ids.length === 0 ? [{}] : ids.map((id) => obj(accounts?.[id]) ?? {})) {
+    const name = { ...sec, ...own }.screenName;
+    if (typeof name === 'string') teammates.add(normalizeName(name));
+  }
+  teammates.delete('');
+  const checkRank = (at: (string | number)[], rank: unknown): void => {
+    const listed = new Set<string>();
+    list(rank).forEach((v, i) => {
+      if (typeof v !== 'string') return;
+      const key = normalizeName(v);
+      if (!isAsciiName(v)) problems.push({ path: [...at, i], message: 'names must be ASCII' });
+      else if (listed.has(key)) problems.push({ path: [...at, i], message: `"${key}" is listed twice` });
+      else if (!teammates.has(key)) problems.push({ path: [...at, i], message: `"${key}" is not one of this gateway's accounts or chain.roster` });
+      listed.add(key);
+    });
+  };
+  checkRank(['room', 'rank'], room?.rank);
+  for (const [key, value] of Object.entries(obj(sec.rooms) ?? {})) checkRank(['rooms', key, 'rank'], obj(value)?.rank);
   if (wouldRun && nameList(sec.owners).length === 0) {
     problems.push({ path: ['owners'], message: 'list at least one owner; with none, OpenClaw treats every approved person as an owner' });
   }
@@ -360,7 +389,7 @@ export function readPolicy(cfg: unknown): RootPolicy {
     if (!entry) continue;
     const toolsBySender = obj(entry.toolsBySender);
     const systemPrompt = str(entry.systemPrompt);
-    rooms[normalizeRoom(key)] = { ...(toolsBySender ? { toolsBySender } : {}), ...(systemPrompt ? { systemPrompt } : {}) };
+    rooms[normalizeRoom(key)] = { ...(toolsBySender ? { toolsBySender } : {}), ...(systemPrompt ? { systemPrompt } : {}), profile: readProfile(entry) };
   }
   const roster = list(chain.roster).map(obj).filter((e): e is Obj => Boolean(e && typeof e.screenName === 'string')).map((e) => ({
     screenName: normalizeName(e.screenName as string),
@@ -379,7 +408,7 @@ export function readPolicy(cfg: unknown): RootPolicy {
     nonOwnerTools: { deny: Array.isArray(deny) ? deny.filter((v): v is string => typeof v === 'string') : [...DEFAULT_DENY] },
     outbound: { allowUnlisted: owned && bool(obj(sec.outbound)?.allowUnlisted, false) },
     ...(roomName
-      ? { room: { ref: { exchange: room?.exchange === 5 ? 5 : 4, name: roomName }, historyFrom: oneOf(room?.historyFrom, ['listed', 'all'] as const, 'listed'), notifyOnUnlistedJoin: bool(room?.notifyOnUnlistedJoin, true) } }
+      ? { room: { ref: { exchange: room?.exchange === 5 ? 5 : 4, name: roomName }, historyFrom: oneOf(room?.historyFrom, ['listed', 'all'] as const, 'listed'), notifyOnUnlistedJoin: bool(room?.notifyOnUnlistedJoin, true), profile: readProfile(room ?? {}) } }
       : {}),
     invites: {
       accept: oneOf(invites.accept, ['approved', 'owners', 'off'] as const, 'approved'),
@@ -400,6 +429,15 @@ export function readPolicy(cfg: unknown): RootPolicy {
       reviewResults: bool(chain.reviewResults, false),
     },
     teammates,
+  };
+}
+
+function readProfile(entry: Obj): RoomProfile {
+  const trust = entry.trust === 'private' || entry.trust === 'public' ? entry.trust : undefined;
+  return {
+    mode: oneOf(entry.mode, ['team', 'lounge', 'watch'] as const, 'team'),
+    ...(trust ? { trust } : {}),
+    ...(Array.isArray(entry.rank) ? { rank: nameList(entry.rank) } : {}),
   };
 }
 

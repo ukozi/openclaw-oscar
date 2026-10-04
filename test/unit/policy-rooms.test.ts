@@ -38,7 +38,7 @@ describe('toolsBySenderEntry', () => {
 });
 
 describe('senderToolPolicy', () => {
-  const rooms = { testroom: { toolsBySender: { 'id:bob': { allow: ['read'], deny: ['web_fetch'] }, 'id:alice': { deny: ['exec'] } } } };
+  const rooms = { testroom: { toolsBySender: { 'id:bob': { allow: ['read'], deny: ['web_fetch'] }, 'id:alice': { deny: ['exec'] } }, profile: { mode: 'team' as const } } };
 
   it('gives an approved person the built-in deny', () => {
     expect(senderToolPolicy('bob', policyFixture(), 'testroom')).toEqual({ deny: DENY });
@@ -50,7 +50,7 @@ describe('senderToolPolicy', () => {
   });
 
   it('an operator entry cannot remove the built-in deny', () => {
-    const open = { testroom: { toolsBySender: { 'id:bob': { alsoAllow: ['exec'], deny: [] } } } };
+    const open = { testroom: { toolsBySender: { 'id:bob': { alsoAllow: ['exec'], deny: [] } }, profile: { mode: 'team' as const } } };
     expect(senderToolPolicy('bob', policyFixture({ rooms: open }), 'testroom')).toEqual({ alsoAllow: ['exec'], deny: DENY });
   });
 
@@ -79,7 +79,7 @@ describe('senderToolPolicy', () => {
   });
 
   it('does not repeat a deny the operator also listed and drops empty lists', () => {
-    const dup = { testroom: { toolsBySender: { 'id:bob': { allow: [], deny: ['group:fs', 'browser'] } } } };
+    const dup = { testroom: { toolsBySender: { 'id:bob': { allow: [], deny: ['group:fs', 'browser'] } }, profile: { mode: 'team' as const } } };
     expect(senderToolPolicy('bob', policyFixture({ rooms: dup }), 'testroom')).toEqual({ deny: [...DENY, 'browser'] });
   });
 });

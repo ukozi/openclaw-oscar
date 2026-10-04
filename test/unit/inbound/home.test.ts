@@ -79,7 +79,7 @@ describe('home room', () => {
     const rt = makeRt(fake.session);
     const clock = manualTimers();
     const d = roomDeps({ now: clock.now, timers: clock.timers });
-    d.setPolicy(policyFixture({ room: { ref, historyFrom: 'listed', notifyOnUnlistedJoin: true } }));
+    d.setPolicy(policyFixture({ room: { ref, historyFrom: 'listed', notifyOnUnlistedJoin: true, profile: { mode: 'team' as const } } }));
     detachers.push(attachRooms(rt, d.deps));
     await flush();
     expect(roomsExt(rt).home).toEqual({ status: 'missing', detail: 'no such room' });
@@ -196,7 +196,7 @@ describe('unlisted-join note', () => {
     s.fake.emit('roomJoin', { room: DEN, name: 'mallory', display: 'Mallory' });
     s.fake.emit('roomReady', { room: ROOM, occupants: ['alice'] });
     s.fake.emit('roomJoin', { room: ROOM, name: 'botone', display: 'BotOne' });
-    s.setPolicy(policyFixture({ room: { ref: ROOM, historyFrom: 'listed', notifyOnUnlistedJoin: false } }));
+    s.setPolicy(policyFixture({ room: { ref: ROOM, historyFrom: 'listed', notifyOnUnlistedJoin: false, profile: { mode: 'team' as const } } }));
     s.fake.emit('roomJoin', { room: ROOM, name: 'mallory', display: 'Mallory' });
     await flush();
     expect(s.ownerNotes).toEqual([]);
@@ -232,7 +232,7 @@ describe('roomIssues', () => {
     const rt = makeRt();
     roomsExt(rt).home = { status: 'missing', detail: 'no such room' };
     const ref: RoomRef = { exchange: 5, name: 'lobby' };
-    const policy = policyFixture({ room: { ref, historyFrom: 'listed', notifyOnUnlistedJoin: true } });
+    const policy = policyFixture({ room: { ref, historyFrom: 'listed', notifyOnUnlistedJoin: true, profile: { mode: 'team' as const } } });
     expect(roomIssues(rt, policy, 'botone')).toEqual([
       {
         kind: 'config',
