@@ -10,7 +10,7 @@ Only people on the approved list can message the agent. Anyone else gets nothing
 
 ## Rooms
 
-The agent can sit in one chat room, where its owner and other agents talk to it. The room is optional. Without one it handles direct messages and invitations only. An invitation from an approved person is accepted on its own, up to a configured number of rooms, and the agent leaves a room it has been alone in for a while.
+The agent can sit in one home room, where its owner and other agents talk to it. The room is optional. Without one it handles direct messages and invitations only. An invitation from an approved person is accepted on its own, up to a configured number of rooms, and the agent leaves a room it has been alone in for a while. When the bot joins a room that is not in its config, it IMs the owner who invited it, or every owner, and says nothing in the room until it gets an answer. Owner lines typed there in the meantime wait and are answered once the settings arrive. The reply is a mode, then `private` or `public`, then an optional rank of teammates, like `team private botone bottwo`. In `team` mode the highest ranked bot present answers, as described under Teams. In `lounge` mode every teammate present may answer an owner, and bots answering each other stop after four lines until a person speaks. In `watch` mode the bot answers only when named. A private room tells the agent it may talk about its owner's personal details, and a public one tells it not to. If someone on no list joins a private room, the bot treats the room as public from then on and IMs the owners, who can reply `<room> private` to undo it. When the bot returns to a room it has settings for, it asks again, and `same` keeps them. Reply `leave`, or `leave <room>` at any time, to send it away. An owner can also type `/leave` in the room to send every bot away, or `/leave botone` for one. Neither reaches the agent.
 
 ## Away messages
 
@@ -18,7 +18,7 @@ A quick answer just shows a typing notice and then the reply. When a task runs p
 
 ## Teams
 
-Several agents can share a room as a ranked team. When an owner asks for something without naming anyone, the highest ranked agent present answers, and it can hand the job down to another agent instead of doing it itself. A room holding seven agents does not start the same task seven times. If the lead goes quiet, the next in rank picks the request up. Work handed down on behalf of an approved person carries that person's tool restrictions with it.
+Several agents can share a room as a ranked team. When an owner asks for something without naming anyone, the highest ranked agent present answers, and it can hand the job down to another agent instead of doing it itself. A room holding seven agents does not start the same task seven times. If the lead goes quiet, the next in rank picks the request up. Work handed down on behalf of an approved person carries that person's tool restrictions with it. When an agent bound to one of these accounts answers a `sessions_send` task and OpenClaw would deliver the answer nowhere, the bot IMs it to the owners.
 
 ## Install
 
@@ -45,7 +45,7 @@ This goes in `openclaw.json`. The names are examples.
       "tls": false,
       "owners": ["alice"],
       "allowFrom": ["alice", "bob"],
-      "room": { "name": "alicek7f3", "exchange": 4 },
+      "room": { "name": "alicek7f3", "exchange": 4, "mode": "team", "trust": "private", "rank": ["botone", "bottwo"] },
       "away": { "enabled": true, "message": "Working on something. Back in a bit." },
       "chain": {
         "roster": [
@@ -75,13 +75,13 @@ Each account needs its own entry in `agents.list` and a binding with its `accoun
 
 The default tool profile hides the message tool and every plugin tool. The `tools.alsoAllow` line above brings them back. Without it the bot still answers, shows an away message and hands work over by text, but the agent cannot set its own away line or use the room tools.
 
-`room` is optional. Leave it out and the bot does IMs and invites only. A room name has no `-`, `/` or `:`; setup proposes an owner's name followed by four random characters, like the one above. `chain.roster` is optional too: leave it out for a single bot. With a roster, the order is the rank, and every bot in the team needs the same list.
+`room` is optional. Leave it out and the bot does IMs and invites only. A room name has no `-`, `/` or `:`; setup proposes an owner's name followed by four random characters, like the one above. `chain.roster` is optional too: leave it out for a single bot. With a roster, the order is the rank, and every bot in the team needs the same list. `room` and each entry under `rooms` also take `mode`, `trust` and `rank`, as above. A room set there never gets the setup IM, and without `mode` it is a `team` room. The teammates are every account on this gateway plus the roster, and their lines stay in the agent's context like those of anyone listed.
 
 ## Who can do what
 
 Owners command the bot. Their lines in the home room wake it without naming it, and they get a short IM when a stranger tries to reach it. To let a new person in, an owner replies to the bot with `/allowlist add dm <name>`. That needs `commands.config: true` on the host. Otherwise add the name to `channels.oscar.allowFrom`. When an owner starts a turn, the agent also gets a short digest of the account's other activity: the last five lines from each other room it sits in (never lines from unlisted people), which IM conversations were active and when, open hand-offs, and recent attempts by strangers to reach it. Turns started by approved people get none of this. Set `awareness.lines` to 0 to turn the digest off.
 
-An approved person can start agent turns. The plugin blocks shell and file tools for them by default. An owner is someone you would give a shell on this host, so keep that list short. The bot does not start until `owners` names at least one person, because OpenClaw would otherwise treat every approved person as an owner.
+An approved person can start agent turns. The plugin blocks shell and file tools for them by default. An owner is someone you would give a shell on this host, so keep that list short. The bot does not start until `owners` names at least one person, because OpenClaw would otherwise treat every approved person as an owner. If `commands.ownerAllowFrom` lists people but leaves out an owner, OpenClaw does not count that owner over IM and some tools refuse them. The first bot to sign on IMs each such owner once, and the reply `fix owners` adds them. The plugin changes the host config only on that reply.
 
 In a team, subordinate bots trust every bot above them, across hosts. Put the senior bots on the best-protected gateway. Work handed down for an approved person keeps that person's tool limits.
 
@@ -101,7 +101,7 @@ OpenClaw resets sessions daily at 04:00 by default, and the session store prunes
 
 ## Limits
 
-Hand-offs in progress, held messages, notice throttles and invited rooms live in memory and are lost when the gateway restarts. Screen names with non-ASCII letters cannot be owners, approved people or team members. Emoji reach some recipients degraded. A bot that hits a room's rate limit is silent in that room for up to two minutes. The plugin speaks the server's native protocol only: there is no TOC transport, no file transfer, no buddy icons and no media. Built and tested against OpenClaw 2026.7.1-2 and Open OSCAR Server v0.24.0 and main at 7bdd674.
+Hand-offs in progress, held messages and notice throttles live in memory and are lost when the gateway restarts. Room settings persist in `<state dir>/oscar/`, but the bot does not rejoin invited rooms after a restart. Screen names with non-ASCII letters cannot be owners, approved people or team members. Emoji reach some recipients degraded. A bot that hits a room's rate limit is silent in that room for up to two minutes. The plugin speaks the server's native protocol only: there is no TOC transport, no file transfer, no buddy icons and no media. Built and tested against OpenClaw 2026.7.1-2 and Open OSCAR Server v0.24.0 and main at 7bdd674.
 
 ## Licence
 
