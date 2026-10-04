@@ -50,6 +50,10 @@ describe('relayDecision', () => {
     expect(relayDecision(run([announce, reply('   ')]))).toBeNull();
   });
 
+  it('gives the default agent an account that has no binding', () => {
+    expect(relayDecision(run([announce, reply('Done.')], { agentId: 'main', sessionKey: 'agent:main:main' }))).toEqual({ accountId: 'one', text: 'Done.' });
+  });
+
   it('ignores an agent no account is bound to', () => {
     expect(relayDecision(run([announce, reply('Done.')], { agentId: 'other' }))).toBeNull();
   });
