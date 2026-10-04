@@ -13,7 +13,7 @@ export function missingHostOwners(cfg: unknown): string[] {
   const entries = hostOwnerList(cfg);
   // An empty list makes the host fall back to allowFrom; adding entries would narrow who counts as owner on other channels.
   if (entries.length === 0 || entries.includes('*')) return [];
-  const listed = new Set(entries.filter((e) => /^oscar:/i.test(e) || !e.includes(':')).map(normalizeName));
+  const listed = new Set(entries.map(normalizeName));
   return readPolicy(cfg).owners.filter((owner) => !listed.has(owner));
 }
 
