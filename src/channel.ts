@@ -1,7 +1,6 @@
 import { buildChannelOutboundSessionRoute, createChatChannelPlugin, tryReadSecretFileSync } from 'openclaw/plugin-sdk/channel-core';
 import type { ChannelPlugin, OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
-import { createAccountStatusSink, createRunStateMachine } from 'openclaw/plugin-sdk/channel-lifecycle';
-import { createChannelMessageAdapterFromOutbound } from 'openclaw/plugin-sdk/channel-outbound';
+import { createAccountStatusSink, createChannelMessageAdapterFromOutbound } from 'openclaw/plugin-sdk/channel-outbound';
 import type { ChannelGatewayContext } from 'openclaw/plugin-sdk/channel-contract';
 import { normalizeSecretInputString } from 'openclaw/plugin-sdk/secret-input';
 import { chainToolPolicy, installChain, uninstallChain } from './chain/wiring.js';
@@ -22,6 +21,7 @@ import { outboundBase, sendAdapterText } from './outbound.js';
 import { maybeWarnOwners, ownerFixHandler } from './owners.js';
 import { roleOf, senderToolPolicy, toolDeny } from './policy.js';
 import { presenceActions, presenceToolHints, startPresence } from './presence/register.js';
+import { createRunStateMachine } from './presence/run-state.js';
 import { getRunTracker } from './presence/runs.js';
 import { attachProfileStore, ProfileStore, profileStore, storeFileFor } from './rooms/profiles.js';
 import { attachRoomSetup, leaveRoomNow } from './rooms/leave.js';

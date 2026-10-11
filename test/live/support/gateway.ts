@@ -35,11 +35,9 @@ const MOCKS: [string, string, boolean][] = [
   ['openclaw/plugin-sdk/reply-dispatch-runtime', 'replyDispatchRuntime', false],
   ['openclaw/plugin-sdk/channel-ingress-runtime', 'channelIngressRuntime', false],
   ['openclaw/plugin-sdk/channel-outbound', 'channelOutbound', false],
-  ['openclaw/plugin-sdk/channel-reply-pipeline', 'channelReplyPipeline', false],
   ['openclaw/plugin-sdk/reply-chunking', 'replyChunking', false],
   ['openclaw/plugin-sdk/channel-core', 'channelCore', false],
   ['openclaw/plugin-sdk/status-helpers', 'statusHelpers', false],
-  ['openclaw/plugin-sdk/channel-lifecycle', 'channelLifecycleMock', true],
 ];
 
 type FakeModule = {

@@ -6,7 +6,6 @@ vi.mock('openclaw/plugin-sdk/session-store-runtime', async () => (await import('
 vi.mock('openclaw/plugin-sdk/conversation-runtime', async () => (await import('../fake/openclaw.js')).conversationRuntime);
 vi.mock('openclaw/plugin-sdk/reply-dispatch-runtime', async () => (await import('../fake/openclaw.js')).replyDispatchRuntime);
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
-vi.mock('openclaw/plugin-sdk/channel-reply-pipeline', async () => (await import('../fake/openclaw.js')).channelReplyPipeline);
 
 import { dispatchImTurn } from '../../src/inbound/turn.js';
 import type { ImTurn, TurnDeps } from '../../src/inbound/turn.js';

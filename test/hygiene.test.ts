@@ -58,6 +58,13 @@ function hostImportOffSubpath(line: string): boolean {
   return !/^openclaw\/plugin-sdk\/(?!zod$)[a-z0-9-]+$/.test(spec);
 }
 
+const REMOVED_SUBPATHS = ['channel-lifecycle', 'channel-reply-pipeline'];
+
+function removedHostSubpath(line: string): boolean {
+  const spec = /\b(?:from|import)\s*\(?\s*['"]openclaw\/plugin-sdk\/([a-z0-9-]+)['"]/.exec(line)?.[1];
+  return spec !== undefined && REMOVED_SUBPATHS.includes(spec);
+}
+
 const rules: { name: string; hit: (line: string) => boolean }[] = [
   { name: 'child_process', hit: (l) => /child_process/.test(l) },
   { name: 'eval', hit: (l) => /\beval\s*\(/.test(l) },
@@ -67,6 +74,7 @@ const rules: { name: string; hit: (line: string) => boolean }[] = [
   { name: 'raw-IP URL', hit: (l) => /[a-z][a-z0-9+.-]*:\/\/\d{1,3}(?:\.\d{1,3}){3}/i.test(l) },
   { name: 'literal after password', hit: literalAfterPassword },
   { name: 'host import off a typed subpath', hit: hostImportOffSubpath },
+  { name: 'host subpath removed in newer OpenClaw', hit: removedHostSubpath },
 ];
 
 function firstRule(line: string): string | null {
@@ -120,6 +128,8 @@ describe('checks check what they claim', () => {
     ["const sdk = await import('openclaw/plugin-sdk/testing/helpers');", 'host import off a typed subpath'],
     ["import type { ChannelPlugin } from 'openclaw/plugin-sdk/channel-core';", null],
     ["const sdk = await import('openclaw/plugin-sdk/channel-inbound');", null],
+    ["import { createRunStateMachine } from 'openclaw/plugin-sdk/channel-lifecycle';", 'host subpath removed in newer OpenClaw'],
+    ["import type { TypingCallbacks } from 'openclaw/plugin-sdk/channel-reply-pipeline';", 'host subpath removed in newer OpenClaw'],
     ["configFile: 'openclaw.json',", null],
   ])('%s -> %s', (line, rule) => {
     expect(firstRule(line)).toBe(rule);

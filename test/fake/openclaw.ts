@@ -303,9 +303,10 @@ export const replyDispatchRuntime: Rec = { dispatchReplyWithBufferedBlockDispatc
 export const channelIngressRuntime: Rec = { resolveStableChannelMessageIngress };
 export const channelOutbound: Rec = {
   sendDurableMessageBatch,
+  createTypingCallbacks,
+  createAccountStatusSink: channelLifecycleMock().createAccountStatusSink,
   createChannelMessageAdapterFromOutbound: (params: Rec) => ({ id: params.id, send: params.outbound }),
 };
-export const channelReplyPipeline: Rec = { createTypingCallbacks };
 export const replyChunking: Rec = { chunkText };
 export const channelCore: Rec = {
   createChatChannelPlugin,

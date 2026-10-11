@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('openclaw/plugin-sdk/channel-inbound', () => ({ runChannelInboundEvent: vi.fn() }));
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
-vi.mock('openclaw/plugin-sdk/channel-reply-pipeline', async () => (await import('../fake/openclaw.js')).channelReplyPipeline);
 
 import { awarenessFor } from '../../src/awareness.js';
 import type { AwarenessPayload } from '../../src/awareness.js';

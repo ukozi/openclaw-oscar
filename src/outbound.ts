@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createTypingCallbacks } from 'openclaw/plugin-sdk/channel-reply-pipeline';
-import type { TypingCallbacks } from 'openclaw/plugin-sdk/channel-reply-pipeline';
+import { createTypingCallbacks } from 'openclaw/plugin-sdk/channel-outbound';
 import { chunkText } from 'openclaw/plugin-sdk/reply-chunking';
 import { fallbackFor, sendByFallback } from './fallback.js';
 import { ROOM_CHUNK_MAX, defaultAccountId, readPolicy, resolveAccount } from './config.js';
@@ -128,7 +127,7 @@ export async function sendAutoReply(p: { cfg: unknown; accountId: string; to: st
   return true;
 }
 
-export function typingFor(p: { cfg: unknown; accountId: string; peer: string }): TypingCallbacks | undefined {
+export function typingFor(p: { cfg: unknown; accountId: string; peer: string }): ReturnType<typeof createTypingCallbacks> | undefined {
   const cfg = liveConfig(p.cfg);
   if (!resolveAccount(cfg, p.accountId).typing) return undefined;
   const role = roleOf(p.peer, readPolicy(cfg));
