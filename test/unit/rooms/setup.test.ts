@@ -72,10 +72,22 @@ describe('asking', () => {
     const h = harness({ owners: ['alice', 'bob'] });
     h.join(DEN, 'alice');
     expect(h.asks).toEqual([{ owner: 'alice', text: copy.setupAskNew('den', TEAM, 'alice') }]);
-    expect(h.asks[0]?.text).toBe(
-      "I joined den (invited by alice). How should I act here? Reply team, lounge or watch, then private or public. Add a rank like 'team botone bottwo botthree'. Reply leave to send me away.",
-    );
+    expect(h.asks[0]?.text).toBe([
+      "I joined den (invited by alice). I won't talk there until you tell me how to act. Reply with a mode, then private or public, like 'watch private'.",
+      'team: one bot answers each line that names nobody, the highest ranked one present, and it can hand the job to another bot.',
+      'lounge: every bot present may answer an owner, and bots answering each other stop after four lines until a person speaks.',
+      'watch: I answer only when someone names me.',
+      "private: I may talk about your personal details there. public: I won't, because anyone who learns the room's name can join and read it.",
+      "Add a rank to set who leads in team mode, like 'team private botone bottwo botthree'.",
+      'Reply leave to send me away.',
+    ].join('\n'));
     expect(h.setup.pendingCount()).toBe(1);
+  });
+
+  it('leaves the rank hint out for a bot with no teammates', () => {
+    const text = copy.setupAskNew('den', ['botone'], 'alice');
+    expect(text).not.toContain('Add a rank');
+    expect(text.split('\n')).toHaveLength(6);
   });
 
   it('asks every owner when nobody invited it', () => {
@@ -85,7 +97,7 @@ describe('asking', () => {
       { owner: 'alice', text: copy.setupAskNew('den', TEAM) },
       { owner: 'bob', text: copy.setupAskNew('den', TEAM) },
     ]);
-    expect(h.asks[0]?.text).toMatch(/^I joined den\. How should/);
+    expect(h.asks[0]?.text).toMatch(/^I joined den\. I won't talk there/);
   });
 
   it('asks every owner when the inviter is not an owner', () => {

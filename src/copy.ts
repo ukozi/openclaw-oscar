@@ -107,8 +107,16 @@ export const copy = {
       .filter(Boolean)
       .join(', '),
   setupAskNew: (room: string, teammates: string[], inviter?: string): string =>
-    `I joined ${room}${inviter ? ` (invited by ${inviter})` : ''}. How should I act here? Reply team, lounge or watch, then private or public. ` +
-    `Add a rank like '${['team', ...teammates].join(' ')}'. Reply leave to send me away.`,
+    [
+      `I joined ${room}${inviter ? ` (invited by ${inviter})` : ''}. I won't talk there until you tell me how to act. ` +
+        `Reply with a mode, then private or public, like 'watch private'.`,
+      'team: one bot answers each line that names nobody, the highest ranked one present, and it can hand the job to another bot.',
+      'lounge: every bot present may answer an owner, and bots answering each other stop after four lines until a person speaks.',
+      'watch: I answer only when someone names me.',
+      "private: I may talk about your personal details there. public: I won't, because anyone who learns the room's name can join and read it.",
+      ...(teammates.length > 1 ? [`Add a rank to set who leads in team mode, like '${['team', 'private', ...teammates].join(' ')}'.`] : []),
+      'Reply leave to send me away.',
+    ].join('\n'),
   setupAskBack: (room: string, summary: string): string =>
     `I'm back in ${room}. Last time: ${summary}. Reply same, new settings, or leave.`,
   setupReminder: (room: string): string => `I'm waiting for your settings for ${room} before I talk there.`,
