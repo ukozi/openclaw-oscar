@@ -65,7 +65,8 @@ This goes in `openclaw.json`. The names are examples.
   "agents": { "list": [{ "id": "main" }] },
   "bindings": [{ "agentId": "main", "match": { "channel": "oscar", "accountId": "botone" } }],
   "tools": { "alsoAllow": ["message", "oscar_delegate", "oscar_status", "oscar_room"] },
-  "commands": { "config": true, "ownerAllowFrom": ["oscar:alice"] }
+  "commands": { "config": true, "ownerAllowFrom": ["oscar:alice"] },
+  "plugins": { "entries": { "oscar": { "enabled": true, "hooks": { "allowConversationAccess": true } } } }
 }
 ```
 
@@ -73,7 +74,7 @@ The password is a SecretRef, as shown, and OpenClaw resolves it. If you would so
 
 Each account needs its own entry in `agents.list` and a binding with its `accountId`. Without one, the account runs as the default agent and status says so.
 
-The default tool profile hides the message tool and every plugin tool. The `tools.alsoAllow` line above brings them back. Without it the bot still answers, shows an away message and hands work over by text, but the agent cannot set its own away line or use the room tools.
+The default tool profile hides the message tool and every plugin tool. The `tools.alsoAllow` line above brings them back. Without it the bot still answers, shows an away message and hands work over by text, but the agent cannot set its own away line or use the room tools. OpenClaw 2026.9.35 blocks conversation hooks in plugins it does not bundle unless `plugins.entries.oscar.hooks.allowConversationAccess` is true, and logs the block at startup. The plugin reads the finished reply in `agent_end` to IM owners the `sessions_send` answers that would otherwise go nowhere, and uses `before_prompt_build` to learn what started a run, which the away line relies on. Without the setting the bot still signs on and answers. The key goes under `hooks`, not under the plugin's `config`, and takes effect on the next gateway restart.
 
 `room` is optional. Leave it out and the bot does IMs and invites only. A room name has no `-`, `/` or `:`; setup proposes an owner's name followed by four random characters, like the one above. `chain.roster` is optional too: leave it out for a single bot. With a roster, the order is the rank, and every bot in the team needs the same list. `room` and each entry under `rooms` also take `mode`, `trust` and `rank`, as above. A room set there never gets the setup IM, and without `mode` it is a `team` room. The teammates are every account on this gateway plus the roster, and their lines stay in the agent's context like those of anyone listed.
 
