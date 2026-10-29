@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { runChannelInboundEvent } from 'openclaw/plugin-sdk/channel-inbound';
 import type { ChannelBotLoopProtectionFacts } from 'openclaw/plugin-sdk/channel-inbound';
 import type { HistoryEntry } from 'openclaw/plugin-sdk/reply-history';
@@ -84,6 +85,8 @@ const sinks = new Map<string, RoomSink>();
 const brains = new Map<string, RoomBrain>();
 const solos = new Map<string, RoomBrain>();
 let messageSeq = 0;
+// OpenClaw remembers finished message ids per session across restarts, so a bare counter would repeat old ones.
+const messageEpoch = randomBytes(4).toString('hex');
 
 export async function recordRoomLine(line: RoomLineRecord, run: InboundRunner = runChannelInboundEvent): Promise<void> {
   await run<RoomLineRecord>({
@@ -132,7 +135,7 @@ function errText(err: unknown): string {
 
 function nextMessageId(key: string, from: string): string {
   messageSeq += 1;
-  return `${key}:${from}:${messageSeq}`;
+  return `${key}:${from}:${messageEpoch}.${messageSeq}`;
 }
 
 function enqueue(rt: AccountRuntime, deps: RoomDeps, key: string, job: () => Promise<void>): void {
