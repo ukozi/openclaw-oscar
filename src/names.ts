@@ -6,7 +6,7 @@ export type { RoomRef } from './oscar/index.js';
 
 export type PeerRef =
   | { kind: 'im'; bot: string; peer: string }
-  | { kind: 'room'; bot: string; room: RoomRef };
+  | { kind: 'room'; bot: string; room: RoomRef; stay?: string };
 
 export type Target = { kind: 'im'; name: string } | { kind: 'room'; room: RoomRef };
 
@@ -59,7 +59,8 @@ function decodePart(value: string): string | null {
 export function encodePeerId(ref: PeerRef): string {
   const bot = normalizeName(ref.bot);
   if (ref.kind === 'im') return `${bot}/${encodePart(normalizeName(ref.peer))}`;
-  return `${bot}#${ref.room.exchange}.${encodePart(normalizeRoom(ref.room.name))}`;
+  const room = `${bot}#${ref.room.exchange}.${encodePart(normalizeRoom(ref.room.name))}`;
+  return ref.stay ? `${room}~${ref.stay}` : room;
 }
 
 export function decodePeerId(id: string): PeerRef | null {
@@ -78,9 +79,11 @@ export function decodePeerId(id: string): PeerRef | null {
   if (dot < 1) return null;
   const exchange = rest.slice(0, dot);
   if (exchange !== '4' && exchange !== '5') return null;
-  const name = decodePart(rest.slice(dot + 1));
+  const [encoded = '', stay] = rest.slice(dot + 1).split('~', 2);
+  const name = decodePart(encoded);
   if (!name) return null;
-  return { kind: 'room', bot, room: { exchange: exchange === '4' ? 4 : 5, name: normalizeRoom(name) } };
+  const room: PeerRef = { kind: 'room', bot, room: { exchange: exchange === '4' ? 4 : 5, name: normalizeRoom(name) } };
+  return stay ? { ...room, stay } : room;
 }
 
 export function parseTarget(raw: string, bot: string): Target | null {

@@ -44,6 +44,7 @@ export function policyFixture(over: Partial<RootPolicy> = {}): RootPolicy {
 export function roomFixture(over: Partial<RoomState> = {}): RoomState {
   return {
     ref: ROOM,
+    stay: 'stay0001',
     occupants: new Set(['alice', 'bob', 'botone', 'bottwo', 'botthree']),
     joinSeenAt: new Map(),
     selfJoinedAt: 0,

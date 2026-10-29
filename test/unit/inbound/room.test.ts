@@ -196,9 +196,10 @@ describe('wake', () => {
     onRoomMessage(s.rt, s.deps, line('alice', 'what now?', { cookie: 9n }));
     await vi.waitFor(() => expect(s.turns).toHaveLength(1));
     const req = s.turns[0];
+    expect(s.rt.rooms.get(KEY)?.stay).toBeDefined();
     expect(req).toMatchObject({
       accountId: 'botone',
-      peer: { kind: 'room', bot: 'botone', room: ROOM },
+      peer: { kind: 'room', bot: 'botone', room: ROOM, stay: s.rt.rooms.get(KEY)?.stay },
       origin: 'owner',
       sender: { name: 'alice', display: 'alice', role: 'owner' },
       timestamp: 10_000,

@@ -384,7 +384,8 @@ export const oscarPlugin: ChannelPlugin<ResolvedAccount, { passwordCheck: ProbeR
         const bot = botName(liveConfig(cfg), accountId);
         const target = parseTarget(raw, bot);
         if (!target) return null;
-        const peer: PeerRef = target.kind === 'im' ? { kind: 'im', bot, peer: target.name } : { kind: 'room', bot, room: target.room };
+        const stay = target.kind === 'room' ? getRuntime(accountId && accountId.length > 0 ? accountId : defaultAccountId(liveConfig(cfg)))?.rooms.get(roomKey(target.room))?.stay : undefined;
+        const peer: PeerRef = target.kind === 'im' ? { kind: 'im', bot, peer: target.name } : { kind: 'room', bot, room: target.room, ...(stay ? { stay } : {}) };
         return buildChannelOutboundSessionRoute({
           cfg: cfg as OpenClawConfig, agentId, channel: CHANNEL_ID, accountId,
           peer: { kind: 'group', id: encodePeerId(peer) },

@@ -7,6 +7,7 @@ import { ROOM, policyFixture } from '../rooms-fixtures.js';
 function room(over: Partial<RoomState> = {}): RoomState {
   return {
     ref: ROOM,
+    stay: 'stay0001',
     occupants: new Set(['botone', 'alice', 'bob', 'mallory', 'what']),
     joinSeenAt: new Map(),
     selfJoinedAt: 0,

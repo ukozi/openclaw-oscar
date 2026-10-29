@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { HistoryEntry } from 'openclaw/plugin-sdk/reply-history';
 import type { ChainController } from './chain/controller.js';
 import { formatTarget, normalizeName } from './names.js';
@@ -8,7 +9,7 @@ import type { Role } from './policy.js';
 import type { AwayController } from './presence/away.js';
 
 export type RoomState = {
-  ref: RoomRef; occupants: Set<string>; joinSeenAt: Map<string, number>; selfJoinedAt: number;
+  ref: RoomRef; stay: string; occupants: Set<string>; joinSeenAt: Map<string, number>; selfJoinedAt: number;
   invitedBy?: string; lastBotLine?: { from: string; at: number }; omittedCount: number; aloneSince?: number;
 };
 export type ProbeResult = 'checks' | 'does-not-check' | 'unknown';
@@ -242,6 +243,7 @@ export function applyRoomReady(
   const names = occupants.map((name) => normalizeName(name));
   const state: RoomState = {
     ref,
+    stay: prev?.stay ?? randomBytes(4).toString('hex'),
     occupants: new Set(names),
     joinSeenAt: new Map(names.map((name) => [name, now])),
     selfJoinedAt: now,

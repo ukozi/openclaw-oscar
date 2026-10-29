@@ -197,7 +197,7 @@ async function wakeTurn(rt: AccountRuntime, deps: RoomDeps, turn: RoomTurn): Pro
   ext.history.set(key, []);
   const omitted = state.omittedCount;
   state.omittedCount = 0;
-  const peer: PeerRef = { kind: 'room', bot: self, room: turn.room };
+  const peer: PeerRef = { kind: 'room', bot: self, room: turn.room, stay: state.stay };
   const operatorPrompt = policy.rooms[normalizeRoom(turn.room.name)]?.systemPrompt?.trim() ?? '';
   const eff = effectiveProfile(rt.accountId, policy, turn.room);
   const trust = eff.source === 'pending' ? '' : trustPrompt(eff.profile.trust);

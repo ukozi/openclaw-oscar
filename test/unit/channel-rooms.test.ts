@@ -104,7 +104,7 @@ describe('rooms in the gateway', () => {
     await vi.waitFor(() => expect(sdk.inbound).toHaveLength(1));
     expect(sdk.inbound[0]?.ctx).toMatchObject({
       ChatType: 'group',
-      SessionKey: 'agent:main:oscar:group:botone#4.testroom',
+      SessionKey: `agent:main:oscar:group:botone#4.testroom~${rt?.rooms.get(KEY)?.stay}`,
       WasMentioned: true,
       CommandAuthorized: true,
       Body: 'what now?',
@@ -116,6 +116,26 @@ describe('rooms in the gateway', () => {
       { room: ROOM, html: toAsciiEntities(toWireHtml('café **ok**')), whisperTo: undefined, priority: 'reply' },
     ]));
     expect(s.sent).toEqual([]);
+  });
+
+  it('gives each stay in a room its own session', async () => {
+    const s = await start(cfg());
+    sdk.agent = () => [{ text: 'ok' }];
+    const ask = async (cookie: bigint): Promise<unknown> => {
+      s.emit('roomReady', { room: ROOM, occupants: ['botone', 'alice'] });
+      s.emit('roomMessage', line('alice', 'what now?', { cookie }));
+      await vi.waitFor(() => expect(sdk.inbound.length).toBeGreaterThanOrEqual(Number(cookie)));
+      return sdk.inbound[Number(cookie) - 1]?.ctx.SessionKey;
+    };
+    const first = await ask(1n);
+    s.emit('roomClosed', { room: ROOM, willRejoin: true });
+    expect(await ask(2n)).toBe(first);
+    s.emit('roomClosed', { room: ROOM, willRejoin: false });
+    const third = await ask(3n);
+    expect(third).not.toBe(first);
+    expect(String(third)).toMatch(/^agent:main:oscar:group:botone#4\.testroom~[0-9a-f]{8}$/);
+    const route = plugin.messaging.resolveOutboundSessionRoute({ cfg: cfg(), agentId: 'main', accountId: 'default', target: 'room:testroom' });
+    expect(route?.sessionKey).toBe(third);
   });
 
   it('keeps a link whole in a long room answer', async () => {

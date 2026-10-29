@@ -76,7 +76,7 @@ describe('trust downgrade', () => {
 describe('restoring trust', () => {
   function setupFor(h: ReturnType<typeof harness>) {
     const rooms = new Map<string, RoomState>(
-      [ROOM, DEN].map((ref) => [`room:4:${ref.name}`, { ref, occupants: new Set(), joinSeenAt: new Map(), selfJoinedAt: 0, omittedCount: 0 }]),
+      [ROOM, DEN].map((ref) => [`room:4:${ref.name}`, { ref, stay: 'stay0001', occupants: new Set(), joinSeenAt: new Map(), selfJoinedAt: 0, omittedCount: 0 }]),
     );
     const asks: { owner: string; text: string }[] = [];
     const setup = new RoomSetup({

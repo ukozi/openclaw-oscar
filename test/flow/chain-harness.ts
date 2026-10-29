@@ -137,7 +137,7 @@ export class Bot {
     const awake = <T>(fn: (payload: T) => void) => (payload: T) => { if (!instance.suspended) fn(payload); };
     session.on('roomReady', awake(({ room, occupants }) => {
       const names = occupants.map(normalizeName);
-      this.rooms.set(roomKeyOf(room), { ref: room, occupants: new Set(names), joinSeenAt: new Map(), selfJoinedAt: clock.now(), omittedCount: 0 });
+      this.rooms.set(roomKeyOf(room), { ref: room, stay: 'stay0001', occupants: new Set(names), joinSeenAt: new Map(), selfJoinedAt: clock.now(), omittedCount: 0 });
       this.controller.onRoomReady(room, names);
     }));
     session.on('roomJoin', awake((ev) => {

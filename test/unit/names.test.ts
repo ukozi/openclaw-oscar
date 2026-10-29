@@ -70,6 +70,14 @@ describe('peer ids', () => {
     }
   });
 
+  it('carries the stay after a tilde, which an encoded room name never contains', () => {
+    const ref = { kind: 'room', bot: 'botone', room: { exchange: 4, name: 'den' }, stay: '3f9a12c0' } as const;
+    expect(encodePeerId(ref)).toBe('botone#4.den~3f9a12c0');
+    expect(decodePeerId('botone#4.den~3f9a12c0')).toEqual(ref);
+    expect(encodePeerId({ kind: 'room', bot: 'botone', room: { exchange: 4, name: 'a~b' } })).toBe('botone#4.a%7eb');
+    expect(decodePeerId('botone#4.a%7eb')).toEqual({ kind: 'room', bot: 'botone', room: { exchange: 4, name: 'a~b' } });
+  });
+
   it('decodes what core hands back in upper-case hex', () => {
     expect(decodePeerId('botone#4.my%20Room%3A1')).toEqual({ kind: 'room', bot: 'botone', room: { exchange: 4, name: 'my room:1' } });
   });

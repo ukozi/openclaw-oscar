@@ -98,7 +98,7 @@ Never sign in to a bot's screen name from another client. It kicks the bot, and 
 
 Ask the server operator to set the bot flag on the account. Without it the server paces the bot to about one IM every 4 to 5 seconds, and long replies arrive slowly.
 
-OpenClaw resets sessions daily at 04:00 by default, and the session store prunes at 500 entries. A conversation with the bot starts fresh after either. For awareness across channels, use OpenClaw's session tools.
+OpenClaw resets sessions daily at 04:00 by default, and the session store prunes at 500 entries. A conversation with the bot starts fresh after either. Each stay in a room is its own session: once the bot leaves a room, or the gateway restarts, it starts that room's conversation over when it comes back. For awareness across channels, use OpenClaw's session tools.
 
 ## Limits
 

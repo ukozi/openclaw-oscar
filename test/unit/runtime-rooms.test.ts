@@ -36,6 +36,16 @@ describe('room state', () => {
     expect(joinedRooms(rt)).toEqual([ROOM]);
   });
 
+  it('starts a new stay after the bot leaves, and keeps it across a rejoin it did not choose', () => {
+    const rt = makeRt();
+    const first = applyRoomReady(rt, ROOM, ['botone'], 'botone', 500).stay;
+    expect(first).toMatch(/^[0-9a-f]{8}$/);
+    applyRoomClosed(rt, ROOM, true);
+    expect(applyRoomReady(rt, ROOM, ['botone'], 'botone', 600).stay).toBe(first);
+    applyRoomClosed(rt, ROOM, false);
+    expect(applyRoomReady(rt, ROOM, ['botone'], 'botone', 700).stay).not.toBe(first);
+  });
+
   it('ready with nobody else starts the alone clock', () => {
     const rt = makeRt();
     expect(applyRoomReady(rt, ROOM, ['botone'], 'botone', 500).aloneSince).toBe(500);
