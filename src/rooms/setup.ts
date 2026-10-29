@@ -44,7 +44,7 @@ export class RoomSetup implements RoomGate {
     const inviter = this.deps.invitedBy(key);
     const by = inviter !== undefined && roleOf(inviter, policy) === 'owner' ? normalizeName(inviter) : undefined;
     const text = eff.source === 'stored'
-      ? copy.setupAskBack(ref.name, copy.profileSummary(eff.profile, false))
+      ? copy.setupAskBack(ref.name, copy.profileSummary(eff.profile, false), policy.teammates)
       : copy.setupAskNew(ref.name, policy.teammates, inviter);
     const self = normalizeName(this.deps.self());
     for (const owner of by ? [by] : policy.owners.filter((o) => o !== self)) this.send(owner, text);

@@ -43,6 +43,16 @@ export type DelegateErrorKind =
   | 'too-long'
   | 'empty';
 
+function setupOptions(teammates: string[]): string[] {
+  return [
+    'team: one bot answers each line that names nobody, the highest ranked one present, and it can hand the job to another bot.',
+    'lounge: every bot present may answer an owner, and bots answering each other stop after four lines until a person speaks.',
+    'watch: I answer only when someone names me.',
+    "private: I may talk about your personal details there. public: I won't, because anyone who learns the room's name can join and read it.",
+    ...(teammates.length > 1 ? [`Add a rank to set who leads in team mode, like '${['team', 'private', ...teammates].join(' ')}'.`] : []),
+  ];
+}
+
 export const copy = {
   noticeIm: (name: string): string => `${name} tried to message me. I did not reply.`,
   noticeInvite: (name: string): string => `${name} invited me to a chat. I did not join.`,
@@ -110,15 +120,11 @@ export const copy = {
     [
       `I joined ${room}${inviter ? ` (invited by ${inviter})` : ''}. I won't talk there until you tell me how to act. ` +
         `Reply with a mode, then private or public, like 'watch private'.`,
-      'team: one bot answers each line that names nobody, the highest ranked one present, and it can hand the job to another bot.',
-      'lounge: every bot present may answer an owner, and bots answering each other stop after four lines until a person speaks.',
-      'watch: I answer only when someone names me.',
-      "private: I may talk about your personal details there. public: I won't, because anyone who learns the room's name can join and read it.",
-      ...(teammates.length > 1 ? [`Add a rank to set who leads in team mode, like '${['team', 'private', ...teammates].join(' ')}'.`] : []),
+      ...setupOptions(teammates),
       'Reply leave to send me away.',
     ].join('\n'),
-  setupAskBack: (room: string, summary: string): string =>
-    `I'm back in ${room}. Last time: ${summary}. Reply same, new settings, or leave.`,
+  setupAskBack: (room: string, summary: string, teammates: string[]): string =>
+    [`I'm back in ${room}. Last time: ${summary}. Reply same to keep that, new settings, or leave.`, ...setupOptions(teammates)].join('\n'),
   setupReminder: (room: string): string => `I'm waiting for your settings for ${room} before I talk there.`,
   setupApplied: (room: string, summary: string): string => `${room}: ${summary}.`,
   setupLeaving: (room: string): string => `Leaving ${room}.`,

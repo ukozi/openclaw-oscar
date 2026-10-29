@@ -17,7 +17,7 @@ const TEAM = ['botone', 'bottwo', 'botthree'];
 let seq = 0;
 
 function roomState(ref: RoomRef): RoomState {
-  return { ref, occupants: new Set(), joinSeenAt: new Map(), selfJoinedAt: 0, omittedCount: 0 };
+  return { ref, stay: 'stay0001', occupants: new Set(), joinSeenAt: new Map(), selfJoinedAt: 0, omittedCount: 0 };
 }
 
 function harness(over: Partial<RootPolicy> = {}) {
@@ -110,8 +110,15 @@ describe('asking', () => {
     const h = harness();
     h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'private', rank: ['botone', 'bottwo'] });
     h.join(DEN, 'alice');
-    expect(h.asks).toEqual([{ owner: 'alice', text: copy.setupAskBack('den', copy.profileSummary({ mode: 'team', trust: 'private', rank: ['botone', 'bottwo'] }, false)) }]);
-    expect(h.asks[0]?.text).toBe("I'm back in den. Last time: team, private, botone bottwo. Reply same, new settings, or leave.");
+    expect(h.asks).toEqual([{ owner: 'alice', text: copy.setupAskBack('den', copy.profileSummary({ mode: 'team', trust: 'private', rank: ['botone', 'bottwo'] }, false), TEAM) }]);
+    expect(h.asks[0]?.text).toBe([
+      "I'm back in den. Last time: team, private, botone bottwo. Reply same to keep that, new settings, or leave.",
+      'team: one bot answers each line that names nobody, the highest ranked one present, and it can hand the job to another bot.',
+      'lounge: every bot present may answer an owner, and bots answering each other stop after four lines until a person speaks.',
+      'watch: I answer only when someone names me.',
+      "private: I may talk about your personal details there. public: I won't, because anyone who learns the room's name can join and read it.",
+      "Add a rank to set who leads in team mode, like 'team private botone bottwo botthree'.",
+    ].join('\n'));
   });
 
   it('asks nothing for the home room or a configured room', () => {
