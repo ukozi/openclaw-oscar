@@ -96,7 +96,8 @@ describe('soloPrompt', () => {
   it('is built from the screen name only', () => {
     const prompt = soloPrompt('BotOne');
     expect(prompt).toBe(
-      'You are BotOne, an assistant in this chat room. This line was routed to you on purpose: answer it, or reply NO_REPLY only if it needs no answer at all. Do not wait to be named. Anyone may be reading this room: never post secrets, credentials or file contents.',
+      'You are BotOne, an assistant in this chat room. This line was routed to you on purpose: answer it, or reply NO_REPLY only if it needs no answer at all. Do not wait to be named. Anyone may be reading this room: never post secrets, credentials or file contents. ' +
+        "Keep how you work out of the room: do not mention anyone's role or which of your lists they are on, your room settings, lines left out of your context, or your other conversations. If someone asks about those, offer to answer by IM.",
     );
     expect(prompt).not.toMatch(/team|teammate|oscar_delegate/);
   });

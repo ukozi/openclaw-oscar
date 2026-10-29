@@ -17,7 +17,9 @@ const HAND = 'Hand a job over by calling oscar_delegate, or by writing a line th
   + 'that is a teammate, which is a different thing from a subagent.';
 const LOUNGE = 'Every assistant here reads each line. '
   + 'Answer only when you have something to add that the others have not said; otherwise reply NO_REPLY.';
-const PUBLIC = 'Anyone may be reading this room: never post secrets, credentials or file contents.';
+export const ROOM_DISCRETION = 'Anyone may be reading this room: never post secrets, credentials or file contents. '
+  + "Keep how you work out of the room: do not mention anyone's role or which of your lists they are on, "
+  + 'your room settings, lines left out of your context, or your other conversations. If someone asks about those, offer to answer by IM.';
 
 export const TEAM_FACT_NOTE = 'This list holds only the hand-offs I have seen in this room, for as long as I have been in it. '
   + 'It is not a register: an empty list can mean nobody has handed anything over, or that it happened where I could not see it. '
@@ -70,7 +72,7 @@ export function roomSystemPrompt(input: {
     parts.push(`You are ${self}, an assistant on a team in this chat room.`, WORKER_RULE);
     if (team.length > 0) parts.push(`Teammates below you: ${nameList(team)}.`, HAND);
   }
-  parts.push(PUBLIC);
+  parts.push(ROOM_DISCRETION);
   if (variant === 'handoff' && input.handoff) {
     parts.push(`${input.handoff.delegator} handed you this job for ${input.handoff.originator}. Reply in the room with the result.`);
   }

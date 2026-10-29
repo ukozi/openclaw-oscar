@@ -1,3 +1,4 @@
+import { ROOM_DISCRETION } from '../chain/prompts.js';
 import type { RootPolicy } from '../config.js';
 import { normalizeName } from '../names.js';
 import { roleOf } from '../policy.js';
@@ -63,6 +64,6 @@ export function soloPrompt(self: string): string {
     `You are ${self}, an assistant in this chat room.`,
     'This line was routed to you on purpose: answer it, or reply NO_REPLY only if it needs no answer at all.',
     'Do not wait to be named.',
-    'Anyone may be reading this room: never post secrets, credentials or file contents.',
+    ROOM_DISCRETION,
   ].join(' ');
 }

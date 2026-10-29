@@ -3,7 +3,9 @@ import { TEAM_FACT_NOTE, promptVariant, roomSystemPrompt } from '../../../src/ch
 import { chainConfig, policyFixture } from './fixtures.js';
 
 const policy = policyFixture();
-const PUBLIC = 'Anyone may be reading this room: never post secrets, credentials or file contents.';
+const PUBLIC = 'Anyone may be reading this room: never post secrets, credentials or file contents. '
+  + "Keep how you work out of the room: do not mention anyone's role or which of your lists they are on, "
+  + 'your room settings, lines left out of your context, or your other conversations. If someone asks about those, offer to answer by IM.';
 
 const ROUTED = 'This line was routed to you on purpose: answer it, or reply NO_REPLY only if it needs no answer at all. Do not wait to be named.';
 const HAND = 'Hand a job over by calling oscar_delegate, or by writing a line that starts with their name and a colon; '
