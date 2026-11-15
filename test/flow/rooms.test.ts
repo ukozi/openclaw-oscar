@@ -140,6 +140,24 @@ describe('rooms', () => {
     ]);
   });
 
+  it('treats a member whose name is the server sender as a member', async () => {
+    const host = roomPeer(server, 'OnlineHost');
+    host.joinRoom(testroom);
+    await bot.session.joinRoom(testroom);
+    host.say(testroom, 'x');
+    const line = await until(() => bot.seen.roomMessage[0], 'roomMessage');
+    expect(line).toMatchObject({ from: 'onlinehost', text: 'x', serverGenerated: false });
+  });
+
+  it('marks a line from the server sender as server generated when no member has the name', async () => {
+    const alice = roomPeer(server, 'alice');
+    alice.joinRoom(testroom);
+    await bot.session.joinRoom(testroom);
+    alice.say(testroom, '//roll');
+    const line = await until(() => bot.seen.roomMessage[0], 'roomMessage');
+    expect(line).toMatchObject({ from: 'onlinehost', serverGenerated: true });
+  });
+
   it('takes its own receipt from a line the server rewrote, sending it once and reading no rate limit', async () => {
     const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);

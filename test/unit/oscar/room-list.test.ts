@@ -365,6 +365,21 @@ describe('session loss', () => {
     expect(w.timers.pending()).toEqual([2000]);
   });
 
+  it('retries a join that lost the session under it when the session is already back', async () => {
+    const w = world();
+    w.client.script('joinRoom', 'hold');
+    const join = expect(w.list.joinRoom(testroom, { persistent: true })).rejects.toMatchObject({ code: 'unavailable' });
+    await settle();
+    w.down();
+    w.up();
+    w.client.held[0]?.reject(new RoomJoinError('unavailable'));
+    await join;
+    expect(w.seen.roomReady).toEqual([]);
+    await w.timers.advance(2000);
+    await settle();
+    expect(w.seen.roomReady).toHaveLength(1);
+  });
+
   it('clears the retry timers when the session goes offline', async () => {
     const w = world();
     await w.list.joinRoom(testroom, { persistent: true });
