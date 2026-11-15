@@ -25,3 +25,13 @@ it('a Node build without MD5 is a terminal status, not a reconnect loop', async 
   expect(h.timers.pending()).toEqual([]);
   expect(server.snacsFrom('botone')).toEqual([]);
 });
+
+it('takes a login budget token before it finds MD5 missing', async () => {
+  server = await startServer();
+  server.addUser('botone', 'botpass1');
+  let taken = 0;
+  const h = makeSession(server, { loginBudget: { take: async () => void taken++ } });
+  h.session.start();
+  expect((await h.phase('fatal')).reason).toBe('md5-unavailable');
+  expect(taken).toBe(1);
+});

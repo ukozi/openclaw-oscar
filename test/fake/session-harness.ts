@@ -20,8 +20,7 @@ export type Harness = {
 
 const harnesses: Harness[] = [];
 
-export function makeSession(server: FakeOscarServer, over: Partial<OscarSessionOptions> = {}): Harness {
-  const timers = new ManualTimers();
+export function makeSession(server: FakeOscarServer, over: Partial<OscarSessionOptions> = {}, timers = new ManualTimers()): Harness {
   const logs = captureLog();
   const session = new KitSession({
     host: '127.0.0.1',

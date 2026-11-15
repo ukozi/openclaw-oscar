@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { ByteReader, decodeImFragments, decodeTlvs, findTlv, fromHex, hasTlv, tlv } from 'open-oscar-client-kit/wire';
+import { ByteReader, RATE_CODE_ALERT, decodeImFragments, decodeTlvs, findTlv, fromHex, hasTlv, tlv } from 'open-oscar-client-kit/wire';
 import { OscarSendError } from '../../src/oscar/types.js';
-import { waitFor } from 'open-oscar-client-kit/testing';
+import { settle, waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeGeneration, FakeOscarServer, FakePeer } from 'open-oscar-client-kit/testing';
 import { imTexts, limitBos, startServer } from '../fake/kit.js';
 import { imSends, makeSession, stopAllSessions } from '../fake/session-harness.js';
@@ -74,6 +74,15 @@ describe('receiving IMs', () => {
     alice.sendIm('botone', 'after it');
     await waitFor(() => h.ims.length === 1, 'the IM after it');
     expect(h.ims.map((m) => m.text)).toEqual(['after it']);
+  });
+
+  it('reads a tag that spans two fragments as one tag', async () => {
+    await boot();
+    // A text fragment in charset 0: id 0x0101, length, charset and subset, then the bytes.
+    const fragment = (part: string): string => '0101' + (4 + part.length).toString(16).padStart(4, '0') + '00000000' + Buffer.from(part, 'latin1').toString('hex');
+    alice.sendRaw('botone', 1, [tlv.bytes(0x02, fromHex('0501000101' + fragment('<B') + fragment('>bold</B> text')))]);
+    await waitFor(() => h.ims.length === 1, 'IM');
+    expect(h.ims[0]?.text).toBe('bold text');
   });
 
   it('keeps delivering when one listener throws', async () => {
@@ -251,6 +260,43 @@ describe('typing and away', () => {
     await h.timers.advance(30_000);
     expect(typingEvents()).toHaveLength(16);
     expect(h.session.getState().phase).toBe('online');
+  });
+
+  it('writes the MIME type before the away text', async () => {
+    await boot();
+    await h.session.setAway('Back soon.');
+    await waitFor(() => server.awayOf('botone') === 'Back soon.', 'away set');
+    const away = server.snacsFrom('botone').filter((s) => s.family === 2 && s.subtype === 4).at(-1);
+    expect(decodeTlvs(away?.body ?? new Uint8Array()).map((t) => t.tag)).toEqual([0x03, 0x04]);
+  });
+
+  it('resolves setAway once the away text is written, and rejects it when the connection drops first', async () => {
+    await boot('main', false);
+    const generalClass = 1;
+    const hold = async (): Promise<void> => {
+      const before = server.rateNotices('botone').length;
+      for (let i = 0; i < 200 && server.rateNotices('botone').at(-1)?.code !== RATE_CODE_ALERT; i++) server.spend('botone', generalClass, 1);
+      expect(server.rateNotices('botone').length).toBeGreaterThan(before);
+      await h.session.sendIm('alice', 'marker');
+    };
+    const writes = (): number => server.snacsFrom('botone').filter((s) => s.family === 2 && s.subtype === 4).length;
+    await hold();
+    const start = writes();
+    let done = false;
+    const first = h.session.setAway('Working on something.').then(() => (done = true));
+    await settle(server.port);
+    expect([done, writes()]).toEqual([false, start]);
+    server.setRateParams('botone', generalClass, { currentLevel: 6000 });
+    server.rateTick('botone');
+    await first;
+    await waitFor(() => writes() === start + 1, 'the away write');
+
+    await hold();
+    const second = h.session.setAway('Still working.').catch((e: unknown) => e);
+    await settle(server.port);
+    server.dropSocket('botone');
+    expect(await second).toMatchObject({ code: 'closed' });
+    expect(writes()).toBe(start + 1);
   });
 
   it('sets and clears away through Locate only', async () => {

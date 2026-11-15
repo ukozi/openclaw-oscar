@@ -89,6 +89,18 @@ describe('away on the wire', () => {
     expect(Date.now() - endedAt).toBeLessThan(1000);
   });
 
+  it("sends no Locate message for an away text over the server's limit", async () => {
+    const { session } = boot();
+    const ready = online(session);
+    session.start();
+    await ready;
+    const mark = server.snacsFrom('botone').length;
+    // The fake's Locate rights allow 1000 bytes.
+    await expect(session.setAway('x'.repeat(1001))).rejects.toMatchObject({ code: 'too-long' });
+    await session.setAway('x'.repeat(1000));
+    await vi.waitFor(() => expect(awayTexts(server, mark)).toEqual(['x'.repeat(1000)]));
+  });
+
   it('is not away after the process died mid-run and came back', async () => {
     const first = boot();
     const firstReady = online(first.session);

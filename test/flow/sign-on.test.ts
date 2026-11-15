@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { ByteReader, decodeTlvs, findTlv, hasTlv, openConnection, strongHash, tlvStr, tlvU8, toHex } from 'open-oscar-client-kit/wire';
-import { ManualTimers, RawClient, captureLog, settle, waitFor } from 'open-oscar-client-kit/testing';
+import { ByteReader, REQUEST_TIMEOUT_MS, decodeTlvs, findTlv, hasTlv, strongHash, tlvStr, tlvU8, toHex } from 'open-oscar-client-kit/wire';
+import { waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeGeneration, FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { startServer } from '../fake/kit.js';
 import { makeSession, stopAllSessions } from '../fake/session-harness.js';
@@ -80,6 +80,49 @@ describe('sign-on details', () => {
     expect(names).toEqual(['alice', 'bob']);
   });
 
+  it.each([
+    ['Locate rights', 0x0002, 0x0002, 0x0003],
+    ['ICBM parameter', 0x0004, 0x0004, 0x0005],
+  ])('fails the sign-on as network when the server does not answer the %s query', async (_, family, query, reply) => {
+    await boot();
+    server.withhold(family, reply);
+    const h = makeSession(server);
+    h.session.start();
+    await waitFor(() => server.snacsFrom('botone').some((s) => s.family === family && s.subtype === query), 'the query');
+    await h.timers.advance(REQUEST_TIMEOUT_MS);
+    expect(await h.phase('backoff')).toMatchObject({ reason: 'network' });
+    expect(server.snacsFrom('botone').some((s) => s.family === 1 && s.subtype === 2)).toBe(false);
+  });
+
+  it('writes the chat capability and an empty profile in its first Locate message', async () => {
+    await boot();
+    const h = makeSession(server);
+    h.session.start();
+    await h.online();
+    const first = server.snacsFrom('botone').find((s) => s.family === 2 && s.subtype === 4);
+    expect(decodeTlvs(first?.body ?? new Uint8Array()).map((t) => [t.tag, Buffer.from(t.value).toString('latin1')])).toEqual([
+      [0x05, Buffer.from('748f2420628711d18222444553540000', 'hex').toString('latin1')],
+      [0x01, 'text/aolrtf; charset="us-ascii"'],
+      [0x02, ''],
+    ]);
+  });
+
+  it('lists the feedbag and icon families in its client versions, and sends no SNAC of either', async () => {
+    await boot();
+    const h = makeSession(server);
+    h.session.start();
+    await h.online();
+    const versions = server.snacsFrom('botone').find((s) => s.family === 1 && s.subtype === 0x17);
+    const families: number[] = [];
+    const r = new ByteReader(versions?.body ?? new Uint8Array());
+    while (r.remaining > 0) {
+      families.push(r.u16());
+      r.u16();
+    }
+    expect(families).toEqual([0x01, 0x02, 0x03, 0x04, 0x13, 0x10]);
+    expect(server.snacsFrom('botone').filter((s) => s.family === 0x13 || s.family === 0x10)).toEqual([]);
+  });
+
   it('still sends BuddyAddBuddies with an empty list, or the account would never appear online', async () => {
     await boot();
     const alice = server.peer('alice');
@@ -122,6 +165,15 @@ describe('sign-on details', () => {
     h.session.start();
     expect((await h.phase('fatal')).reason).toBe('unknown-name');
     expect(server.snacsFrom('x')).toEqual([]);
+  });
+
+  it('takes a login budget token before it refuses a one-letter name', async () => {
+    await boot();
+    let taken = 0;
+    const h = makeSession(server, { screenName: 'x', loginBudget: { take: async () => void taken++ } });
+    h.session.start();
+    expect((await h.phase('fatal')).reason).toBe('unknown-name');
+    expect(taken).toBe(1);
   });
 
   it('reads the password fresh for every login', async () => {

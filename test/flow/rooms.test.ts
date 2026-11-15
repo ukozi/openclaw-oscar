@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { decodeTlvs, findTlv, toWireHtml } from 'open-oscar-client-kit/wire';
+import { settle, waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeGeneration, FakeOscarServer } from 'open-oscar-client-kit/testing';
+import type { OscarEvents } from '../../src/oscar/types.js';
+import { makeSession, stopAllSessions } from '../fake/session-harness.js';
 import { restart, roomPeer, startServer } from '../fake/kit.js';
 import { chatSends, serviceRequests, signOn, until, type Bot } from './room-kit.js';
+import { startRoomFlow } from './rooms-harness.js';
 
 const testroom = { exchange: 4 as const, name: 'testroom' };
 
@@ -280,6 +284,27 @@ describe('invites', () => {
     expect(server.rooms.occupants({ exchange: 4, name: 'ghost' })).toEqual(['botone']);
   });
 
+  it('creates an invited room again when it closed before the join, and leaves it when alone', async () => {
+    const flow = await startRoomFlow({ policy: { invites: { accept: 'approved', maxRooms: 5, leaveWhenAloneMinutes: 0.005 } } });
+    try {
+      const den = { exchange: 4 as const, name: 'bobsden' };
+      const bob = roomPeer(flow.server, 'bob');
+      bob.joinRoom(den);
+      bob.invite('botone', den);
+      bob.leaveRoom(den);
+      flow.server.rooms.removeRoom(den);
+      await until(() => flow.server.rooms.occupants(den).includes('botone'), 'the bot in the room');
+      expect(flow.server.rooms.occupants(den)).toEqual(['botone']);
+      const nav = flow.server.snacsFrom('botone').filter((s) => s.conn === 'chatnav').map((s) => s.subtype);
+      expect(nav).not.toContain(0x0004);
+      await until(() => flow.closed.some((c) => c.room.name === 'bobsden'), 'the bot to leave');
+      expect(flow.closed.filter((c) => c.room.name === 'bobsden')).toEqual([{ room: den, willRejoin: false }]);
+      await until(() => flow.server.rooms.occupants(den).length === 0, 'the seat freed');
+    } finally {
+      await flow.stop();
+    }
+  });
+
   it('raises no invite for a room name the client cannot join, and one for the next room', async () => {
     const long = { exchange: 4 as const, name: 'y'.repeat(200) };
     const alice = roomPeer(server, 'alice');
@@ -362,6 +387,17 @@ describe('losing and regaining rooms', () => {
     expect(server.rooms.occupants(side)).toEqual(expect.arrayContaining(['botone']));
   });
 
+  it('rejoins an invited room by name after its socket drops', async () => {
+    const alice = roomPeer(server, 'alice');
+    alice.joinRoom(testroom);
+    alice.invite('botone', testroom);
+    await bot.session.joinInvited(await until(() => bot.seen.invite[0], 'invite'));
+    server.rooms.dropChat('botone', testroom);
+    await until(() => bot.seen.roomReady.length === 2, 'second roomReady');
+    const nav = server.snacsFrom('botone').filter((s) => s.conn === 'chatnav').map((s) => s.subtype);
+    expect(nav).toEqual([0x0008, 0x0008]);
+  });
+
   it('comes back after a server restart', async () => {
     await bot.session.joinRoom(testroom, { persistent: true });
     await restart(server);
@@ -374,6 +410,42 @@ describe('losing and regaining rooms', () => {
     await bot.session.stop();
     await until(() => server.rooms.occupants(testroom).length === 0, 'seat freed');
     expect(bot.session.rooms()).toEqual([]);
+  });
+});
+
+describe('a dropped room socket', () => {
+  let server: FakeOscarServer;
+
+  afterEach(async () => {
+    await stopAllSessions();
+    await server.stop();
+  });
+
+  it('is reported closed 2 s after the socket ends, and the rejoin follows', async () => {
+    server = await startServer();
+    server.addUser('botone', 'botpass1');
+    const h = makeSession(server);
+    const closed: OscarEvents['roomClosed'][] = [];
+    const ready: OscarEvents['roomReady'][] = [];
+    h.session.on('roomClosed', (e) => closed.push(e));
+    h.session.on('roomReady', (e) => ready.push(e));
+    h.session.start();
+    await h.online();
+    await h.session.joinRoom(testroom);
+    server.rooms.dropChat('botone', testroom);
+    await waitFor(() => h.logs.lines.some((l) => l.msg === 'oscar connection closed' && l.fields?.['conn'] === 'chat'), 'the room socket closed');
+    await h.timers.advance(1999);
+    await settle(server.port);
+    expect(closed).toEqual([]);
+    await h.timers.advance(1);
+    await waitFor(() => closed.length === 1, 'roomClosed');
+    expect(closed).toEqual([{ room: testroom, willRejoin: true }]);
+    expect(ready).toHaveLength(1);
+    for (let i = 0; i < 10 && ready.length < 2; i++) {
+      await h.timers.advance(h.timers.pending()[0] ?? 0);
+      await settle(server.port);
+    }
+    expect(ready).toHaveLength(2);
   });
 });
 
