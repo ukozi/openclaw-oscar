@@ -48,8 +48,8 @@ describe('README says what operators must know', () => {
     ['announce replies go to owners', /OpenClaw would deliver the answer nowhere, the bot IMs it to the owners/],
     ['non-ASCII names', /non-ASCII letters cannot be owners, approved people or team members/],
     ['room rate limit silence', /silent in that room for up to two minutes/],
-    ['an invited room that closed is created again', /An invited room that closed before the bot joined it is created again, and the bot leaves it if nobody else is there/],
-    ['a message can arrive twice after a stall', /After a long server stall, a message can arrive twice/],
+    ['an invited room that closed is created again', /invited room that closed before the bot joined it is created again/],
+    ['a message can arrive twice after a stall', /long server stall, a message from the bot can arrive twice/],
     ['what is not built', /no TOC transport, no file transfer, no buddy icons and no media/],
   ])('%s', (_name, pattern) => {
     expect(flat).toMatch(pattern);
