@@ -1,4 +1,5 @@
 import type { OscarClientEvents, SendImOptions, SentIm, TypingEvent } from 'open-oscar-client-kit/client';
+import { roomConversationId } from 'open-oscar-client-kit/model';
 import type { BuddyPresence, ImBody, RichText, RoomId, RoomStatus, SelfInfo, SessionState } from 'open-oscar-client-kit/model';
 import type { KitClient } from '../../src/oscar/kit-client.js';
 
@@ -90,7 +91,7 @@ export class StubClient implements KitClient {
   joinRoom(room: RoomId): Promise<RoomStatus> {
     return this.next('joinRoom', [room], () => {
       const status: RoomStatus = {
-        id: `${room.exchange}-${room.name}`,
+        id: roomConversationId(room),
         exchange: room.exchange,
         name: room.name,
         state: 'joined',
@@ -99,6 +100,7 @@ export class StubClient implements KitClient {
         maxOccupancy: null,
       };
       this.joined.push(status);
+      this.emit('room', status);
       return status;
     });
   }
