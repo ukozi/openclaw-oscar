@@ -3,20 +3,9 @@ import { ManualTimers, waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import { OscarRoomError, OscarSendError, createLoginBudget } from '../../../src/oscar/index.js';
-import { OscarSessionImpl, backoffDelay, connectFailureReason } from '../../../src/oscar/session.js';
+import { OscarSessionImpl, backoffDelay } from '../../../src/oscar/session.js';
 import { startServer } from '../../fake/kit.js';
 import { makeSession, stopAllSessions } from '../../fake/session-harness.js';
-
-describe('connectFailureReason', () => {
-  it('names TLS failures, unroutable redirects and plain network errors', () => {
-    const cert = Object.assign(new Error('self-signed certificate'), { code: 'DEPTH_ZERO_SELF_SIGNED_CERT' });
-    const refused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
-    expect(connectFailureReason(cert, false)).toBe('tls');
-    expect(connectFailureReason(cert, true)).toBe('tls');
-    expect(connectFailureReason(refused, true)).toBe('redirect-unroutable');
-    expect(connectFailureReason(refused, false)).toBe('network');
-  });
-});
 
 describe('backoffDelay', () => {
   const rows: [number, number, number][] = [

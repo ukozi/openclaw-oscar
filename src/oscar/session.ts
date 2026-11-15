@@ -27,8 +27,9 @@ import {
   openConnection,
   strongHash,
 } from 'open-oscar-client-kit/wire';
-import type { CloseInfo, LoginResult, OscarConnection, RedirectDecision } from 'open-oscar-client-kit/wire';
+import type { CloseInfo, LoginResult, OscarConnection } from 'open-oscar-client-kit/wire';
 import { BosClient, ServiceRefusedError, parseInvite } from './bos.js';
+import { CLIENT_ID, connectFailureReason, redirectProblem } from './login.js';
 import type { ServiceRedirect } from './bos.js';
 import { RoomManager } from './rooms.js';
 import { OscarSendError } from './types.js';
@@ -60,19 +61,12 @@ const FATAL: ReadonlySet<StateReason> = new Set<StateReason>([
 ]);
 const PRIORITIES: readonly SendPriority[] = ['reply', 'control', 'notice'];
 
-export function connectFailureReason(error: unknown, followedUnroutable: boolean): StateReason {
-  if (isTlsError(error)) return 'tls';
-  return followedUnroutable ? 'redirect-unroutable' : 'network';
-}
-
 export function backoffDelay(failures: number, random: number): number {
   const raw = Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * BACKOFF_FACTOR ** Math.max(0, failures - 1));
   const floored = failures >= BACKOFF_FLOOR_AFTER_FAILURES ? Math.max(raw, BACKOFF_FLOOR_MS) : raw;
   return Math.round(floored * (1 + BACKOFF_JITTER * random));
 }
 
-// Short on purpose: screen name plus client id must stay far under the ~200 bytes the login cookie can hold.
-export const CLIENT_ID = 'openclaw-oscar';
 const LOGIN = { clientId: CLIENT_ID, multiConn: MULTI_CONN_SINGLE };
 
 // A BUCP success only mints a cookie; no session exists until the cookie is presented, so
@@ -542,14 +536,6 @@ function openForCheck(opts: LoginCheckOptions): Promise<OscarConnection> {
   });
 }
 
-function redirectProblem(decision: RedirectDecision, advertised: string, followedUnroutable: boolean): string | null {
-  if (decision.why === 'unroutable' || decision.why === 'loopback') return `the server advertises ${advertised}, which cannot be reached from here; using the configured address`;
-  if (decision.why === 'tls-mismatch') return `the server advertises ${advertised} without TLS; staying on the configured TLS address`;
-  if (decision.why === 'malformed') return 'the server advertises an address that cannot be read; using the configured address';
-  if (followedUnroutable) return `redirect "follow" leads to ${advertised}, which cannot be reached from here`;
-  return null;
-}
-
 // For setup and status probes: a login that stops at the cookie. The cookie is never presented,
 // so no session is created and a live sign-on of the same name is not displaced.
 export async function checkLogin(opts: LoginCheckOptions & { password: string }): Promise<LoginCheckResult> {
@@ -592,4 +578,5 @@ export function createOscarSession(opts: OscarSessionOptions): OscarSession {
   return new OscarSessionImpl(opts);
 }
 
+export { CLIENT_ID };
 export type { OscarSession, OscarSessionOptions } from './types.js';

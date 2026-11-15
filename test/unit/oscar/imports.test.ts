@@ -16,7 +16,7 @@ describe('src/oscar stands alone', () => {
   });
 
   it('has exactly the session files', () => {
-    expect([...files].sort()).toEqual(['bos.ts', 'index.ts', 'rooms.ts', 'session.ts', 'types.ts']);
+    expect([...files].sort()).toEqual(['bos.ts', 'index.ts', 'kit-client.ts', 'login.ts', 'rooms.ts', 'session.ts', 'types.ts']);
   });
 
   it('no file outside src/oscar imports the client kit', () => {
