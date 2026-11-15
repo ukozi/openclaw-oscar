@@ -102,7 +102,7 @@ OpenClaw resets sessions daily at 04:00 by default, and the session store prunes
 
 ## Limits
 
-Hand-offs in progress, held messages and notice throttles live in memory and are lost when the gateway restarts. Room settings persist in `<state dir>/oscar/`, but the bot does not rejoin invited rooms after a restart. Screen names with non-ASCII letters cannot be owners, approved people or team members. Emoji reach some recipients degraded. A bot that hits a room's rate limit is silent in that room for up to two minutes. The plugin speaks the server's native protocol only: there is no TOC transport, no file transfer, no buddy icons and no media. Built and tested against OpenClaw 2026.7.1-2 and Open OSCAR Server v0.24.0 and main at 7bdd674.
+Hand-offs in progress, held messages and notice throttles live in memory and are lost when the gateway restarts. Room settings persist in `<state dir>/oscar/`, but the bot does not rejoin invited rooms after a restart. Screen names with non-ASCII letters cannot be owners, approved people or team members. Emoji reach some recipients degraded. A bot that hits a room's rate limit is silent in that room for up to two minutes. An invited room that closed before the bot joined it is created again, and the bot leaves it if nobody else is there. After a long server stall, a message can arrive twice. The plugin speaks the server's native protocol only: there is no TOC transport, no file transfer, no buddy icons and no media. Built and tested against OpenClaw 2026.7.1-2 and Open OSCAR Server v0.24.0 and main at 7bdd674.
 
 ## Licence
 
