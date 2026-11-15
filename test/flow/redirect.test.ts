@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { ByteReader, decodeTlvs, hasTlv } from 'open-oscar-client-kit/wire';
+import { waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { startServer } from '../fake/kit.js';
 import { makeSession, stopAllSessions } from '../fake/session-harness.js';
@@ -194,6 +195,27 @@ describe('TLS redirects', () => {
     server.setSslHost(false);
     await expect(h.session.joinRoom(DEN)).rejects.toMatchObject({ code: 'unavailable' });
     expect(navRequests()).toEqual([{ family: 0x000d, useSsl: true }]);
+    expect(navOpened(h)).toEqual([]);
+    expect(h.session.getState().phase).toBe('online');
+  });
+
+  it('gives up on a service the server refuses with and without SSL instead of looping', async () => {
+    await boot({ tls: true, generation: 'main', refuseSsl: true });
+    const h = makeSession(server);
+    h.session.start();
+    await h.online();
+    // Hold the first refusal back until the second is armed.
+    const release = server.withhold(0x0001, 0x0001);
+    const joining = h.session.joinRoom(DEN);
+    const refused = expect(joining).rejects.toMatchObject({ code: 'unavailable' });
+    await waitFor(() => navRequests().length === 1, 'the SSL request');
+    server.failNext(0x0001, 0x0004, { code: 0x0005 });
+    release();
+    await refused;
+    expect(navRequests()).toEqual([
+      { family: 0x000d, useSsl: true },
+      { family: 0x000d, useSsl: false },
+    ]);
     expect(navOpened(h)).toEqual([]);
     expect(h.session.getState().phase).toBe('online');
   });

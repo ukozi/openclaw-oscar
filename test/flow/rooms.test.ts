@@ -158,7 +158,7 @@ describe('rooms', () => {
     expect(line).toMatchObject({ from: 'onlinehost', serverGenerated: true });
   });
 
-  it('takes its own receipt from a line the server rewrote, sending it once, reading no rate limit and hearing no line', async () => {
+  it('takes its own receipt from a line the server rewrote, sending it once and reading no rate limit', async () => {
     const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
     await bot.session.joinRoom(testroom);
@@ -167,7 +167,7 @@ describe('rooms', () => {
     expect(chatSends(server, 'botone')).toHaveLength(1);
     expect(Buffer.from(chatSends(server, 'botone')[0]!).readBigUInt64BE(0).toString(16)).toBe(receipt.id);
     expect(bot.seen.rate).toEqual([]);
-    expect(bot.seen.roomMessage).toEqual([]);
+    expect(bot.seen.roomMessage.map((m) => [m.from, m.serverGenerated, m.text])).toEqual([['onlinehost', true, 'botone rolled 2 6-sided dice: 3 4']]);
     expect(alice.roomLines(testroom)).toEqual([
       { from: 'onlinehost', text: '<HTML><BODY>botone rolled 2 6-sided dice: 3 4</BODY></HTML>', whisper: false },
     ]);

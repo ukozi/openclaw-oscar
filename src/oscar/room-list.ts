@@ -12,7 +12,7 @@ import {
   normalizeScreenName,
   roomCookie,
 } from 'open-oscar-client-kit/wire';
-import { toRoomMessageEvent } from './events.js';
+import { toRewrittenLine, toRoomMessageEvent } from './events.js';
 import type { KitClient } from './kit-client.js';
 import { SendQueue, toRoomError, toSendError } from './send.js';
 import {
@@ -131,6 +131,7 @@ export class RoomList {
       try {
         const whisper = opts?.whisperTo === undefined ? undefined : { whisperTo: opts.whisperTo };
         const sent = await (whisper ? client.sendRoomMessage(id, { html }, whisper) : client.sendRoomMessage(id, { html }));
+        if (sent.replacedBy) this.deps.emit('roomMessage', toRewrittenLine(held.room, sent.id, sent.replacedBy));
         return { id: sent.id, storedOffline: false };
       } catch (error) {
         throw lineError(error);

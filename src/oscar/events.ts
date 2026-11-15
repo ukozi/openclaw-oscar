@@ -1,5 +1,5 @@
-import { htmlToText, normalizeScreenName } from 'open-oscar-client-kit/wire';
-import type { IncomingIm, Invite, MessageWire, RoomMessage } from 'open-oscar-client-kit/model';
+import { ROOM_SERVER_SENDER, htmlToText, normalizeScreenName } from 'open-oscar-client-kit/wire';
+import type { IncomingIm, Invite, MessageWire, RichText, RoomMessage } from 'open-oscar-client-kit/model';
 import type { ImEvent, InviteEvent, RoomMessageEvent, RoomRef } from './types.js';
 
 const SYSTEM_SENDER = 'oossystemmsg';
@@ -39,6 +39,19 @@ export function toRoomMessageEvent(room: RoomRef, message: RoomMessage): RoomMes
     cookie: cookieOf(wire),
     whisper: message.whisper,
     serverGenerated: message.fromServer,
+  };
+}
+
+// The client gives the server's rewrite of a sent line as the send's result, not as a line.
+export function toRewrittenLine(room: RoomRef, id: string, body: RichText): RoomMessageEvent {
+  return {
+    room,
+    from: ROOM_SERVER_SENDER,
+    fromDisplay: 'OnlineHost',
+    text: body.map((run) => run.text).join(''),
+    cookie: BigInt(`0x${id}`),
+    whisper: false,
+    serverGenerated: true,
   };
 }
 

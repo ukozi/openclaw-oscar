@@ -573,6 +573,23 @@ describe('leaving and sending', () => {
     expect(w.seen.roomMessage).toMatchObject([{ from: 'onlinehost', text: 'x', serverGenerated: true }]);
   });
 
+  it('raises the line the server wrote in place of a sent one, under the sent line\'s id', async () => {
+    const w = world();
+    await w.list.joinRoom(testroom);
+    w.client.script('sendRoomMessage', { resolve: { replacedBy: [{ text: 'botone rolled 2 6-sided dice: ' }, { text: '3 4', bold: true }], id: '00000000000000b2' } });
+    await expect(w.list.sendRoom(testroom, '//roll')).resolves.toEqual({ id: '00000000000000b2', storedOffline: false });
+    expect(w.seen.roomMessage).toEqual([
+      { room: testroom, from: 'onlinehost', fromDisplay: 'OnlineHost', text: 'botone rolled 2 6-sided dice: 3 4', cookie: 0xb2n, whisper: false, serverGenerated: true },
+    ]);
+  });
+
+  it('raises no line for a sent one the room echoed as it was', async () => {
+    const w = world();
+    await w.list.joinRoom(testroom);
+    await w.list.sendRoom(testroom, 'hello');
+    expect(w.seen.roomMessage).toEqual([]);
+  });
+
   it('maps a room rate event to a rate event scoped to the room', async () => {
     const w = world();
     await w.list.joinRoom(testroom);
