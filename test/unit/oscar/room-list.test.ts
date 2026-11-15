@@ -3,6 +3,7 @@ import { OscarError, RoomJoinError } from 'open-oscar-client-kit/client';
 import { roomConversationId } from 'open-oscar-client-kit/model';
 import type { RoomMessage, RoomState, RoomStatus, SelfInfo } from 'open-oscar-client-kit/model';
 import { ManualTimers } from 'open-oscar-client-kit/testing';
+import { ROOM_QUEUE_MAX } from 'open-oscar-client-kit/wire';
 import { RoomList, type RoomEventName } from '../../../src/oscar/room-list.js';
 import type { InviteEvent, Logger, OscarEvents, RoomRef } from '../../../src/oscar/types.js';
 import { StubClient } from '../../fake/stub-client.js';
@@ -455,6 +456,7 @@ describe('leaving and sending', () => {
     const join = w.list.joinRoom(testroom);
     await settle();
     await w.list.leaveRoom(testroom);
+    expect(w.client.callsTo('leaveRoom')).toEqual([[idOf(testroom)]]);
     w.client.held[0]?.resolve(status(testroom, 'joined'));
     await join;
     expect(w.list.rooms()).toEqual([]);
@@ -469,6 +471,7 @@ describe('leaving and sending', () => {
     const join = w.list.joinRoom(testroom, { persistent: true });
     await settle();
     await w.list.leaveRoom(testroom);
+    expect(w.client.callsTo('leaveRoom')).toEqual([[idOf(testroom)]]);
     w.client.held[0]?.reject(new RoomJoinError('unavailable'));
     await expect(join).resolves.toBeUndefined();
     expect(w.timers.pending()).toEqual([]);
@@ -508,6 +511,21 @@ describe('leaving and sending', () => {
     w.client.held[0]?.resolve({ replacedBy: null, id: '0000000000000001' });
     await Promise.all([first, notice, reply]);
     expect(sent()).toEqual(['first', 'other', 'reply', 'notice']);
+  });
+
+  it('refuses a line when 50 already wait in the room', async () => {
+    const w = world();
+    await w.list.joinRoom(testroom);
+    await w.list.joinRoom(side);
+    w.client.script('sendRoomMessage', 'hold');
+    const first = w.list.sendRoom(testroom, 'first');
+    const waiting = Array.from({ length: ROOM_QUEUE_MAX }, (_, i) => w.list.sendRoom(testroom, `line ${i}`));
+    await expect(w.list.sendRoom(testroom, 'one too many')).rejects.toMatchObject({ name: 'OscarSendError', code: 'rate-limited' });
+    await expect(w.list.sendRoom(side, 'other')).resolves.toMatchObject({ storedOffline: false });
+    w.client.held[0]?.resolve({ replacedBy: null, id: '0000000000000001' });
+    await Promise.all([first, ...waiting]);
+    expect(w.client.callsTo('sendRoomMessage').filter((args) => args[0] === idOf(testroom))).toHaveLength(ROOM_QUEUE_MAX + 1);
+    await expect(w.list.sendRoom(testroom, 'room again')).resolves.toMatchObject({ storedOffline: false });
   });
 
   it.each([

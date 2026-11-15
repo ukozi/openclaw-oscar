@@ -21,6 +21,10 @@ export class SendQueue {
     });
   }
 
+  get waiting(): number {
+    return PRIORITIES.reduce((n, p) => n + this.lanes[p].length, 0);
+  }
+
   failAll(error: Error): void {
     for (const p of PRIORITIES) for (const job of this.lanes[p].splice(0)) job.reject(error);
   }

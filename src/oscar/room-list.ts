@@ -3,6 +3,7 @@ import { roomConversationId } from 'open-oscar-client-kit/model';
 import type { RoomMessage, RoomOccupantChange, RoomRate, RoomStatus } from 'open-oscar-client-kit/model';
 import {
   ROOM_MISSING_RETRY_MS,
+  ROOM_QUEUE_MAX,
   ROOM_REJOIN_BASE_MS,
   ROOM_REJOIN_CAP_MS,
   ROOM_REJOIN_STABLE_MS,
@@ -123,6 +124,7 @@ export class RoomList {
     const id = roomConversationId(room);
     const held = this.live.get(id);
     if (!held) return Promise.reject(new OscarSendError('room-not-joined'));
+    if (held.queue.waiting >= ROOM_QUEUE_MAX) return Promise.reject(new OscarSendError('rate-limited'));
     return held.queue.push(opts?.priority ?? 'reply', async () => {
       const client = this.deps.client();
       if (!client || this.live.get(id) !== held) throw new OscarSendError('closed');
