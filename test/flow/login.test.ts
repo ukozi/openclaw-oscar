@@ -2,7 +2,7 @@ import net from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MULTI_CONN_SINGLE, bucpLogin, decodeTlvs, findTlv, fromHex, openConnection, strongHash, tlvStr, tlvU8 } from 'open-oscar-client-kit/wire';
 import type { OscarConnection } from 'open-oscar-client-kit/wire';
-import { CLIENT_ID, probeLogin } from '../../src/oscar/session.js';
+import { CLIENT_ID, probeLogin } from '../../src/oscar/login.js';
 import { ManualTimers, captureLog, settle, waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { startServer } from '../fake/kit.js';
@@ -134,18 +134,21 @@ describe('bucpLogin', () => {
   });
 });
 
+const probe = (screenName: string) =>
+  probeLogin({ host: '127.0.0.1', port: server.port, tls: false, screenName, log: captureLog().log, timers: timers.api });
+
 describe('probeLogin', () => {
   it('says the server checks passwords when a random hash is refused', async () => {
     server = await startServer();
     server.addUser('botone', 'botpass1');
-    expect(await probeLogin(await connect(), timers.api, 'botone')).toBe('checks');
-    expect(await probeLogin(await connect(), timers.api, 'nobody')).toBe('checks');
+    expect(await probe('botone')).toBe('checks');
+    expect(await probe('nobody')).toBe('checks');
   });
 
   it('says it does not when the random hash is accepted, and never presents the cookie', async () => {
     server = await startServer({ disableAuth: true });
     server.addUser('botone', 'botpass1');
-    expect(await probeLogin(await connect(), timers.api, 'botone')).toBe('does-not-check');
+    expect(await probe('botone')).toBe('does-not-check');
     await settle(server.port);
     expect(server.instancesOf('botone')).toBe(0);
     expect(server.snacsFrom('botone').every((s) => s.conn === 'auth')).toBe(true);
@@ -154,8 +157,8 @@ describe('probeLogin', () => {
   it('uses a different random hash each time', async () => {
     server = await startServer();
     server.addUser('botone', 'botpass1');
-    await probeLogin(await connect(), timers.api, 'botone');
-    await probeLogin(await connect(), timers.api, 'botone');
+    await probe('botone');
+    await probe('botone');
     const hashes = server
       .snacsFrom('botone')
       .filter((s) => s.subtype === 0x02)
@@ -166,6 +169,6 @@ describe('probeLogin', () => {
 
   it('says unknown when the limiter answers', async () => {
     server = await startServer({ loginLimit: 0 });
-    expect(await probeLogin(await connect(), timers.api, 'botone')).toBe('unknown');
+    expect(await probe('botone')).toBe('unknown');
   });
 });

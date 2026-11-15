@@ -1,4 +1,4 @@
-import { createOscarSession } from '../../../src/oscar/session.js';
+import { createOscarSession } from '../../../src/oscar/index.js';
 import type { Logger, OscarSession, OscarSessionOptions } from '../../../src/oscar/types.js';
 import type { ClientTarget } from './stack.js';
 import { until } from './wait.js';

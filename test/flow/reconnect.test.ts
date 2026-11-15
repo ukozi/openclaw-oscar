@@ -118,7 +118,7 @@ describe('reconnect', () => {
     expect(h.states.map((s) => s.phase)).toEqual(['connecting', 'stopped']);
   });
 
-  it('stop() as BOS bring-up begins closes that connection too', async () => {
+  it('stop() during the BOS bring-up closes that connection too', async () => {
     await boot();
     const h = makeSession(server, {
       buddies: () => {
@@ -130,7 +130,8 @@ describe('reconnect', () => {
     await h.phase('stopped');
     await settle(server.port);
     expect(server.instancesOf('botone')).toBe(0);
-    expect(server.snacsFrom('botone').filter((s) => s.conn === 'bos')).toEqual([]);
+    // The buddy list is read part-way through the bring-up, so client online never goes out.
+    expect(server.snacsFrom('botone').filter((s) => s.conn === 'bos' && s.family === 1 && s.subtype === 2)).toEqual([]);
     expect(h.states.map((s) => s.phase)).toEqual(['connecting', 'stopped']);
   });
 

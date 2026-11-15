@@ -21,7 +21,7 @@ function setup(sec: Record<string, unknown> = {}, host: Record<string, unknown> 
   let cfg: unknown = { ...host, channels: { oscar: { owners: ['alice'], allowFrom: ['bob'], ...sec } } };
   const notices = createNotices({
     self: () => 'botone', getCfg: () => cfg, now: () => Date.now(), timers: { setTimeout, clearTimeout }, log,
-    presenceOf: (name) => (online.has(name) ? { online: true, away: false, bot: false, at: 0 } : undefined),
+    presenceOf: (name) => (online.has(name) ? { online: true, away: false, at: 0 } : undefined),
     send: async (p) => { sent.push(p); },
   });
   const attempt = (name: string, kind: ContactAttempt['kind'] = 'im'): ContactAttempt => ({ name, display: name, kind, at: Date.now() });
@@ -161,7 +161,7 @@ describe('throttle', () => {
     let first = true;
     const notices = createNotices({
       self: () => 'botone', getCfg: () => ({ channels: { oscar: { owners: ['alice'] } } }), now: () => Date.now(),
-      timers: { setTimeout, clearTimeout }, log, presenceOf: () => ({ online: true, away: false, bot: false, at: 0 }),
+      timers: { setTimeout, clearTimeout }, log, presenceOf: () => ({ online: true, away: false, at: 0 }),
       send: async (p) => { if (first) { first = false; throw new Error('closed'); } sent.push(p.text); },
     });
     notices.contact({ name: 's1', display: 's1', kind: 'im', at: 0 });

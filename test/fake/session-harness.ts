@@ -2,12 +2,12 @@ import { ManualTimers, captureLog, waitFor } from 'open-oscar-client-kit/testing
 import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { ByteReader, decodeTlvs } from 'open-oscar-client-kit/wire';
 import type { Tlv } from 'open-oscar-client-kit/wire';
-import { OscarSessionImpl } from '../../src/oscar/session.js';
+import { KitSession } from '../../src/oscar/adapter.js';
 import type { ImEvent, OscarEvents, OscarSessionOptions, RateEvent, SessionState } from '../../src/oscar/types.js';
 import { caFileOf } from './kit.js';
 
 export type Harness = {
-  session: OscarSessionImpl;
+  session: KitSession;
   timers: ManualTimers;
   logs: ReturnType<typeof captureLog>;
   states: SessionState[];
@@ -23,7 +23,7 @@ const harnesses: Harness[] = [];
 export function makeSession(server: FakeOscarServer, over: Partial<OscarSessionOptions> = {}): Harness {
   const timers = new ManualTimers();
   const logs = captureLog();
-  const session = new OscarSessionImpl({
+  const session = new KitSession({
     host: '127.0.0.1',
     port: server.port,
     tls: caFileOf(server) !== undefined,

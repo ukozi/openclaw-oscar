@@ -1,4 +1,13 @@
-import type { OscarClientEvents, SendImOptions, SentIm, TypingEvent } from 'open-oscar-client-kit/client';
+import type {
+  DropEvidence,
+  OscarClientEvents,
+  ReconnectPolicy,
+  SendImOptions,
+  SentIm,
+  ServerAddress,
+  TicketSource,
+  TypingEvent,
+} from 'open-oscar-client-kit/client';
 import { roomConversationId } from 'open-oscar-client-kit/model';
 import type { BuddyPresence, ImBody, RichText, RoomId, RoomStatus, SelfInfo, SessionState } from 'open-oscar-client-kit/model';
 import type { KitClient } from '../../src/oscar/kit-client.js';
@@ -6,7 +15,7 @@ import type { KitClient } from '../../src/oscar/kit-client.js';
 export type Outcome<T> = { resolve: T } | { reject: unknown } | 'hold';
 export type Held<T> = { resolve: (value: T) => void; reject: (error: unknown) => void };
 export type StubCall = { method: string; args: unknown[] };
-type Scripted = 'sendIm' | 'sendTyping' | 'setAway' | 'joinRoom' | 'leaveRoom' | 'sendRoomMessage' | 'refreshSessionBuddies';
+type Scripted = 'signOnWith' | 'sendIm' | 'sendTyping' | 'setAway' | 'joinRoom' | 'leaveRoom' | 'sendRoomMessage' | 'refreshSessionBuddies';
 type Listeners = { [E in keyof OscarClientEvents]?: Set<(payload: OscarClientEvents[E]) => void> };
 
 export class StubClient implements KitClient {
@@ -44,6 +53,10 @@ export class StubClient implements KitClient {
 
   private next<T>(method: Scripted, args: unknown[], fallback: () => T): Promise<T> {
     this.calls.push({ method, args });
+    return this.take(method, fallback);
+  }
+
+  private take<T>(method: Scripted, fallback: () => T): Promise<T> {
     const outcome = this.scripts.get(method)?.shift();
     if (outcome === undefined) return Promise.resolve(fallback());
     if (outcome === 'hold') {
@@ -54,15 +67,35 @@ export class StubClient implements KitClient {
     return 'reject' in outcome ? Promise.reject(outcome.reject) : Promise.resolve(outcome.resolve as T);
   }
 
-  async signOnWith(...args: unknown[]): Promise<'online' | 'cancelled'> {
-    this.calls.push({ method: 'signOnWith', args });
-    this.state = 'online';
+  // Asks the source for its ticket, as the client does; a scripted outcome is what the BOS connect then does.
+  async signOnWith(source: TicketSource, server: ServerAddress): Promise<'online' | 'cancelled'> {
+    this.calls.push({ method: 'signOnWith', args: [source, server] });
+    this.setState('connecting');
+    try {
+      await source.ticket({ reconnect: false, track: () => {} });
+      if ((await this.take('signOnWith', () => 'online')) === 'cancelled') return 'cancelled';
+    } catch (error) {
+      this.setState('offline');
+      throw error;
+    }
+    this.setState('online');
     return 'online';
   }
 
   async signOff(): Promise<void> {
     this.calls.push({ method: 'signOff', args: [] });
-    this.state = 'offline';
+    if (this.state !== 'offline') this.setState('offline');
+  }
+
+  // What the client does when its connection ends and the policy stops it.
+  drop(policy: ReconnectPolicy, evidence: DropEvidence): void {
+    policy.next({ phase: 'drop', evidence, attempt: 1, onlineAt: 0, now: 0 });
+    this.setState('offline');
+  }
+
+  private setState(state: SessionState): void {
+    this.state = state;
+    this.emit('state', { state });
   }
 
   presenceOf(screenName: string): BuddyPresence | undefined {

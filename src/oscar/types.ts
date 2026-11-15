@@ -21,7 +21,7 @@ export type {
 export type SessionPhase = 'idle' | 'connecting' | 'online' | 'backoff' | 'stopped' | 'fatal';
 export type SessionState = { phase: SessionPhase; reason?: StateReason; detail?: string; since: number; attempts: number };
 
-export type Presence = { online: boolean; away: boolean; bot: boolean; at: number };
+export type Presence = { online: boolean; away: boolean; at: number };
 
 export type ImEvent = {
   from: string;
@@ -84,7 +84,7 @@ export interface OscarSession {
   stop(): Promise<void>;
   getState(): SessionState;
   on<E extends keyof OscarEvents>(event: E, fn: (payload: OscarEvents[E]) => void): () => void;
-  selfInfo(): { screenName: string; bot: boolean } | null;
+  selfInfo(): { screenName: string } | null;
   presenceOf(name: string): Presence | undefined;
   updateBuddies(): void;
   sendIm(to: string, html: string, opts?: { priority?: SendPriority; auto?: boolean }): Promise<SendReceipt>;

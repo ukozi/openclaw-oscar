@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { ByteReader, RedirectRefusedError, decodeTlvs, hasTlv } from 'open-oscar-client-kit/wire';
-import { waitFor } from 'open-oscar-client-kit/testing';
+import { ByteReader, decodeTlvs, hasTlv } from 'open-oscar-client-kit/wire';
 import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { startServer } from '../fake/kit.js';
 import { makeSession, stopAllSessions } from '../fake/session-harness.js';
@@ -33,6 +32,10 @@ function serviceRequests(): { family: number; useSsl: boolean }[] {
       return { family: r.u16(), useSsl: hasTlv(decodeTlvs(r.rest()), 0x8c) };
     });
 }
+
+const DEN = { exchange: 4 as const, name: 'den' };
+const navRequests = (): { family: number; useSsl: boolean }[] => serviceRequests().filter((r) => r.family === 0x000d);
+const navOpened = (h: Harness): unknown[] => opened(h).filter((o) => o.conn === 'chatnav');
 
 describe('plaintext redirects', () => {
   it('follow goes where the server says', async () => {
@@ -74,18 +77,29 @@ describe('plaintext redirects', () => {
     const h = makeSession(server);
     h.session.start();
     await h.online();
-    const where = await h.session.resolveService(0x000d);
-    expect(where).toMatchObject({ host: '127.0.0.1', port: server.port, pinned: false });
-    expect(where.cookie).toHaveLength(256);
-    expect(where.expiresAt).toBe(h.timers.now() + 60_000);
-    expect(serviceRequests()).toEqual([{ family: 0x000d, useSsl: false }]);
+    await h.session.joinRoom(DEN);
+    expect(navRequests()).toEqual([{ family: 0x000d, useSsl: false }]);
+    expect(navOpened(h)).toEqual([{ conn: 'chatnav', host: '127.0.0.1', port: server.port, tls: false }]);
   });
 
-  it('rejects a service request while BOS is down', async () => {
+  it('rejects a room join while BOS is down, with no service request', async () => {
     await boot({});
     const h = makeSession(server);
-    await expect(h.session.resolveService(0x000d)).rejects.toMatchObject({ code: 'not-online' });
+    await expect(h.session.joinRoom(DEN)).rejects.toMatchObject({ code: 'not-online' });
     expect(serviceRequests()).toEqual([]);
+  });
+
+  it('gives up on a service request the server refuses instead of looping', async () => {
+    await boot({});
+    const h = makeSession(server);
+    h.session.start();
+    await h.online();
+    server.failNext(0x0001, 0x0004, { code: 0x0005 });
+    await expect(h.session.joinRoom(DEN)).rejects.toMatchObject({ code: 'unavailable' });
+    expect(navRequests()).toEqual([{ family: 0x000d, useSsl: false }]);
+    expect(h.session.getState().phase).toBe('online');
+    await h.session.joinRoom(DEN);
+    expect(navRequests()).toHaveLength(2);
   });
 });
 
@@ -144,23 +158,22 @@ describe('TLS redirects', () => {
     const h = makeSession(server);
     h.session.start();
     await h.online();
-    const where = await h.session.resolveService(0x000d);
-    expect(where).toMatchObject({ host: '127.0.0.1', port: server.port, pinned: true });
-    expect(where.expiresAt).toBe(h.timers.now() + 60_000);
-    expect(serviceRequests()).toEqual([
+    await h.session.joinRoom(DEN);
+    expect(navRequests()).toEqual([
       { family: 0x000d, useSsl: true },
       { family: 0x000d, useSsl: false },
     ]);
+    expect(navOpened(h)).toEqual([{ conn: 'chatnav', host: '127.0.0.1', port: server.port, tls: true }]);
   });
 
   it('asks once with TLV 0x8C on main and follows the SSL answer', async () => {
     await boot({ tls: true, generation: 'main' });
-    const h = makeSession(server);
+    const h = makeSession(server, { host: 'localhost' });
     h.session.start();
     await h.online();
-    const where = await h.session.resolveService(0x000d);
-    expect(where).toMatchObject({ host: '127.0.0.1', port: server.port, pinned: false });
-    expect(serviceRequests()).toEqual([{ family: 0x000d, useSsl: true }]);
+    await h.session.joinRoom(DEN);
+    expect(navRequests()).toEqual([{ family: 0x000d, useSsl: true }]);
+    expect(navOpened(h)).toEqual([{ conn: 'chatnav', host: '127.0.0.1', port: server.port, tls: true }]);
   });
 
   it('auto pins a plaintext service answer from a server with no SSL host', async () => {
@@ -168,8 +181,9 @@ describe('TLS redirects', () => {
     const h = makeSession(server);
     h.session.start();
     await h.online();
-    expect(await h.session.resolveService(0x000d)).toMatchObject({ host: '127.0.0.1', port: server.port, pinned: true });
-    expect(serviceRequests()).toEqual([{ family: 0x000d, useSsl: true }]);
+    await h.session.joinRoom(DEN);
+    expect(navRequests()).toEqual([{ family: 0x000d, useSsl: true }]);
+    expect(navOpened(h)).toEqual([{ conn: 'chatnav', host: '127.0.0.1', port: server.port, tls: true }]);
   });
 
   it('follow refuses a plaintext service answer and stays online', async () => {
@@ -178,20 +192,9 @@ describe('TLS redirects', () => {
     h.session.start();
     await h.online();
     server.setSslHost(false);
-    const error = await h.session.resolveService(0x000d).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(RedirectRefusedError);
-    expect(error).toMatchObject({ reason: 'tls' });
-    expect(serviceRequests()).toEqual([{ family: 0x000d, useSsl: true }]);
-    expect(h.session.getState().phase).toBe('online');
-  });
-
-  it('gives up on a service the server does not offer instead of looping', async () => {
-    await boot({ tls: true, generation: 'main' });
-    const h = makeSession(server);
-    h.session.start();
-    await h.online();
-    await expect(h.session.resolveService(0x0018)).rejects.toThrow('service request refused');
-    await waitFor(() => serviceRequests().length === 2, 'two requests');
+    await expect(h.session.joinRoom(DEN)).rejects.toMatchObject({ code: 'unavailable' });
+    expect(navRequests()).toEqual([{ family: 0x000d, useSsl: true }]);
+    expect(navOpened(h)).toEqual([]);
     expect(h.session.getState().phase).toBe('online');
   });
 });

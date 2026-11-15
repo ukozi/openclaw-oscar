@@ -69,7 +69,7 @@ export function fakeSession(screenName = 'BotOne') {
       };
     },
     getState: () => ({ phase, since: 0, attempts: 0 }),
-    selfInfo: () => ({ screenName, bot: false }),
+    selfInfo: () => ({ screenName }),
     rooms: () => [],
     async joinRoom(room: RoomRef, opts?: { persistent?: boolean }) {
       calls.joinRoom.push({ room, persistent: opts?.persistent === true });

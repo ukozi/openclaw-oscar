@@ -158,7 +158,7 @@ describe('rooms', () => {
     expect(line).toMatchObject({ from: 'onlinehost', serverGenerated: true });
   });
 
-  it('takes its own receipt from a line the server rewrote, sending it once and reading no rate limit', async () => {
+  it('takes its own receipt from a line the server rewrote, sending it once, reading no rate limit and hearing no line', async () => {
     const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
     await bot.session.joinRoom(testroom);
@@ -167,7 +167,7 @@ describe('rooms', () => {
     expect(chatSends(server, 'botone')).toHaveLength(1);
     expect(Buffer.from(chatSends(server, 'botone')[0]!).readBigUInt64BE(0).toString(16)).toBe(receipt.id);
     expect(bot.seen.rate).toEqual([]);
-    expect(bot.seen.roomMessage.map((m) => [m.from, m.serverGenerated])).toEqual([['onlinehost', true]]);
+    expect(bot.seen.roomMessage).toEqual([]);
     expect(alice.roomLines(testroom)).toEqual([
       { from: 'onlinehost', text: '<HTML><BODY>botone rolled 2 6-sided dice: 3 4</BODY></HTML>', whisper: false },
     ]);
@@ -251,12 +251,12 @@ describe('invites', () => {
     alice.joinRoom(testroom);
     alice.invite('botone', testroom, 'come in');
     const invite = await until(() => bot.seen.invite[0], 'invite');
-    expect(invite).toEqual({ from: 'alice', fromDisplay: 'Alice', room: testroom, roomCookie: '4-0-testroom', text: 'come in' });
+    expect(invite).toEqual({ from: 'alice', fromDisplay: 'Alice', room: testroom, roomCookie: expect.stringMatching(/^alice:[0-9a-f]{16}$/), text: 'come in' });
     expect(bot.seen.im).toEqual([]);
     expect(server.snacsFrom('botone').filter((s) => s.family === 0x0004 && s.subtype === 0x0006)).toEqual([]);
   });
 
-  it('joins the invited room by cookie, once', async () => {
+  it('joins the invited room by name, once', async () => {
     const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
     alice.invite('botone', testroom);
@@ -265,29 +265,47 @@ describe('invites', () => {
     await bot.session.joinInvited(invite);
     expect(server.rooms.occupants(testroom)).toEqual(['alice', 'botone']);
     const nav = server.snacsFrom('botone').filter((s) => s.conn === 'chatnav');
-    expect(nav.map((s) => s.subtype)).toEqual([0x0004]);
+    expect(nav.map((s) => s.subtype)).toEqual([0x0008]);
     expect(serviceRequests(server, 'botone')).toEqual([0x000d, 0x000e]);
   });
 
-  it('does not ask BOS for a room that is gone, and stays online with its other rooms', async () => {
+  it('creates an invited room that is gone, and stays online with its other rooms', async () => {
     await bot.session.joinRoom(testroom);
     roomPeer(server, 'alice').invite('botone', { exchange: 4, name: 'ghost' });
     const invite = await until(() => bot.seen.invite[0], 'invite');
-    await expect(bot.session.joinInvited(invite)).rejects.toMatchObject({ code: 'no-such-room' });
-    expect(serviceRequests(server, 'botone').filter((g) => g === 0x000e)).toHaveLength(1);
+    await bot.session.joinInvited(invite);
+    expect(serviceRequests(server, 'botone').filter((g) => g === 0x000e)).toHaveLength(2);
     expect(bot.session.getState().phase).toBe('online');
-    expect(bot.session.rooms().map((r) => r.room.name)).toEqual(['testroom']);
+    expect(bot.session.rooms().map((r) => r.room.name)).toEqual(['testroom', 'ghost']);
+    expect(server.rooms.occupants({ exchange: 4, name: 'ghost' })).toEqual(['botone']);
   });
 
-  it('refuses an invite whose room name would overflow the service cookie', async () => {
+  it('raises no invite for a room name the client cannot join, and one for the next room', async () => {
     const long = { exchange: 4 as const, name: 'y'.repeat(200) };
     const alice = roomPeer(server, 'alice');
     alice.joinRoom(long);
     alice.invite('botone', long);
+    alice.invite('botone', testroom);
     const invite = await until(() => bot.seen.invite[0], 'invite');
-    await expect(bot.session.joinInvited(invite)).rejects.toMatchObject({ code: 'too-long' });
+    expect(invite.room).toEqual(testroom);
+    expect(bot.seen.invite).toHaveLength(1);
     expect(serviceRequests(server, 'botone')).toEqual([]);
     expect(bot.session.getState().phase).toBe('online');
+  });
+
+  it('refuses a join whose room name would overflow the service cookie, with no service request', async () => {
+    const long = { exchange: 4 as const, name: 'y'.repeat(200) };
+    await expect(bot.session.joinRoom(long)).rejects.toMatchObject({ code: 'too-long' });
+    expect(serviceRequests(server, 'botone')).toEqual([]);
+    expect(bot.session.getState().phase).toBe('online');
+  });
+
+  it('still hears an invitation after seventeen it left alone', async () => {
+    const alice = roomPeer(server, 'alice');
+    for (let i = 0; i < 17; i++) alice.invite('botone', { exchange: 4, name: `room${i}` });
+    alice.invite('botone', testroom);
+    await until(() => bot.seen.invite.length === 18, 'eighteen invites');
+    expect(bot.seen.invite.at(-1)?.room).toEqual(testroom);
   });
 });
 
@@ -367,6 +385,24 @@ describe('a v0.24 server', () => {
       server.rooms.strayRateOnNextNav();
       await bot.session.joinRoom(testroom);
       expect(bot.seen.rate).toContainEqual({ scope: 'bos', status: 'limited' });
+    } finally {
+      await bot.session.stop();
+      await server.stop();
+    }
+  });
+
+  it('joins the room and stays online when a BOS rate notice comes out on the ChatNav socket', async () => {
+    const server = await startServer({ generation: 'v0.24' });
+    const bot = await signOn(server, 'botone');
+    try {
+      server.rooms.strayRateOnNextNav();
+      const alice = roomPeer(server, 'alice');
+      alice.joinRoom(testroom);
+      await bot.session.joinRoom(testroom);
+      expect(bot.session.rooms().map((r) => r.room.name)).toEqual(['testroom']);
+      await bot.session.sendRoom(testroom, 'hello');
+      expect(alice.roomLines(testroom).map((l) => l.text)).toEqual(['hello']);
+      expect(bot.session.getState().phase).toBe('online');
     } finally {
       await bot.session.stop();
       await server.stop();

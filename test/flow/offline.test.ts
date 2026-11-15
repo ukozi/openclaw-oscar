@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { encodeImFragments } from '../../src/oscar/bos.js';
-import { tlv } from 'open-oscar-client-kit/wire';
+import { encodeImFragments, tlv } from 'open-oscar-client-kit/wire';
 import { waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeGeneration, FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { startServer, storeOfflineIm } from '../fake/kit.js';

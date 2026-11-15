@@ -32,7 +32,7 @@ describe('file filter', () => {
   it.each<[string, boolean]>([
     ['dist/index.js', true],
     ['dist/index.d.ts', true],
-    ['dist/oscar/session.js', true],
+    ['dist/oscar/adapter.js', true],
     ['openclaw.plugin.json', true],
     ['assets/icon.png', true],
     ['package.json', true],

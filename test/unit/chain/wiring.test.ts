@@ -53,7 +53,7 @@ const { chainToolPolicy, installChain, registerChainHooks, uninstallChain } =
 function fakeSession() {
   const listeners = new Map<string, ((payload: never) => void)[]>();
   const session = {
-    selfInfo: () => ({ screenName: 'Bot Two', bot: false }),
+    selfInfo: () => ({ screenName: 'Bot Two' }),
     sendIm: vi.fn(async () => ({ id: 'im', storedOffline: false })),
     on: (event: string, fn: (payload: never) => void) => {
       listeners.set(event, [...(listeners.get(event) ?? []), fn]);
@@ -155,7 +155,7 @@ describe('installChain', () => {
     expect(controller.facts().mismatches).toHaveLength(1);
     for (const event of ['roomReady', 'roomJoin', 'roomLeave', 'presence', 'rate']) expect(s.listeners.get(event)).toHaveLength(1);
     s.emit('roomLeave', { room: ROOM, name: 'botthree', display: 'botthree' });
-    s.emit('presence', { name: 'botone', online: true, away: false, bot: false, at: 1 });
+    s.emit('presence', { name: 'botone', online: true, away: false, at: 1 });
     s.emit('rate', { scope: ROOM, status: 'limited' });
     expect(controller.roomLimited('room:4:testroom')).toBe(true);
   });

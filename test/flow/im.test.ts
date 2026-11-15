@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { ByteReader, decodeTlvs, findTlv, fromHex, hasTlv, tlv } from 'open-oscar-client-kit/wire';
-import { decodeImFragments } from '../../src/oscar/bos.js';
+import { ByteReader, decodeImFragments, decodeTlvs, findTlv, fromHex, hasTlv, tlv } from 'open-oscar-client-kit/wire';
 import { OscarSendError } from '../../src/oscar/types.js';
 import { waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeGeneration, FakeOscarServer, FakePeer } from 'open-oscar-client-kit/testing';
@@ -68,23 +67,13 @@ describe('receiving IMs', () => {
     expect(h.ims[0]?.autoResponse).toBe(true);
   });
 
-  it('hands a channel 2 message over as the whole SNAC body and raises no im event for it', async () => {
+  it('raises no im event for a channel 2 message', async () => {
     await boot();
-    const seen: Uint8Array[] = [];
-    h.session.onChannel2((icbmBody) => seen.push(icbmBody));
     const fragment = fromHex('0000' + '1122334455667788' + '748f2420628711d18222444553540000' + '000a00020001');
     alice.sendRaw('botone', 2, [tlv.bytes(0x05, fragment)], 99n);
-    await waitFor(() => seen.length === 1, 'channel 2');
-    const r = new ByteReader(seen[0] ?? new Uint8Array(0));
-    expect([r.u64(), r.u16(), r.str8()]).toEqual([99n, 2, 'alice']);
-    r.u16();
-    const userTlvs = r.u16();
-    for (let i = 0; i < userTlvs; i++) {
-      r.u16();
-      r.bytes(r.u16());
-    }
-    expect(findTlv(decodeTlvs(r.rest()), 0x05)).toEqual(fragment);
-    expect(h.ims).toEqual([]);
+    alice.sendIm('botone', 'after it');
+    await waitFor(() => h.ims.length === 1, 'the IM after it');
+    expect(h.ims.map((m) => m.text)).toEqual(['after it']);
   });
 
   it('keeps delivering when one listener throws', async () => {
@@ -131,7 +120,7 @@ describe('receiving IMs', () => {
     await waitFor(() => h.ims.length === 1, 'IM');
     expect(h.ims[0]?.text).toBe('still here');
     expect(h.session.getState().phase).toBe('online');
-    expect(h.logs.lines.some((l) => l.level === 'warn' && l.msg === 'dropped an unreadable SNAC')).toBe(true);
+    expect(h.logs.lines.some((l) => l.level === 'warn' && l.msg === 'skipped a SNAC that could not be handled')).toBe(true);
   });
 });
 
@@ -272,8 +261,8 @@ describe('typing and away', () => {
     await waitFor(() => server.awayOf('botone') === null, 'away cleared');
     const locate = server.snacsFrom('botone').filter((s) => s.family === 2 && s.subtype === 4);
     expect(locate.slice(1).map((s) => decodeTlvs(s.body).map((t) => [t.tag, Buffer.from(t.value).toString()]))).toEqual([
-      [[4, 'Working on something.']],
-      [[4, '']],
+      [[3, 'text/aolrtf; charset="us-ascii"'], [4, 'Working on something.']],
+      [[3, 'text/aolrtf; charset="us-ascii"'], [4, '']],
     ]);
     expect(server.snacsFrom('botone').some((s) => s.family === 1 && s.subtype === 0x1e)).toBe(false);
   });

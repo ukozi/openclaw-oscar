@@ -16,7 +16,7 @@ export class FakeSession {
   failNext: Error | null = null;
   probeResult: 'checks' | 'does-not-check' | 'unknown' = 'checks';
   probes = 0;
-  self: { screenName: string; bot: boolean } | null = { screenName: 'botone', bot: false };
+  self: { screenName: string } | null = { screenName: 'botone' };
 
   private listeners = new Map<string, Set<Listener>>();
   private presence = new Map<string, Presence>();
@@ -33,7 +33,7 @@ export class FakeSession {
   }
 
   setPresence(name: string, p: Partial<Presence>): void {
-    const next: Presence = { online: false, away: false, bot: false, at: 0, ...this.presence.get(name), ...p };
+    const next: Presence = { online: false, away: false, at: 0, ...this.presence.get(name), ...p };
     this.presence.set(name, next);
     this.emit('presence', { name, ...next });
   }

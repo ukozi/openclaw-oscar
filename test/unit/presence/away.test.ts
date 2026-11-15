@@ -336,7 +336,7 @@ describe('rosterPresence', () => {
   it('lists peers with their away flag and leaves self out', () => {
     const session = {
       presenceOf: (name: string) =>
-        name === 'bottwo' ? { online: true, away: true, bot: true, at: 1 } : undefined,
+        name === 'bottwo' ? { online: true, away: true, at: 1 } : undefined,
     };
     const roster = [{ screenName: 'botone' }, { screenName: 'bottwo' }, { screenName: 'botthree' }];
     expect(rosterPresence(session, roster, 'botone')).toEqual([
