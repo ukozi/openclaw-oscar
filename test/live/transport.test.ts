@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { toWireHtml } from '../../src/oscar/text.js';
+import { toWireHtml } from 'open-oscar-client-kit/wire';
 import type { RoomRef } from '../../src/oscar/types.js';
 import { liveEnv } from './support/env.js';
 import { startSession, type Captured } from './support/session.js';

@@ -3,7 +3,7 @@ import { copy } from '../copy.js';
 import { normalizeName } from '../names.js';
 import type { RoomRef } from '../names.js';
 import type { InviteEvent, Logger } from '../oscar/index.js';
-import { toWireHtml } from '../oscar/text.js';
+import { toWireHtml } from '../oscar/index.js';
 import { roleOf } from '../policy.js';
 import { roomKey, roomsExt } from '../runtime.js';
 import type { AccountRuntime } from '../runtime.js';

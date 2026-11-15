@@ -1,15 +1,14 @@
 import net from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { CLIENT_ID, bucpLogin, probeLogin, strongHash } from '../../src/oscar/auth.js';
-import { fromHex } from '../../src/oscar/bytes.js';
-import { openConnection } from '../../src/oscar/connection.js';
-import type { OscarConnection } from '../../src/oscar/connection.js';
-import { decodeTlvs, findTlv, tlvStr, tlvU8 } from '../../src/oscar/tlv.js';
+import { MULTI_CONN_SINGLE, bucpLogin, decodeTlvs, findTlv, fromHex, openConnection, strongHash, tlvStr, tlvU8 } from 'open-oscar-client-kit/wire';
+import type { OscarConnection } from 'open-oscar-client-kit/wire';
+import { CLIENT_ID, probeLogin } from '../../src/oscar/session.js';
 import { ManualTimers, captureLog, settle, waitFor } from '../fake/oscar-client.js';
 import { FakeOscarServer } from '../fake/oscar-server.js';
 
 let server: FakeOscarServer;
 const timers = new ManualTimers();
+const LOGIN = { clientId: CLIENT_ID, multiConn: MULTI_CONN_SINGLE };
 
 afterEach(async () => {
   await server.stop();
@@ -20,7 +19,7 @@ function connect(): Promise<OscarConnection> {
 }
 
 function login(name: string, password: string) {
-  return connect().then((conn) => bucpLogin(conn, timers.api, name, 5190, (key) => strongHash(password, key)));
+  return connect().then((conn) => bucpLogin(conn, timers.api, name, 5190, (key) => strongHash(password, key), LOGIN));
 }
 
 describe('bucpLogin', () => {
@@ -46,7 +45,7 @@ describe('bucpLogin', () => {
     const result = await bucpLogin(conn, timers.api, 'botone', 5190, async (key) => {
       keys.push(key);
       return strongHash('botpass1', key);
-    });
+    }, LOGIN);
     expect(result.ok).toBe(true);
     expect(keys).toEqual(['salt-botone']);
     expect(conn.isOpen).toBe(false);
@@ -77,7 +76,7 @@ describe('bucpLogin', () => {
     const fresh = await FakeOscarServer.start({ loginLimit: 0 });
     try {
       const conn = await openConnection({ host: '127.0.0.1', port: fresh.port, tls: false, log: captureLog().log, timers: timers.api });
-      expect(await bucpLogin(conn, timers.api, 'botone', 5190, (key) => strongHash('botpass1', key))).toMatchObject({
+      expect(await bucpLogin(conn, timers.api, 'botone', 5190, (key) => strongHash('botpass1', key), LOGIN)).toMatchObject({
         ok: false,
         reason: 'login-rate-limited',
         code: 0x1d,
@@ -100,7 +99,7 @@ describe('bucpLogin', () => {
     server.addUser('botone', 'botpass1');
     const conn = await connect();
     await server.restart();
-    const result = await bucpLogin(conn, timers.api, 'botone', 5190, (key) => strongHash('botpass1', key));
+    const result = await bucpLogin(conn, timers.api, 'botone', 5190, (key) => strongHash('botpass1', key), LOGIN);
     expect(result).toMatchObject({ ok: false, reason: 'network' });
   });
 
@@ -120,7 +119,7 @@ describe('bucpLogin', () => {
         log: captureLog().log,
         timers: local.api,
       });
-      const result = bucpLogin(conn, local.api, 'botone', 5190, (key) => strongHash('botpass1', key));
+      const result = bucpLogin(conn, local.api, 'botone', 5190, (key) => strongHash('botpass1', key), LOGIN);
       // The other two pending timers are the connection's keepalive and probe.
       await waitFor(() => local.pending().length === 3, 'the reply timer');
       expect(local.pending()).toEqual([20_000, 60_000, 90_000]);

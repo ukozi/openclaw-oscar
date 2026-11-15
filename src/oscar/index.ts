@@ -1,8 +1,8 @@
-export type { LoginResult } from './auth.js';
-export type { RedirectDecision } from './connection.js';
-export { checkLogin, checkPasswordEnforced, createLoginBudget, createOscarSession } from './session.js';
+export { createLoginBudget } from 'open-oscar-client-kit/client';
+export { fromWireText, guardRoll, htmlToText, isAscii, normalizeScreenName, toAsciiEntities, toWireHtml } from 'open-oscar-client-kit/wire';
+export type { LoginResult, RedirectDecision } from 'open-oscar-client-kit/wire';
+export { checkLogin, checkPasswordEnforced, createOscarSession } from './session.js';
 export type { LoginCheckOptions, LoginCheckResult } from './session.js';
-export { fromWireText, isAscii, normalizeScreenName, toAsciiEntities, toWireHtml } from './text.js';
 export { OscarRoomError, OscarSendError } from './types.js';
 export type {
   ImEvent,

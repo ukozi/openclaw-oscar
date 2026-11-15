@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { ByteReader, fromHex } from '../../src/oscar/bytes.js';
+import { ByteReader, decodeTlvs, findTlv, fromHex, hasTlv, tlv } from 'open-oscar-client-kit/wire';
 import { decodeImFragments } from '../../src/oscar/bos.js';
-import { decodeTlvs, findTlv, hasTlv, tlv } from '../../src/oscar/tlv.js';
 import { OscarSendError } from '../../src/oscar/types.js';
 import { imSends, makeSession, stopAllSessions, waitFor } from '../fake/oscar-client.js';
 import type { Harness } from '../fake/oscar-client.js';

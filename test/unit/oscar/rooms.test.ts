@@ -5,6 +5,7 @@ import {
   CHATNAV_NAV_INFO,
   CHATNAV_REQUEST_ROOM_INFO,
   CHAT_MSG_TO_CLIENT,
+  CHAT_MSG_TO_HOST,
   CHAT_USERS_JOINED,
   FAMILY_CHAT,
   FAMILY_CHATNAV,
@@ -12,11 +13,27 @@ import {
   OSERVICE_CLIENT_ONLINE,
   OSERVICE_RATE_PARAMS_QUERY,
   OSERVICE_RATE_PARAMS_REPLY,
-} from '../../../src/oscar/constants.js';
+  encodeTlvs,
+  encodeUserInfo,
+  tlv,
+} from 'open-oscar-client-kit/wire';
 import { RoomManager, type RoomEventName, type RoomsHost } from '../../../src/oscar/rooms.js';
-import { encodeUserInfo } from '../../../src/oscar/snac.js';
 import { OscarSendError, type InviteEvent, type OscarEvents, type ServiceGrant, type SnacLink } from '../../../src/oscar/types.js';
 import { FakeLink, ManualClock, StubPacer, flush, quietLog, toHex, vector } from './room-kit.js';
+
+// A public room line as the server relays it.
+function roomLine(from: string, text: string, cookie = 7n): Uint8Array {
+  const head = Buffer.alloc(10);
+  head.writeBigUInt64BE(cookie, 0);
+  head.writeUInt16BE(3, 8);
+  const message = encodeTlvs([tlv.str(0x0002, 'us-ascii'), tlv.str(0x0003, 'en'), tlv.str(0x0001, text)]);
+  const tlvs = encodeTlvs([
+    tlv.bytes(0x0003, encodeUserInfo({ name: from, warning: 0, tlvs: [] })),
+    tlv.bytes(0x0001, new Uint8Array(0)),
+    tlv.bytes(0x0005, message),
+  ]);
+  return Uint8Array.from(Buffer.concat([head, Buffer.from(tlvs)]));
+}
 
 const testroom = { exchange: 4 as const, name: 'testroom' };
 const invite: InviteEvent = { from: 'alice', fromDisplay: 'Alice', room: testroom, roomCookie: '4-0-testroom', text: '' };
@@ -397,6 +414,54 @@ describe('leaving and sending', () => {
       { room: testroom, from: 'alice', fromDisplay: 'Alice', text: 'psst', cookie: 0x1112131415161718n, whisper: true, serverGenerated: false },
     ]);
     expect(w.seen.roomJoin).toEqual([{ room: testroom, name: 'bob', display: 'Bob' }]);
+  });
+
+  it('creates a room with its name in lower case on the wire', async () => {
+    const w = world();
+    await w.manager.joinRoom({ exchange: 4, name: 'Lounge' });
+    const create = w.state.navLinks[0]?.sentOf(FAMILY_CHATNAV, CHATNAV_CREATE_ROOM)[0];
+    const body = Buffer.from(create?.body ?? new Uint8Array()).toString('latin1');
+    expect(body).toContain('lounge');
+    expect(body).not.toContain('Lounge');
+  });
+
+  it('gives a room line as text, with HTML removed', async () => {
+    const w = world();
+    await w.manager.joinRoom(testroom);
+    w.state.chatLinks[0]?.deliver({ family: FAMILY_CHAT, subtype: CHAT_MSG_TO_CLIENT, body: roomLine('Alice', '<B>hi</B>') });
+    expect(w.seen.roomMessage).toEqual([
+      { room: testroom, from: 'alice', fromDisplay: 'Alice', text: 'hi', cookie: 7n, whisper: false, serverGenerated: false },
+    ]);
+  });
+
+  it('treats a member whose name is the server sender as a member', async () => {
+    const w = world();
+    await w.manager.joinRoom(testroom);
+    const link = w.state.chatLinks[0];
+    link?.deliver({ family: FAMILY_CHAT, subtype: CHAT_USERS_JOINED, body: encodeUserInfo({ name: 'OnlineHost', warning: 0, tlvs: [] }) });
+    link?.deliver({ family: FAMILY_CHAT, subtype: CHAT_MSG_TO_CLIENT, body: roomLine('OnlineHost', 'x') });
+    expect(w.seen.roomMessage).toMatchObject([{ from: 'onlinehost', text: 'x', serverGenerated: false }]);
+  });
+
+  it('marks a line from the server sender as server generated when no member has the name', async () => {
+    const w = world();
+    await w.manager.joinRoom(testroom);
+    w.state.chatLinks[0]?.deliver({ family: FAMILY_CHAT, subtype: CHAT_MSG_TO_CLIENT, body: roomLine('OnlineHost', 'x') });
+    expect(w.seen.roomMessage).toMatchObject([{ from: 'onlinehost', text: 'x', serverGenerated: true }]);
+  });
+
+  it('marks the server rewrite of its own line as server generated', async () => {
+    const w = world();
+    await w.manager.joinRoom(testroom);
+    const link = w.state.chatLinks[0];
+    link?.deliver({ family: FAMILY_CHAT, subtype: CHAT_USERS_JOINED, body: encodeUserInfo({ name: 'OnlineHost', warning: 0, tlvs: [] }) });
+    const sent = w.manager.sendRoom(testroom, '//roll');
+    await w.settle();
+    const out = link?.sentOf(FAMILY_CHAT, CHAT_MSG_TO_HOST)[0];
+    const cookie = Buffer.from(out?.body ?? new Uint8Array(8)).readBigUInt64BE(0);
+    link?.deliver({ family: FAMILY_CHAT, subtype: CHAT_MSG_TO_CLIENT, body: roomLine('OnlineHost', 'botone rolled 2 6-sided dice: 3 4', cookie) });
+    await expect(sent).resolves.toMatchObject({ storedOffline: false });
+    expect(w.seen.roomMessage).toMatchObject([{ from: 'onlinehost', serverGenerated: true }]);
   });
 
   it('asks the session for the chat service only after chatnav answered, with the room chatnav returned', async () => {

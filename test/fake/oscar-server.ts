@@ -4,15 +4,30 @@ import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import tls from 'node:tls';
-import { strongHash } from '../../src/oscar/auth.js';
+import {
+  ByteReader,
+  ByteWriter,
+  FlapDecoder,
+  decodeSignonPayload,
+  decodeSnac,
+  decodeTlvs,
+  encodeFlap,
+  encodeSignonPayload,
+  encodeSnac,
+  encodeTlvs,
+  encodeUserInfo,
+  findTlv,
+  fromWireText,
+  hasTlv,
+  isAscii,
+  normalizeScreenName,
+  strongHash,
+  tlv,
+  tlvStr,
+  tlvU8,
+} from 'open-oscar-client-kit/wire';
+import type { Snac, Tlv } from 'open-oscar-client-kit/wire';
 import { decodeImFragments, encodeImFragments, newCookie } from '../../src/oscar/bos.js';
-import { ByteReader, ByteWriter } from '../../src/oscar/bytes.js';
-import { FlapDecoder, decodeSignonPayload, encodeFlap, encodeSignonPayload } from '../../src/oscar/flap.js';
-import { decodeSnac, encodeSnac, encodeUserInfo } from '../../src/oscar/snac.js';
-import type { Snac } from '../../src/oscar/snac.js';
-import { fromWireText, isAscii, normalizeScreenName } from '../../src/oscar/text.js';
-import { decodeTlvs, encodeTlvs, findTlv, hasTlv, tlv, tlvStr, tlvU8 } from '../../src/oscar/tlv.js';
-import type { Tlv } from '../../src/oscar/tlv.js';
 import type { RoomRef } from '../../src/oscar/types.js';
 import { FakeRooms } from './oscar-rooms.js';
 import type { FakeConn } from './oscar-rooms.js';

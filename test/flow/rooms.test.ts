@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { toWireHtml } from '../../src/oscar/text.js';
-import { decodeTlvs, findTlv } from '../../src/oscar/tlv.js';
+import { decodeTlvs, findTlv, toWireHtml } from 'open-oscar-client-kit/wire';
 import { FakeOscarServer, type FakeGeneration } from '../fake/oscar-server.js';
 import { chatSends, serviceRequests, signOn, until, type Bot } from './room-kit.js';
 

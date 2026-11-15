@@ -1,13 +1,20 @@
 import net from 'node:net';
-import { strongHash } from '../../src/oscar/auth.js';
-import { ByteReader, ByteWriter } from '../../src/oscar/bytes.js';
-import { FlapDecoder, encodeFlap, encodeSignonPayload } from '../../src/oscar/flap.js';
-import type { FlapFrame } from '../../src/oscar/flap.js';
+import {
+  ByteReader,
+  ByteWriter,
+  FlapDecoder,
+  decodeSnac,
+  decodeTlvs,
+  encodeFlap,
+  encodeSignonPayload,
+  encodeSnac,
+  encodeTlvs,
+  findTlv,
+  strongHash,
+  tlv,
+} from 'open-oscar-client-kit/wire';
+import type { FlapFrame, Snac, Tlv } from 'open-oscar-client-kit/wire';
 import { OscarSessionImpl } from '../../src/oscar/session.js';
-import { decodeSnac, encodeSnac } from '../../src/oscar/snac.js';
-import type { Snac } from '../../src/oscar/snac.js';
-import { decodeTlvs, encodeTlvs, findTlv, tlv } from '../../src/oscar/tlv.js';
-import type { Tlv } from '../../src/oscar/tlv.js';
 import type {
   ImEvent,
   Logger,

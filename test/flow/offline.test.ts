@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { encodeImFragments } from '../../src/oscar/bos.js';
-import { tlv } from '../../src/oscar/tlv.js';
+import { tlv } from 'open-oscar-client-kit/wire';
 import { makeSession, stopAllSessions, waitFor } from '../fake/oscar-client.js';
 import { FakeOscarServer } from '../fake/oscar-server.js';
 import type { FakeGeneration } from '../fake/oscar-server.js';

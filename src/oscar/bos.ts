@@ -1,14 +1,16 @@
 import { randomBytes } from 'node:crypto';
-import { ByteReader, ByteWriter } from './bytes.js';
 import {
   BUDDY_ADD_BUDDIES,
   BUDDY_ARRIVED,
   BUDDY_DEL_BUDDIES,
   BUDDY_DEPARTED,
+  ByteReader,
+  ByteWriter,
   CAPABILITY_LENGTH,
   CAP_CHAT,
   CLIENT_TOOL_ID,
   CLIENT_TOOL_VERSION,
+  ConnectionClosedError,
   FAMILY_BUDDY,
   FAMILY_ICBM,
   FAMILY_LOCATE,
@@ -61,27 +63,39 @@ import {
   RDV_TYPE_PROPOSE,
   RECEIPT_TIMEOUT_MS,
   REQUEST_TIMEOUT_MS,
+  RateGovernor,
+  RequestTimeoutError,
   SERVICE_TLV_COOKIE,
   SERVICE_TLV_RECONNECT_HERE,
   SERVICE_TLV_ROOM_INFO,
   SERVICE_TLV_SSL_STATE,
   SERVICE_TLV_USE_SSL,
-  SYSTEM_SENDER,
   USER_FLAG_AWAY,
   USER_FLAG_BOT,
-} from './constants.js';
-import { ConnectionClosedError, RequestTimeoutError, parseHostPort } from './connection.js';
-import type { OscarConnection } from './connection.js';
-import { roomFromCookie } from './chatnav.js';
-import { RateGovernor, decodeRateParamChange, decodeRateParamsReply } from './rate.js';
-import type { RateStatus } from './rate.js';
-import { decodeSnacError, decodeUserInfo, userFlags } from './snac.js';
-import type { Snac, UserInfo } from './snac.js';
-import { encodeImText, fromWireText, normalizeScreenName } from './text.js';
-import { decodeTlvs, encodeTlvs, findTlv, hasTlv, tlv, tlvStr, tlvU32, tlvU8 } from './tlv.js';
-import type { Tlv } from './tlv.js';
+  decodeRateParamChange,
+  decodeRateParamsReply,
+  decodeSnacError,
+  decodeTlvs,
+  decodeUserInfo,
+  encodeImText,
+  encodeTlvs,
+  findTlv,
+  fromWireText,
+  hasTlv,
+  normalizeScreenName,
+  parseHostPort,
+  roomFromCookie,
+  tlv,
+  tlvStr,
+  tlvU32,
+  tlvU8,
+  userFlags,
+} from 'open-oscar-client-kit/wire';
+import type { OscarConnection, RateStatus, Snac, Tlv, UserInfo } from 'open-oscar-client-kit/wire';
 import { OscarSendError } from './types.js';
 import type { ImEvent, InviteEvent, Logger, Presence, SendReceipt, TimerApi } from './types.js';
+
+export const SYSTEM_SENDER = 'oossystemmsg';
 
 const BRING_UP_FAMILIES = [FAMILY_OSERVICE, FAMILY_LOCATE, FAMILY_BUDDY, FAMILY_ICBM];
 const IM_OVERHEAD_BYTES = 512;

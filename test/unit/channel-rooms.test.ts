@@ -17,7 +17,7 @@ import { copy } from '../../src/copy.js';
 import { IM_TIMING } from '../../src/inbound/im.js';
 import type { RoomRef } from '../../src/names.js';
 import type { RoomMessageEvent } from '../../src/oscar/index.js';
-import { toAsciiEntities, toWireHtml } from '../../src/oscar/text.js';
+import { toAsciiEntities, toWireHtml } from 'open-oscar-client-kit/wire';
 import { getRuntime, resetRuntimeForTests, roomsExt } from '../../src/runtime.js';
 import { collectOscarIssues } from '../../src/status.js';
 import { sdk } from '../fake/openclaw.js';

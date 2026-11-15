@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { fromHex } from '../../../src/oscar/bytes.js';
+import { fromHex } from 'open-oscar-client-kit/wire';
 
 export type Vector = { name: string; hex: string; note?: string; inputs?: Record<string, string> };
 export type VectorFile = { source: string; vectors: Vector[] };

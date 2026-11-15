@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { backoffDelay, connectFailureReason, createLoginBudget } from '../../../src/oscar/session.js';
-import { ManualTimers } from '../../fake/oscar-client.js';
+import { decodeTlvs, tlvStr, tlvU8 } from 'open-oscar-client-kit/wire';
+import { afterEach, describe, expect, it } from 'vitest';
+import { OscarRoomError, OscarSendError, createLoginBudget } from '../../../src/oscar/index.js';
+import { OscarSessionImpl, backoffDelay, connectFailureReason } from '../../../src/oscar/session.js';
+import { ManualTimers, makeSession, stopAllSessions, waitFor } from '../../fake/oscar-client.js';
+import { FakeOscarServer } from '../../fake/oscar-server.js';
 
 describe('connectFailureReason', () => {
   it('names TLS failures, unroutable redirects and plain network errors', () => {
@@ -55,5 +58,57 @@ describe('createLoginBudget', () => {
     void budget.take().then(() => (granted = true));
     await timers.advance(0);
     expect(granted).toBe(true);
+  });
+});
+
+describe('the hooks rooms are wired to', () => {
+  it('has the service request and the channel 2 source', () => {
+    expect(typeof OscarSessionImpl.prototype.resolveService).toBe('function');
+    expect(typeof OscarSessionImpl.prototype.onChannel2).toBe('function');
+  });
+});
+
+describe('what the session takes from the client kit', () => {
+  let server: FakeOscarServer | undefined;
+
+  afterEach(async () => {
+    await stopAllSessions();
+    await server?.stop();
+    server = undefined;
+  });
+
+  async function signOn() {
+    server = await FakeOscarServer.start();
+    server.addUser('botone', 'botpass1');
+    const h = makeSession(server);
+    h.session.start();
+    await h.online();
+    return { server, h };
+  }
+
+  const logins = (s: FakeOscarServer) =>
+    s.snacsFrom('botone').filter((snac) => snac.conn === 'auth' && snac.family === 0x17 && snac.subtype === 0x02);
+
+  it('logs in with the plugin client ID and the single-session flag', async () => {
+    const { server: s } = await signOn();
+    const tlvs = decodeTlvs(logins(s)[0]?.body ?? new Uint8Array());
+    expect(tlvStr(tlvs, 0x0003)).toBe('openclaw-oscar');
+    expect(tlvU8(tlvs, 0x004a)).toBe(0x03);
+  });
+
+  it('the password probe sends the same client ID and flag', async () => {
+    const { server: s, h } = await signOn();
+    expect(await h.session.probePasswordCheck()).toBe('checks');
+    await waitFor(() => logins(s).length === 2, 'the probe login');
+    const tlvs = decodeTlvs(logins(s)[1]?.body ?? new Uint8Array());
+    expect(tlvs.map((t) => t.tag)).toEqual([0x01, 0x25, 0x03, 0x4a]);
+    expect(tlvStr(tlvs, 0x0003)).toBe('openclaw-oscar');
+    expect(tlvU8(tlvs, 0x004a)).toBe(0x03);
+  });
+
+  it('shares its error classes with the client kit', async () => {
+    const wire = await import('open-oscar-client-kit/wire');
+    expect(OscarSendError).toBe(wire.OscarSendError);
+    expect(OscarRoomError).toBe(wire.OscarRoomError);
   });
 });

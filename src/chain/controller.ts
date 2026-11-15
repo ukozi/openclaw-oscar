@@ -2,7 +2,7 @@ import type { RoomProfile, RootPolicy } from '../config.js';
 import { copy } from '../copy.js';
 import { normalizeName } from '../names.js';
 import type { RoomRef } from '../names.js';
-import { guardRoll, toAsciiEntities, toWireHtml } from '../oscar/text.js';
+import { guardRoll, toAsciiEntities, toWireHtml } from '../oscar/index.js';
 import type { ImEvent, Logger, RateEvent, RoomMessageEvent, RoomRosterEvent, SendPriority, SendReceipt } from '../oscar/types.js';
 import { neutralizeDirectives, roleOf } from '../policy.js';
 import type { OriginClass, TurnOrigin } from '../policy.js';

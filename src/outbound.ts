@@ -6,7 +6,7 @@ import { ROOM_CHUNK_MAX, defaultAccountId, readPolicy, resolveAccount } from './
 import { formatTarget, normalizeName, parseTarget } from './names.js';
 import type { RoomRef, Target } from './names.js';
 import type { SendPriority, SendReceipt } from './oscar/index.js';
-import { guardRoll, htmlToText, toAsciiEntities, toWireHtml } from './oscar/text.js';
+import { guardRoll, htmlToText, toAsciiEntities, toWireHtml } from './oscar/index.js';
 import { outboundProblem, roleOf } from './policy.js';
 import { getRuntime, joinedRooms, liveConfig, roomKey } from './runtime.js';
 import type { AccountRuntime } from './runtime.js';

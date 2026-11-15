@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { strongHash } from '../../src/oscar/auth.js';
-import { toHex } from '../../src/oscar/bytes.js';
-import { decodeTlvs, findTlv } from '../../src/oscar/tlv.js';
+import { decodeTlvs, findTlv, strongHash, toHex } from 'open-oscar-client-kit/wire';
 import { checkLogin, checkPasswordEnforced } from '../../src/oscar/index.js';
 import { captureLog, makeSession, stopAllSessions } from '../fake/oscar-client.js';
 import { FakeOscarServer } from '../fake/oscar-server.js';

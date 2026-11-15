@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
 
-import { toAsciiEntities, toWireHtml } from '../../src/oscar/text.js';
+import { toAsciiEntities, toWireHtml } from 'open-oscar-client-kit/wire';
 import { ROOM_WIRE_MAX, sendRoomHtml, sendRoomLine, splitWireHtml } from '../../src/outbound.js';
 import { applyRoomReady, clearRuntime, setRuntime } from '../../src/runtime.js';
 import { KEY, ROOM, fakeSession, makeRt } from './rooms-fixtures.js';

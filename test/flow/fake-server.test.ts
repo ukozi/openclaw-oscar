@@ -1,9 +1,18 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { encodeImFragments } from '../../src/oscar/bos.js';
-import { ByteWriter, toHex } from '../../src/oscar/bytes.js';
-import { encodeFlap } from '../../src/oscar/flap.js';
-import { decodeSnacError } from '../../src/oscar/snac.js';
-import { decodeTlvs, encodeTlvs, findTlv, tlv, tlvStr, tlvU16, tlvU8 } from '../../src/oscar/tlv.js';
+import {
+  ByteWriter,
+  decodeSnacError,
+  decodeTlvs,
+  encodeFlap,
+  encodeTlvs,
+  findTlv,
+  tlv,
+  tlvStr,
+  tlvU16,
+  tlvU8,
+  toHex,
+} from 'open-oscar-client-kit/wire';
 import { RawClient } from '../fake/oscar-client.js';
 import { FakeOscarServer } from '../fake/oscar-server.js';
 import type { FakeGeneration } from '../fake/oscar-server.js';

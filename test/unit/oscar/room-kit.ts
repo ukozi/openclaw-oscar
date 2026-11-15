@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { LinkClose, Logger, SnacIn, SnacLink } from '../../../src/oscar/types.js';
-import type { RoomPacer, RoomRateStatus } from '../../../src/oscar/chatroom.js';
+import type { RoomPacer, RoomRateStatus } from 'open-oscar-client-kit/wire';
 
 type VectorFile = { source: string; vectors: Record<string, { struct: string; hex: string }> };
 const vectorFile = JSON.parse(

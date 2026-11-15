@@ -1,6 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { decodeRoomMessage } from '../../src/oscar/chatroom.js';
-import { str8 } from '../../src/oscar/chatnav.js';
 import {
   CAP_CHAT,
   CHATNAV_CREATE_ROOM,
@@ -50,10 +48,17 @@ import {
   SERVICE_TLV_ROOM_INFO,
   SERVICE_TLV_SSL_STATE,
   SERVICE_TLV_USE_SSL,
-} from '../../src/oscar/constants.js';
-import { encodeUserInfo } from '../../src/oscar/snac.js';
-import { normalizeScreenName } from '../../src/oscar/text.js';
-import { decodeTlvBlock, decodeTlvs, encodeTlvBlock, encodeTlvs, findTlv, type Tlv } from '../../src/oscar/tlv.js';
+  decodeRoomMessage,
+  decodeTlvBlock,
+  decodeTlvs,
+  encodeTlvBlock,
+  encodeTlvs,
+  encodeUserInfo,
+  findTlv,
+  normalizeScreenName,
+  str8,
+} from 'open-oscar-client-kit/wire';
+import type { Tlv } from 'open-oscar-client-kit/wire';
 import type { RoomRef } from '../../src/oscar/types.js';
 import type { FakeGeneration } from './oscar-server.js';
 
@@ -152,7 +157,7 @@ const opensTag = (html: string, at: number): boolean => html[at] === '<' && /[a-
 // and <!...> declarations are skipped, the first run of anything else is the text token (a run of
 // spaces counts, a '<' that opens no tag is text), CR and CRLF become LF, and Text() decodes entities:
 // numeric ones with or without the semicolon, named ones from the HTML table (the few a chat line can
-// hold are listed here). Written apart from guardRoll in src/oscar/text.ts on purpose, so the fake
+// hold are listed here). Written apart from guardRoll on purpose, so the fake
 // can catch a fault in the guard.
 export function firstTextToken(html: string): string {
   let at = 0;

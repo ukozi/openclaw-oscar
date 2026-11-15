@@ -4,7 +4,7 @@ import { listAccountIds, readPolicy, resolveAccount } from '../config.js';
 import { addImControlHandler } from '../inbound/im.js';
 import { roomSink, setRoomBrain } from '../inbound/room.js';
 import { decodePeerId, normalizeName } from '../names.js';
-import { toWireHtml } from '../oscar/text.js';
+import { toWireHtml } from '../oscar/index.js';
 import type { Logger } from '../oscar/types.js';
 import { sendRoomLine, setOutboundTextFilter } from '../outbound.js';
 import { handoffToolPolicy, roleOf } from '../policy.js';

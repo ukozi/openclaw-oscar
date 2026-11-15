@@ -6,7 +6,7 @@ import type { ChainConfig, RootPolicy } from '../../src/config.js';
 import { normalizeName } from '../../src/names.js';
 import { createOscarSession } from '../../src/oscar/session.js';
 import type { OscarSession } from '../../src/oscar/session.js';
-import { toAsciiEntities, toWireHtml } from '../../src/oscar/text.js';
+import { toAsciiEntities, toWireHtml } from 'open-oscar-client-kit/wire';
 import { handoffToolPolicy } from '../../src/policy.js';
 import type { ToolPolicy } from '../../src/policy.js';
 import type { RoomState } from '../../src/runtime.js';

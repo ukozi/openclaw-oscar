@@ -1,6 +1,5 @@
-import { joinTooLong, requestService, resolveRoom, roomCookie, roomKey, type NavQuery, type ServiceResolver } from './chatnav.js';
-import { ChatRoom, type RoomPacer, type RoomTimers } from './chatroom.js';
 import {
+  ChatRoom,
   FAMILY_CHAT,
   FAMILY_CHATNAV,
   ROOM_MISSING_RETRY_MS,
@@ -8,7 +7,14 @@ import {
   ROOM_REJOIN_CAP_MS,
   ROOM_REJOIN_STABLE_MS,
   ROOM_SESSION_MAX_FAILURES,
-} from './constants.js';
+  htmlToText,
+  joinTooLong,
+  requestService,
+  resolveRoom,
+  roomCookie,
+  roomKey,
+} from 'open-oscar-client-kit/wire';
+import type { NavQuery, RoomPacer, RoomTimers, ServiceResolver } from 'open-oscar-client-kit/wire';
 import {
   OscarRoomError,
   OscarSendError,
@@ -209,7 +215,7 @@ export class RoomManager {
     this.live.set(key, { chat, joinedAt: this.host.now() });
     chat.on('join', (e) => this.host.emit('roomJoin', { room, ...e }));
     chat.on('leave', (e) => this.host.emit('roomLeave', { room, ...e }));
-    chat.on('message', (e) => this.host.emit('roomMessage', { room, ...e }));
+    chat.on('message', ({ html, ...rest }) => this.host.emit('roomMessage', { room, ...rest, text: htmlToText(html) }));
     chat.on('rate', (status) => this.host.emit('rate', { scope: room, status }));
     chat.on('closed', () => this.dropped(key, entry, chat));
     this.host.emit('roomReady', { room, occupants });

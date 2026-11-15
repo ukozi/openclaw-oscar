@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
 vi.mock('openclaw/plugin-sdk/channel-outbound', async () => (await import('../fake/openclaw.js')).channelOutbound);
 
-import { toWireHtml } from '../../src/oscar/text.js';
+import { toWireHtml } from 'open-oscar-client-kit/wire';
 import { checkTarget, outboundBase, sendAdapterText, sendAutoReply, sendMarkdown, sendWire, setOutboundTextFilter, typingFor, withPriority } from '../../src/outbound.js';
 import type { OutboundMeta } from '../../src/outbound.js';
 import { getRuntime, resetRuntimeForTests, setRuntime } from '../../src/runtime.js';

@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { makeSession, stopAllSessions } from '../fake/oscar-client.js';
 import { FakeOscarServer } from '../fake/oscar-server.js';
 
-vi.mock('../../src/oscar/auth.js', async (original) => ({
-  ...(await original<typeof import('../../src/oscar/auth.js')>()),
+vi.mock('open-oscar-client-kit/wire', async (original) => ({
+  ...(await original<typeof import('open-oscar-client-kit/wire')>()),
   md5Available: () => false,
 }));
 

@@ -10,7 +10,7 @@ vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake
 import { dispatchImTurn } from '../../src/inbound/turn.js';
 import type { ImTurn, TurnDeps } from '../../src/inbound/turn.js';
 import type { ContactRingEntry } from '../../src/notice.js';
-import { toWireHtml } from '../../src/oscar/text.js';
+import { toWireHtml } from 'open-oscar-client-kit/wire';
 import { setOutboundTextFilter } from '../../src/outbound.js';
 import { getRuntime, resetRuntimeForTests, setRuntime } from '../../src/runtime.js';
 import { conversationRuntime, replyDispatchRuntime, sdk } from '../fake/openclaw.js';

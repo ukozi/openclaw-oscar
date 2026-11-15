@@ -4,7 +4,7 @@ import type { RootPolicy } from '../../../src/config.js';
 import { clearAloneTimers, handleInvite, watchAlone } from '../../../src/inbound/invite.js';
 import type { RoomRef } from '../../../src/names.js';
 import type { InviteEvent } from '../../../src/oscar/index.js';
-import { toWireHtml } from '../../../src/oscar/text.js';
+import { toWireHtml } from 'open-oscar-client-kit/wire';
 import { applyRoomClosed, applyRoomJoin, applyRoomLeave, applyRoomReady, roomsExt } from '../../../src/runtime.js';
 import { ROOM, fakeSession, flush, makeRt, manualTimers, policyFixture, silentLog } from '../rooms-fixtures.js';
 

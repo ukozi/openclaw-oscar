@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { strongHash } from '../../src/oscar/auth.js';
+import { ByteReader, decodeTlvs, findTlv, hasTlv, openConnection, strongHash, tlvStr, tlvU8, toHex } from 'open-oscar-client-kit/wire';
 import { BosClient } from '../../src/oscar/bos.js';
-import { ByteReader, toHex } from '../../src/oscar/bytes.js';
-import { openConnection } from '../../src/oscar/connection.js';
-import { decodeTlvs, findTlv, hasTlv, tlvStr, tlvU8 } from '../../src/oscar/tlv.js';
 import { ManualTimers, RawClient, captureLog, makeSession, settle, stopAllSessions, waitFor } from '../fake/oscar-client.js';
 import { FakeOscarServer } from '../fake/oscar-server.js';
 import type { FakeGeneration } from '../fake/oscar-server.js';

@@ -1,9 +1,4 @@
-import { bucpLogin, md5Available, probeLogin, strongHash } from './auth.js';
-import type { LoginResult } from './auth.js';
-import { BosClient, ServiceRefusedError, parseInvite } from './bos.js';
-import type { ServiceRedirect } from './bos.js';
-import { RedirectRefusedError, decideRedirect, isTlsError, isUnroutableHost, openConnection } from './connection.js';
-import type { CloseInfo, OscarConnection, RedirectDecision } from './connection.js';
+import { randomBytes } from 'node:crypto';
 import {
   BACKOFF_BASE_MS,
   BACKOFF_CAP_MS,
@@ -11,25 +6,35 @@ import {
   BACKOFF_FLOOR_AFTER_FAILURES,
   BACKOFF_FLOOR_MS,
   BACKOFF_JITTER,
-  LOGIN_BUDGET_PER_MINUTE,
-  LOGIN_STAGGER_MS,
+  MULTI_CONN_SINGLE,
   PASSWORD_CHECK_CACHE_MS,
+  REQUEST_TIMEOUT_MS,
+  RedirectRefusedError,
   SERVER_DISCONNECT_BACKOFF_MS,
   SERVICE_COOKIE_TTL_MS,
   SIGNOFF_TLV_DISCONNECT_REASON,
   STABLE_ONLINE_MS,
   TYPING_KEEPALIVE_MS,
   TYPING_MAX_MS,
-} from './constants.js';
-import { createRoomPacer } from './rate.js';
+  bucpLogin,
+  createRoomPacer,
+  decideRedirect,
+  hasTlv,
+  isTlsError,
+  isUnroutableHost,
+  md5Available,
+  normalizeScreenName,
+  openConnection,
+  strongHash,
+} from 'open-oscar-client-kit/wire';
+import type { CloseInfo, LoginResult, OscarConnection, RedirectDecision } from 'open-oscar-client-kit/wire';
+import { BosClient, ServiceRefusedError, parseInvite } from './bos.js';
+import type { ServiceRedirect } from './bos.js';
 import { RoomManager } from './rooms.js';
-import { hasTlv } from './tlv.js';
-import { normalizeScreenName } from './text.js';
 import { OscarSendError } from './types.js';
 import type {
   InviteEvent,
   Logger,
-  LoginBudget,
   OscarEvents,
   OscarSession,
   OscarSessionOptions,
@@ -66,43 +71,21 @@ export function backoffDelay(failures: number, random: number): number {
   return Math.round(floored * (1 + BACKOFF_JITTER * random));
 }
 
-// The server allows 10 auth connections per minute per source address, shared by every account behind it.
-export function createLoginBudget(
-  opts: { perMinute?: number; staggerMs?: number; now?: () => number; timers?: TimerApi } = {},
-): LoginBudget {
-  const perMinute = opts.perMinute ?? LOGIN_BUDGET_PER_MINUTE;
-  const staggerMs = opts.staggerMs ?? LOGIN_STAGGER_MS;
-  const now = opts.now ?? Date.now;
-  const timers = opts.timers ?? { setTimeout, clearTimeout };
-  const grants: number[] = [];
-  const waiting: (() => void)[] = [];
-  let timer: Timer | null = null;
+// Short on purpose: screen name plus client id must stay far under the ~200 bytes the login cookie can hold.
+export const CLIENT_ID = 'openclaw-oscar';
+const LOGIN = { clientId: CLIENT_ID, multiConn: MULTI_CONN_SINGLE };
 
-  const pump = (): void => {
-    timer = null;
-    while (waiting.length > 0) {
-      const t = now();
-      while (grants.length > 0 && (grants[0] ?? 0) <= t - 60_000) grants.shift();
-      const last = grants[grants.length - 1];
-      let wait = last === undefined ? 0 : last + staggerMs - t;
-      if (grants.length >= perMinute) wait = Math.max(wait, (grants[0] ?? 0) + 60_000 - t);
-      if (wait > 0) {
-        timer = timers.setTimeout(pump, wait);
-        return;
-      }
-      grants.push(t);
-      waiting.shift()?.();
-    }
-  };
-
-  return {
-    take() {
-      return new Promise<void>((resolve) => {
-        waiting.push(resolve);
-        if (timer === null) pump();
-      });
-    },
-  };
+// A BUCP success only mints a cookie; no session exists until the cookie is presented, so
+// the probe drops it unread and cannot displace the live sign-on.
+export async function probeLogin(
+  conn: OscarConnection,
+  timers: TimerApi,
+  screenName: string,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<PasswordCheck> {
+  const result = await bucpLogin(conn, timers, screenName, 0, () => new Uint8Array(randomBytes(16)), LOGIN, timeoutMs);
+  if (result.ok) return 'does-not-check';
+  return result.reason === 'bad-password' || result.reason === 'unknown-name' ? 'checks' : 'unknown';
 }
 
 type Job = { run: () => Promise<SendReceipt>; resolve: (r: SendReceipt) => void; reject: (e: Error) => void };
@@ -285,8 +268,7 @@ export class OscarSessionImpl implements OscarSession {
       return;
     }
     // Local refusal, not a server rule: on the BUCP path the screen name is read with
-    // list.String() (foodgroup/auth.go:234) and a short name draws an ordinary 0x0001. See the
-    // note over the same guard in auth.ts for where the server's length panic actually lives.
+    // list.String() (foodgroup/auth.go:234) and a short name draws an ordinary 0x0001.
     if (Buffer.byteLength(this.opts.screenName, 'utf8') < 2) {
       this.fail(gen, 'unknown-name', 'screen name too short');
       return;
@@ -301,6 +283,7 @@ export class OscarSessionImpl implements OscarSession {
       if (!live()) return auth.destroy();
       const login = await bucpLogin(auth, this.timers, this.opts.screenName, this.opts.port, async (key) =>
         strongHash(await this.opts.getPassword(), key),
+        LOGIN,
       );
       if (!live()) return;
       if (!login.ok) {
@@ -574,7 +557,7 @@ export async function checkLogin(opts: LoginCheckOptions & { password: string })
   let result: LoginResult;
   try {
     const conn = await openForCheck(opts);
-    result = await bucpLogin(conn, timers, opts.screenName, opts.port, (key) => strongHash(opts.password, key), opts.timeoutMs);
+    result = await bucpLogin(conn, timers, opts.screenName, opts.port, (key) => strongHash(opts.password, key), LOGIN, opts.timeoutMs);
   } catch (error) {
     return { ok: false, reason: connectFailureReason(error, false), detail: (error as Error).message };
   }

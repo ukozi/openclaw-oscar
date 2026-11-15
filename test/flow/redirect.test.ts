@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { ByteReader } from '../../src/oscar/bytes.js';
-import { RedirectRefusedError } from '../../src/oscar/connection.js';
-import { decodeTlvs, hasTlv } from '../../src/oscar/tlv.js';
+import { ByteReader, RedirectRefusedError, decodeTlvs, hasTlv } from 'open-oscar-client-kit/wire';
 import { makeSession, stopAllSessions, waitFor } from '../fake/oscar-client.js';
 import type { Harness } from '../fake/oscar-client.js';
 import { FakeOscarServer } from '../fake/oscar-server.js';

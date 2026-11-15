@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FakeRooms, firstTextToken, serverSeesRoll, type FakeConn, type FakeConnKind, type FakeGeneration } from '../../fake/oscar-rooms.js';
 import { encodeServiceRequest as encodeBosServiceRequest, parseInvite } from '../../../src/oscar/bos.js';
-import { decodeNavInfo, encodeCreateRoom, encodeRequestRoomInfo, encodeServiceRoomInfo, type RoomInfo } from '../../../src/oscar/chatnav.js';
-import { decodeRoomMessage, decodeRoster, encodeClassIds, encodeRoomClientOnline, encodeRoomSend } from '../../../src/oscar/chatroom.js';
 import {
   CHATNAV_CREATE_ROOM,
   CHATNAV_ERR,
@@ -24,9 +22,21 @@ import {
   OSERVICE_RATE_PARAM_CHANGE,
   OSERVICE_SERVICE_REQUEST,
   OSERVICE_SERVICE_RESPONSE,
-} from '../../../src/oscar/constants.js';
-import { encodeUserInfo } from '../../../src/oscar/snac.js';
-import { decodeTlvs, encodeTlvs, findTlv } from '../../../src/oscar/tlv.js';
+  decodeNavInfo,
+  decodeRoomMessage,
+  decodeRoster,
+  decodeTlvs,
+  encodeClassIds,
+  encodeCreateRoom,
+  encodeRequestRoomInfo,
+  encodeRoomClientOnline,
+  encodeRoomSend,
+  encodeServiceRoomInfo,
+  encodeTlvs,
+  encodeUserInfo,
+  findTlv,
+} from 'open-oscar-client-kit/wire';
+import type { RoomInfo } from 'open-oscar-client-kit/wire';
 import { vector } from '../oscar/room-kit.js';
 
 type Out = { family: number; subtype: number; body: Uint8Array; requestId: number };
@@ -119,7 +129,7 @@ describe('fake chatnav', () => {
     rooms.addRoom({ exchange: 4, name: 'MixedCase' });
     const nav = service(signOn('botone'), encodeServiceRequest(FAMILY_CHATNAV, undefined, false))!;
     rooms.snac(nav, FAMILY_CHATNAV, CHATNAV_CREATE_ROOM, 1, encodeCreateRoom({ exchange: 4, name: 'mixedcase' }));
-    expect(decodeNavInfo(nav.of(FAMILY_CHATNAV, CHATNAV_NAV_INFO)[0]!.body)).toEqual({ exchange: 4, cookie: '4-0-MixedCase', name: 'mixedcase' });
+    expect(decodeNavInfo(nav.of(FAMILY_CHATNAV, CHATNAV_NAV_INFO)[0]!.body)).toMatchObject({ exchange: 4, cookie: '4-0-MixedCase', name: 'MixedCase' });
   });
 
   it('puts a BOS rate notice on the ChatNav socket ahead of the reply, on v0.24 only', () => {

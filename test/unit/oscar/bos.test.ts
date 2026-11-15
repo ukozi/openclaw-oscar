@@ -9,15 +9,27 @@ import {
   encodeImFragments,
   encodeImToHost,
   encodeNameList,
+  ServiceRefusedError,
   encodeServiceRequest,
   encodeTyping,
   newCookie,
 } from '../../../src/oscar/bos.js';
-import { fromHex, toHex } from '../../../src/oscar/bytes.js';
-import { decodeRateParamChange, decodeRateParamsReply } from '../../../src/oscar/rate.js';
-import { decodeUserInfo, userFlags } from '../../../src/oscar/snac.js';
-import { fromWireText } from '../../../src/oscar/text.js';
-import { findTlv, hasTlv, tlvU32 } from '../../../src/oscar/tlv.js';
+import {
+  RedirectRefusedError,
+  decodeRateParamChange,
+  decodeRateParamsReply,
+  decodeUserInfo,
+  encodeServiceRoomInfo,
+  findTlv,
+  fromHex,
+  fromWireText,
+  hasTlv,
+  requestService,
+  tlvU32,
+  toHex,
+  userFlags,
+} from 'open-oscar-client-kit/wire';
+import { vectorHex } from './room-kit.js';
 import { bytesOf, loadVectors, vector } from './vectors.js';
 
 const entropy = vi.hoisted(() => ({ queue: [] as Uint8Array[] }));
@@ -52,6 +64,24 @@ describe('what the client sends', () => {
 
   it('carries room info ahead of TLV 0x8C in a service request', () => {
     expect(toHex(encodeServiceRequest(0x000e, { useSsl: true, roomInfo: fromHex('0004') }))).toBe('000e' + '000100020004' + '008c0000');
+  });
+
+  it("gives the server's own bytes for a room service request", () => {
+    const roomInfo = encodeServiceRoomInfo({ exchange: 4, cookie: '4-0-testroom', name: 'testroom' });
+    expect(toHex(encodeServiceRequest(0x000e, { useSsl: false, roomInfo }))).toBe(vectorHex('serviceRequestChat'));
+    expect(toHex(encodeServiceRequest(0x000e, { useSsl: true, roomInfo }))).toBe(vectorHex('serviceRequestChatTls'));
+    expect(toHex(encodeServiceRequest(0x000d, { useSsl: false }))).toBe(vectorHex('serviceRequestChatNav'));
+  });
+
+  it('a refused service request reaches a room join as unavailable', async () => {
+    for (const refusal of [new ServiceRefusedError(0x1c), new RedirectRefusedError('127.0.0.1:5190')]) {
+      const join = requestService(async () => Promise.reject(refusal), {
+        foodGroup: 0x000e,
+        room: { exchange: 4, cookie: '4-0-testroom', name: 'testroom' },
+        screenName: 'botone',
+      });
+      await expect(join).rejects.toMatchObject({ code: 'unavailable', message: refusal.message });
+    }
   });
 
   it('marks an automatic reply with the auto-response TLV', () => {

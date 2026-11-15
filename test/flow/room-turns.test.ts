@@ -8,7 +8,7 @@ import type { AwarenessPayload } from '../../src/awareness.js';
 import { copy } from '../../src/copy.js';
 import { roomIssues } from '../../src/inbound/issues.js';
 import type { RoomRef } from '../../src/names.js';
-import { toWireHtml } from '../../src/oscar/text.js';
+import { toWireHtml } from 'open-oscar-client-kit/wire';
 import { sendRoomHtml, sendRoomLine } from '../../src/outbound.js';
 import { roomKey, roomsExt } from '../../src/runtime.js';
 import { startRoomFlow } from './rooms-harness.js';

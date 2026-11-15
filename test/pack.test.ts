@@ -32,7 +32,7 @@ describe('file filter', () => {
   it.each<[string, boolean]>([
     ['dist/index.js', true],
     ['dist/index.d.ts', true],
-    ['dist/oscar/flap.js', true],
+    ['dist/oscar/session.js', true],
     ['openclaw.plugin.json', true],
     ['assets/icon.png', true],
     ['package.json', true],
@@ -40,7 +40,7 @@ describe('file filter', () => {
     ['LICENSE', true],
     ['dist/index.js.map', false],
     ['dist/index.d.ts.map', false],
-    ['dist/oscar/flap.test.js', false],
+    ['dist/oscar/session.test.js', false],
     ['dist/fake/oscar-server.js', false],
     ['src/index.ts', false],
     ['test/pack.test.ts', false],
