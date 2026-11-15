@@ -45,7 +45,7 @@ describe('package.json', () => {
   });
 
   it('pins every dependency to an exact version', () => {
-    expect(Object.keys(pkg.dependencies)).toEqual(['zod']);
+    expect(Object.keys(pkg.dependencies)).toEqual(['open-oscar-client-kit', 'zod']);
     expect(Object.keys(pkg.devDependencies).sort()).toEqual([
       '@openclaw/plugin-inspector',
       '@types/node',
