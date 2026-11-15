@@ -54,9 +54,11 @@ describe('login', () => {
     expect(await login(options(s, over))).toMatchObject(want);
   });
 
-  it('sends nothing for a one-letter name', async () => {
+  it('opens no connection for a one-letter name', async () => {
     const s = await boot();
-    await login(options(s, { screenName: 'a' }));
+    const tracked: OscarConnection[] = [];
+    await login(options(s, { screenName: 'a', track: (conn) => tracked.push(conn) }));
+    expect(tracked).toEqual([]);
     expect(s.bucpLogins).toEqual([]);
     expect(s.snacsFrom('a')).toEqual([]);
   });
