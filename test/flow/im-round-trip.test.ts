@@ -11,6 +11,7 @@ vi.mock('openclaw/plugin-sdk/channel-ingress-runtime', async () => (await import
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
 vi.mock('openclaw/plugin-sdk/status-helpers', async () => (await import('../fake/openclaw.js')).statusHelpers);
 
+import { imTexts } from '../fake/kit.js';
 import { sdk } from '../fake/openclaw.js';
 import { startFlow, waitFor } from './helpers.js';
 import type { Flow } from './helpers.js';
@@ -25,10 +26,10 @@ describe('approved IM round trip', () => {
     const bob = flow.peer('bob');
     const alice = flow.peer('alice');
     bob.sendIm('botone', 'hello there');
-    await waitFor(() => bob.ims().length === 1, 8000, 'the reply to bob');
-    expect(bob.ims()[0]).toMatchObject({ from: 'botone', text: 'you said: hello there' });
+    await waitFor(() => imTexts(bob).length === 1, 8000, 'the reply to bob');
+    expect(imTexts(bob)[0]).toMatchObject({ from: 'botone', text: 'you said: hello there' });
     alice.sendIm('botone', '/status');
-    await waitFor(() => alice.ims().length === 1, 8000, 'the reply to alice');
+    await waitFor(() => imTexts(alice).length === 1, 8000, 'the reply to alice');
     const byFrom = Object.fromEntries(sdk.inbound.map((r) => [String(r.ctx.SenderId), r.ctx]));
     expect(byFrom.bob).toMatchObject({ CommandAuthorized: false, ChatType: 'direct', SessionKey: 'agent:main:oscar:group:botone/bob' });
     expect(byFrom.alice).toMatchObject({ CommandAuthorized: true, SessionKey: 'agent:main:oscar:group:botone/alice', OwnerAllowFrom: ['alice'] });
@@ -40,9 +41,9 @@ describe('approved IM round trip', () => {
     const bob = flow.peer('bob');
     bob.sendIm('botone', 'one');
     bob.sendIm('botone', 'café ☃', { charset: 2 });
-    await waitFor(() => bob.ims().length === 1, 8000, 'the reply to the burst');
+    await waitFor(() => imTexts(bob).length === 1, 8000, 'the reply to the burst');
     bob.sendIm('botone', 'three');
-    await waitFor(() => bob.ims().length === 2, 8000, 'the reply to the next message');
+    await waitFor(() => imTexts(bob).length === 2, 8000, 'the reply to the next message');
     expect(sdk.inbound.map((r) => r.ctx.Body)).toEqual(['one\ncafé ☃', 'three']);
   });
 });

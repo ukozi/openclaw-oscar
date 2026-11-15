@@ -1,4 +1,5 @@
 import net from 'node:net';
+import { waitFor } from 'open-oscar-client-kit/testing';
 import {
   ByteReader,
   ByteWriter,
@@ -14,157 +15,11 @@ import {
   tlv,
 } from 'open-oscar-client-kit/wire';
 import type { FlapFrame, Snac, Tlv } from 'open-oscar-client-kit/wire';
-import { OscarSessionImpl } from '../../src/oscar/session.js';
-import type {
-  ImEvent,
-  Logger,
-  OscarEvents,
-  OscarSessionOptions,
-  RateEvent,
-  SessionState,
-  TimerApi,
-} from '../../src/oscar/types.js';
-import type { FakeOscarServer } from './oscar-server.js';
 
-// Manual time outruns real sockets. After each fired timer, give loopback I/O a moment to land.
-export function tick(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 2));
-}
-
-export async function waitFor(cond: () => boolean, what = 'condition', timeoutMs = 3000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!cond()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-}
-
-export class ManualTimers {
-  private t = 1_800_000_000_000;
-  private nextId = 1;
-  private readonly queue = new Map<number, { at: number; fn: () => void }>();
-
-  readonly api: TimerApi = {
-    setTimeout: ((fn: () => void, ms?: number) => {
-      const id = this.nextId++;
-      this.queue.set(id, { at: this.t + (ms ?? 0), fn });
-      return id;
-    }) as unknown as typeof setTimeout,
-    clearTimeout: ((id?: number) => {
-      if (id !== undefined) this.queue.delete(id);
-    }) as unknown as typeof clearTimeout,
-  };
-
-  now = (): number => this.t;
-
-  pending(): number[] {
-    return [...this.queue.values()].map((e) => e.at - this.t).sort((a, b) => a - b);
-  }
-
-  async advance(ms: number): Promise<void> {
-    const end = this.t + ms;
-    for (;;) {
-      let next: [number, { at: number; fn: () => void }] | undefined;
-      for (const entry of this.queue) {
-        if (entry[1].at <= end && (!next || entry[1].at < next[1].at)) next = entry;
-      }
-      if (!next) break;
-      this.queue.delete(next[0]);
-      this.t = Math.max(this.t, next[1].at);
-      next[1].fn();
-      await tick();
-    }
-    this.t = end;
-    await tick();
-  }
-}
-
-export type LogLine = { level: keyof Logger; msg: string; fields?: Record<string, unknown> | undefined };
-
-export function captureLog(): { log: Logger; lines: LogLine[]; text: () => string } {
-  const lines: LogLine[] = [];
-  const at = (level: keyof Logger) => (msg: string, fields?: Record<string, unknown>) => {
-    lines.push({ level, msg, fields });
-  };
-  return {
-    log: { debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') },
-    lines,
-    text: () =>
-      lines
-        .map((l) => `${l.level} ${l.msg} ${JSON.stringify(l.fields ?? {}, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))}`)
-        .join('\n'),
-  };
-}
-
-export type Harness = {
-  session: OscarSessionImpl;
-  timers: ManualTimers;
-  logs: ReturnType<typeof captureLog>;
-  states: SessionState[];
-  ims: ImEvent[];
-  presence: OscarEvents['presence'][];
-  rates: RateEvent[];
-  online(): Promise<void>;
-  phase(phase: SessionState['phase']): Promise<SessionState>;
-};
-
-const harnesses: Harness[] = [];
-
-export function makeSession(server: FakeOscarServer, over: Partial<OscarSessionOptions> = {}): Harness {
-  const timers = new ManualTimers();
-  const logs = captureLog();
-  const session = new OscarSessionImpl({
-    host: '127.0.0.1',
-    port: server.port,
-    tls: server.caFile !== undefined,
-    caFile: server.caFile,
-    redirect: 'auto',
-    screenName: 'botone',
-    getPassword: async () => 'botpass1',
-    buddies: () => ['alice', 'bob'],
-    log: logs.log,
-    loginBudget: { take: async () => {} },
-    now: timers.now,
-    timers: timers.api,
-    ...over,
-  });
-  const h: Harness = {
-    session,
-    timers,
-    logs,
-    states: [],
-    ims: [],
-    presence: [],
-    rates: [],
-    online: async () => {
-      await h.phase('online');
-    },
-    phase: async (phase) => {
-      await waitFor(() => session.getState().phase === phase, `phase ${phase} (now ${session.getState().phase})`);
-      return session.getState();
-    },
-  };
-  session.on('state', (s) => h.states.push(s));
-  session.on('im', (e) => h.ims.push(e));
-  session.on('presence', (e) => h.presence.push(e));
-  session.on('rate', (e) => h.rates.push(e));
-  harnesses.push(h);
-  return h;
-}
-
-export async function stopAllSessions(): Promise<void> {
-  for (const h of harnesses.splice(0)) await h.session.stop();
-}
-
-export function imSends(server: FakeOscarServer, name: string): { cookie: bigint; to: string; tlvs: Tlv[] }[] {
-  return server
-    .snacsFrom(name)
-    .filter((s) => s.conn === 'bos' && s.family === 4 && s.subtype === 6)
-    .map((s) => {
-      const r = new ByteReader(s.body);
-      return { cookie: r.u64(), to: (r.u16(), r.str8()), tlvs: decodeTlvs(r.rest()) };
-    });
-}
+export { ManualTimers, captureLog, settle, tick, waitFor } from 'open-oscar-client-kit/testing';
+export type { LogLine } from 'open-oscar-client-kit/testing';
+export { imSends, makeSession, stopAllSessions } from './session-harness.js';
+export type { Harness } from './session-harness.js';
 
 export class RawClient {
   readonly frames: FlapFrame[] = [];
@@ -249,10 +104,4 @@ export class RawClient {
     bos.snac(1, 0x0e, 3);
     for (;;) if ((await bos.nextSnac()).subtype === 0x0f) return bos;
   }
-}
-
-// Waits on loopback I/O, not the clock: what a session wrote before the call has reached the fake when
-// this resolves. Each round is a connection to the fake and its signon frame back. Plaintext fakes only.
-export async function settle(port: number, rounds = 3): Promise<void> {
-  for (let i = 0; i < rounds; i++) (await RawClient.connect(port)).close();
 }

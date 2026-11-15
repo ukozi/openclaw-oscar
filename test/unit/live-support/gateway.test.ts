@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { copy } from '../../../src/copy.js';
-import { FakeOscarServer } from '../../fake/oscar-server.js';
+import { imTexts, startServer } from '../../fake/kit.js';
 import { gatewayConfig } from '../../live/support/config.js';
 import { bootGateway, type LiveGateway } from '../../live/support/gateway.js';
 import { until } from '../../live/support/wait.js';
@@ -37,12 +38,12 @@ async function boot(s: FakeOscarServer, accounts: Record<string, string>): Promi
 
 describe('gateway driver', () => {
   it('runs the whole plugin: an owner IM becomes one scripted run and one reply', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     const gateway = await boot(server, { botone: 'botonepass' });
     gateway.setAgent(async (turn, agent) => agent.reply(`you said: ${turn.body}`));
     const alice = server.peer('alice');
     alice.sendIm('botone', 'hello there');
-    await until(() => alice.ims().some((m) => m.text.includes('you said: hello there')), { timeoutMs: 15_000, what: 'the scripted reply' });
+    await until(() => imTexts(alice).some((m) => m.text.includes('you said: hello there')), { timeoutMs: 15_000, what: 'the scripted reply' });
 
     const [run] = gateway.runs('botone');
     expect(gateway.runs()).toHaveLength(1);
@@ -54,7 +55,7 @@ describe('gateway driver', () => {
   }, 30_000);
 
   it('gives an approved person the non-owner tool ceiling', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     const gateway = await boot(server, { botone: 'botonepass' });
     const bob = server.peer('bob');
     bob.sendIm('botone', 'hi');
@@ -64,25 +65,25 @@ describe('gateway driver', () => {
   }, 30_000);
 
   it('starts no run for a stranger', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     const gateway = await boot(server, { botone: 'botonepass' });
     const alice = server.peer('alice');
     const mallory = server.peer('mallory');
     mallory.sendIm('botone', 'psst');
     // the owner notice is the last thing the stranger path does, so once it is there the path has run
-    await until(() => alice.ims().some((m) => m.text.includes(copy.noticeIm('mallory'))), { timeoutMs: 15_000, what: 'the owner notice' });
+    await until(() => imTexts(alice).some((m) => m.text.includes(copy.noticeIm('mallory'))), { timeoutMs: 15_000, what: 'the owner notice' });
     expect(gateway.runs()).toEqual([]);
-    expect(mallory.ims()).toEqual([]);
+    expect(imTexts(mallory)).toEqual([]);
   }, 30_000);
 
   it('reads status issues through the snapshot the plugin builds', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     const gateway = await boot(server, { botone: 'botonepass' });
     expect((await gateway.issues('botone')).some((i) => i.includes('home room unset'))).toBe(true);
   }, 30_000);
 
   it('registers the three tools and lets a run call one', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     const gateway = await boot(server, { botone: 'botonepass' });
     expect(gateway.toolNames()).toEqual(['oscar_delegate', 'oscar_room', 'oscar_status']);
     let outcome = { ok: false, text: '' };
@@ -96,7 +97,7 @@ describe('gateway driver', () => {
   }, 30_000);
 
   it('refuses an agent send to an unlisted name', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     const gateway = await boot(server, { botone: 'botonepass' });
     await until(() => server?.snacsFrom('botone').some((s) => s.conn === 'bos' && s.family === 0x01 && s.subtype === 0x02), { timeoutMs: 15_000, what: 'the bot online' });
     expect((await gateway.agentSend('botone', 'mallory', 'hello')).ok).toBe(false);
@@ -104,14 +105,14 @@ describe('gateway driver', () => {
   }, 30_000);
 
   it('keeps two gateways apart', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     const first = await boot(server, { botone: 'botonepass' });
     const second = await boot(server, { bottwo: 'bottwopass' });
     first.setAgent(async (_turn, agent) => agent.reply('from the first'));
     second.setAgent(async (_turn, agent) => agent.reply('from the second'));
     const alice = server.peer('alice');
     alice.sendIm('bottwo', 'which one are you?');
-    await until(() => alice.ims().some((m) => m.text.includes('from the second')), { timeoutMs: 15_000, what: 'the reply from the second gateway' });
+    await until(() => imTexts(alice).some((m) => m.text.includes('from the second')), { timeoutMs: 15_000, what: 'the reply from the second gateway' });
     expect(first.runs()).toEqual([]);
     expect(second.runs().map((r) => r.accountId)).toEqual(['bottwo']);
   }, 30_000);

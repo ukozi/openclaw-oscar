@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { ByteReader, RedirectRefusedError, decodeTlvs, hasTlv } from 'open-oscar-client-kit/wire';
-import { makeSession, stopAllSessions, waitFor } from '../fake/oscar-client.js';
-import type { Harness } from '../fake/oscar-client.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
+import { waitFor } from 'open-oscar-client-kit/testing';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
+import { startServer } from '../fake/kit.js';
+import { makeSession, stopAllSessions } from '../fake/session-harness.js';
+import type { Harness } from '../fake/session-harness.js';
 
 let server: FakeOscarServer;
 
@@ -11,8 +13,8 @@ afterEach(async () => {
   await server.stop();
 });
 
-async function boot(opts: Parameters<typeof FakeOscarServer.start>[0]): Promise<void> {
-  server = await FakeOscarServer.start(opts);
+async function boot(opts: Parameters<typeof startServer>[0]): Promise<void> {
+  server = await startServer(opts);
   server.addUser('botone', 'botpass1', { bot: true });
 }
 
@@ -108,7 +110,7 @@ describe('TLS redirects', () => {
   });
 
   it('follow on v0.24 fails the plaintext answer with reason tls and never dials it', async () => {
-    const plain = await FakeOscarServer.start({});
+    const plain = await startServer({});
     try {
       await boot({ tls: true, generation: 'v0.24', advertisedHost: `127.0.0.1:${plain.port}` });
       const h = makeSession(server, { redirect: 'follow' });
@@ -175,7 +177,7 @@ describe('TLS redirects', () => {
     const h = makeSession(server, { redirect: 'follow' });
     h.session.start();
     await h.online();
-    server.sslHost = false;
+    server.setSslHost(false);
     const error = await h.session.resolveService(0x000d).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(RedirectRefusedError);
     expect(error).toMatchObject({ reason: 'tls' });
@@ -188,7 +190,7 @@ describe('TLS redirects', () => {
     const h = makeSession(server);
     h.session.start();
     await h.online();
-    await expect(h.session.resolveService(0x0010)).rejects.toThrow('service request refused');
+    await expect(h.session.resolveService(0x0018)).rejects.toThrow('service request refused');
     await waitFor(() => serviceRequests().length === 2, 'two requests');
     expect(h.session.getState().phase).toBe('online');
   });

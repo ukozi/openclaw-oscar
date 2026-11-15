@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { decodeTlvs, findTlv, strongHash, toHex } from 'open-oscar-client-kit/wire';
 import { checkLogin, checkPasswordEnforced } from '../../src/oscar/index.js';
-import { captureLog, makeSession, stopAllSessions } from '../fake/oscar-client.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
+import { captureLog } from 'open-oscar-client-kit/testing';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
+import { caFile, startServer } from '../fake/kit.js';
+import { makeSession, stopAllSessions } from '../fake/session-harness.js';
 
 let server: FakeOscarServer;
 
@@ -19,7 +21,7 @@ const logins = (): string[] =>
 
 describe('password-check probe', () => {
   it('runs when asked, with a random hash, and leaves the live session alone', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     const h = makeSession(server);
     h.session.start();
@@ -36,18 +38,18 @@ describe('password-check probe', () => {
   });
 
   it('reports a server that accepts a wrong password and leaves the decision to the caller', async () => {
-    server = await FakeOscarServer.start({ disableAuth: true });
+    server = await startServer({ disableAuth: true });
     server.addUser('botone', 'botpass1');
     const h = makeSession(server);
     h.session.start();
     await h.online();
     expect(await h.session.probePasswordCheck()).toBe('does-not-check');
     expect(h.session.getState().phase).toBe('online');
-    expect(server.sessionOf('botone')).toBeDefined();
+    expect(server.instancesOf('botone')).toBe(1);
   });
 
   it('caches the answer for 24 hours, and overlapping callers share one probe', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     const h = makeSession(server);
     h.session.start();
@@ -62,14 +64,14 @@ describe('password-check probe', () => {
   });
 
   it('never probes before a real login has succeeded, so it cannot create an account', async () => {
-    server = await FakeOscarServer.start({ disableAuth: true });
+    server = await startServer({ disableAuth: true });
     const h = makeSession(server);
     expect(await h.session.probePasswordCheck()).toBe('unknown');
     expect(server.snacsFrom('botone')).toEqual([]);
   });
 
   it('reports unknown when the login limiter answers, and asks again next time', async () => {
-    server = await FakeOscarServer.start({ loginLimit: 1 });
+    server = await startServer({ loginLimit: 1 });
     server.addUser('botone', 'botpass1');
     const h = makeSession(server);
     h.session.start();
@@ -83,7 +85,7 @@ describe('password-check probe', () => {
   });
 
   it('takes a slot from the shared login budget', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     let taken = 0;
     const h = makeSession(server, {
@@ -114,7 +116,7 @@ describe('checkLogin and checkPasswordEnforced, the setup-time checks that stop 
   });
 
   it('accept the right password without touching a live session of the same name', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     const h = makeSession(server);
     h.session.start();
@@ -132,11 +134,12 @@ describe('checkLogin and checkPasswordEnforced, the setup-time checks that stop 
   });
 
   it('report a bad password, an unknown name and a server that is not there', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     expect(await checkLogin({ ...base(), password: 'wrong123' })).toEqual({ ok: false, reason: 'bad-password' });
     expect(await checkLogin({ ...base({ screenName: 'nobody' }), password: 'botpass1' })).toEqual({ ok: false, reason: 'unknown-name' });
     // A UIN with no account comes back as 0x0008 (foodgroup/auth.go:566-574), not 0x0001.
+    server.addUser('123456789', 'x', { loginError: 0x0008 });
     expect(await checkLogin({ ...base({ screenName: '123456789' }), password: 'botpass1' })).toEqual({
       ok: false,
       reason: 'unknown-name',
@@ -147,14 +150,14 @@ describe('checkLogin and checkPasswordEnforced, the setup-time checks that stop 
   });
 
   it('tell a server that checks passwords from one that does not', async () => {
-    server = await FakeOscarServer.start({ disableAuth: true });
+    server = await startServer({ disableAuth: true });
     server.addUser('botone', 'botpass1');
     expect(await checkPasswordEnforced(base())).toBe('does-not-check');
-    expect(server.sessionOf('botone')).toBeUndefined();
+    expect(server.instancesOf('botone')).toBe(0);
   });
 
   it('say what the redirect rule did', async () => {
-    server = await FakeOscarServer.start({ advertisedHost: ':0' });
+    server = await startServer({ advertisedHost: ':0' });
     server.addUser('botone', 'botpass1');
     const unreadable = await checkLogin({ ...base(), password: 'botpass1' });
     expect(unreadable).toMatchObject({ ok: true, bosHost: '127.0.0.1', bosPort: server.port });
@@ -164,12 +167,12 @@ describe('checkLogin and checkPasswordEnforced, the setup-time checks that stop 
   });
 
   it('flag a TLS session that the server would send to plaintext', async () => {
-    server = await FakeOscarServer.start({ tls: true, generation: 'v0.24', advertisedHost: 'bos.example.net:5190' });
+    server = await startServer({ tls: true, generation: 'v0.24', advertisedHost: 'bos.example.net:5190' });
     server.addUser('botone', 'botpass1');
-    const result = await checkLogin({ ...base({ tls: true, caFile: server.caFile }), password: 'botpass1' });
+    const result = await checkLogin({ ...base({ tls: true, caFile: caFile() }), password: 'botpass1' });
     expect(result).toMatchObject({ ok: true, bosHost: '127.0.0.1', bosPort: server.port });
     expect(result.ok && result.redirectProblem).toContain('without TLS');
-    const followed = await checkLogin({ ...base({ tls: true, caFile: server.caFile, redirect: 'follow' }), password: 'botpass1' });
+    const followed = await checkLogin({ ...base({ tls: true, caFile: caFile(), redirect: 'follow' }), password: 'botpass1' });
     expect(followed).toMatchObject({ ok: false, reason: 'tls' });
     expect(!followed.ok && followed.detail).toContain('bos.example.net:5190');
   });

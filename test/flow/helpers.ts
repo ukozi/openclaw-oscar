@@ -4,8 +4,8 @@ import { IM_TIMING } from '../../src/inbound/im.js';
 import { NOTICE_TIMING } from '../../src/notice.js';
 import { getRuntime, resetRuntimeForTests, setHost } from '../../src/runtime.js';
 import { sdk } from '../fake/openclaw.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
-import type { FakePeer } from '../fake/oscar-server.js';
+import type { FakeOscarServer, FakePeer } from 'open-oscar-client-kit/testing';
+import { startServer } from '../fake/kit.js';
 
 const ICBM = 0x04;
 const ICBM_SEND = 0x06;
@@ -64,7 +64,7 @@ export async function startFlow(opts: { sec?: Record<string, unknown>; host?: Re
   Object.assign(IM_TIMING, { debounceMs: 30, replyCooldownMs: 0, replaySettleMs: 200 });
   NOTICE_TIMING.windowMs = 3600_000;
 
-  const server = await FakeOscarServer.start(opts.server ?? {});
+  const server = await startServer(opts.server ?? {});
   server.addUser('botone', 'hunter22');
   for (const name of ['alice', 'bob', 'mallory', 'trudy', 'victor']) server.addUser(name, `pw-${name}`);
 

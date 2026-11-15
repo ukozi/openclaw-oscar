@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
 vi.mock('openclaw/plugin-sdk/channel-outbound', async () => (await import('../fake/openclaw.js')).channelOutbound);
@@ -6,7 +7,7 @@ vi.mock('openclaw/plugin-sdk/channel-outbound', async () => (await import('../fa
 import { createOscarSession, type OscarSession } from '../../src/oscar/index.js';
 import { sendMarkdown } from '../../src/outbound.js';
 import { resetRuntimeForTests, setRuntime } from '../../src/runtime.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
+import { imTexts, startServer } from '../fake/kit.js';
 import { sdk } from '../fake/openclaw.js';
 import { quietLog } from '../fake/stub-session.js';
 
@@ -37,7 +38,7 @@ describe('the fallback on the wire', () => {
   beforeEach(async () => {
     sdk.reset();
     resetRuntimeForTests();
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'hunter22');
     server.addUser('alice', 'hunter24');
   });
@@ -69,12 +70,12 @@ describe('the fallback on the wire', () => {
     const alice = server.peer('alice');
     await boot();
     await expect.poll(() => session.presenceOf('alice')?.online).toBe(true);
-    alice.setAway('out');
+    alice.setAwayMessage('out');
     await expect.poll(() => session.presenceOf('alice')?.away).toBe(true);
     await sendMarkdown({ cfg, to: 'alice', markdown: 'status report' });
     expect(sdk.foreign).toEqual([{ channel: 'signal', to: 'c1072e4a', text: 'status report' }]);
     expect(imsTo(server, 'alice')).toBe(0);
-    expect(alice.ims()).toEqual([]);
+    expect(imTexts(alice)).toEqual([]);
   });
 
   it('sends on AIM while the owner is present', async () => {
@@ -82,7 +83,7 @@ describe('the fallback on the wire', () => {
     await boot();
     await expect.poll(() => session.presenceOf('alice')?.away).toBe(false);
     await sendMarkdown({ cfg, to: 'alice', markdown: 'status report' });
-    await vi.waitFor(() => expect(alice.ims().map((im) => im.text)).toEqual(['status report']));
+    await vi.waitFor(() => expect(imTexts(alice).map((im) => im.text)).toEqual(['status report']));
     expect(imsTo(server, 'alice')).toBe(1);
     expect(sdk.foreign).toEqual([]);
   });

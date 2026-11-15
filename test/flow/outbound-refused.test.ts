@@ -11,6 +11,7 @@ vi.mock('openclaw/plugin-sdk/channel-ingress-runtime', async () => (await import
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
 vi.mock('openclaw/plugin-sdk/status-helpers', async () => (await import('../fake/openclaw.js')).statusHelpers);
 
+import { imTexts } from '../fake/kit.js';
 import { sdk } from '../fake/openclaw.js';
 import { snacsReferencing, startFlow, waitFor } from './helpers.js';
 import type { Flow } from './helpers.js';
@@ -27,7 +28,7 @@ describe('outbound to an unlisted name', () => {
     await expect(send('room:4:testroom')).rejects.toThrow('not in room testroom');
     const bob = flow.peer('bob');
     await send('Bob');
-    await waitFor(() => bob.ims().length === 1);
+    await waitFor(() => imTexts(bob).length === 1);
     expect(snacsReferencing(flow.server, 'botone', 'mallory')).toEqual([]);
   });
 
@@ -35,7 +36,7 @@ describe('outbound to an unlisted name', () => {
     flow = await startFlow({ sec: { outbound: { allowUnlisted: true } } });
     const mallory = flow.peer('mallory');
     await sdk.messageTool({ cfg: flow.cfgRef.current, accountId: 'default', to: 'mallory', text: 'hello' });
-    await waitFor(() => mallory.ims().length === 1);
+    await waitFor(() => imTexts(mallory).length === 1);
     await expect(sdk.messageTool({ cfg: flow.cfgRef.current, accountId: 'default', to: 'room:testroom', text: 'x' })).rejects.toThrow('not in room');
   });
 });

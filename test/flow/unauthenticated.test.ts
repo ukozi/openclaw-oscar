@@ -13,6 +13,7 @@ vi.mock('openclaw/plugin-sdk/status-helpers', async () => (await import('../fake
 
 import { oscarPlugin } from '../../src/channel.js';
 import { getRuntime } from '../../src/runtime.js';
+import { imTexts } from '../fake/kit.js';
 import { sdk } from '../fake/openclaw.js';
 import { startFlow, waitFor } from './helpers.js';
 import type { Flow } from './helpers.js';
@@ -34,7 +35,7 @@ describe('unauthenticated server', () => {
     const bob = flow.peer('bob');
     bob.sendIm('botone', 'anyone home?');
     expect(sdk.inbound).toEqual([]);
-    expect(bob.ims()).toEqual([]);
+    expect(imTexts(bob)).toEqual([]);
   });
 
   it('runs when the operator set the dangerous flag, and status still says so', async () => {

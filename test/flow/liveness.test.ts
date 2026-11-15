@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { RawClient, makeSession, stopAllSessions } from '../fake/oscar-client.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
+import { RawClient } from 'open-oscar-client-kit/testing';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
+import { startServer } from '../fake/kit.js';
+import { makeSession, stopAllSessions } from '../fake/session-harness.js';
 
 let server: FakeOscarServer;
 
@@ -19,7 +21,7 @@ const connections = (kind: string, logs: { lines: { msg: string; fields?: Record
 
 describe('a session that is meant to stay online', () => {
   it('holds one connection through five liveness rounds and never sends the fatal probe', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     const h = makeSession(server);
     h.session.start();
@@ -35,7 +37,7 @@ describe('a session that is meant to stay online', () => {
   });
 
   it('holds a room socket through five liveness rounds too', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     const h = makeSession(server);
     h.session.start();
@@ -44,14 +46,14 @@ describe('a session that is meant to stay online', () => {
     const atJoin = userInfoQueries('chat');
     for (let round = 0; round < 5; round++) await h.timers.advance(90_000);
     expect(h.session.rooms().map((r) => r.room.name)).toEqual(['testroom']);
-    expect(server.occupants({ exchange: 4, name: 'testroom' })).toContain('botone');
+    expect(server.rooms.occupants({ exchange: 4, name: 'testroom' })).toContain('botone');
     expect(userInfoQueries('chat') - atJoin).toBe(5);
     expect(h.logs.lines.filter((l) => l.fields?.['kind'] === 'probe-timeout')).toEqual([]);
     expect(probesSent()).toBe(0);
   });
 
   it('is dropped by the server the moment it sends the OService probe', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     const bos = await RawClient.signOn(server.port, 'botone', 'botpass1');
     bos.snac(0x0001, 0x001f, 9);

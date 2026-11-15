@@ -12,6 +12,7 @@ vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake
 vi.mock('openclaw/plugin-sdk/status-helpers', async () => (await import('../fake/openclaw.js')).statusHelpers);
 
 import { oscarPlugin } from '../../src/channel.js';
+import { imTexts } from '../fake/kit.js';
 import { sdk } from '../fake/openclaw.js';
 import { startFlow, waitFor } from './helpers.js';
 import type { Flow } from './helpers.js';
@@ -32,7 +33,7 @@ describe('/allowlist add', () => {
     const alice = flow.peer('alice');
     const mallory = flow.peer('mallory');
     mallory.sendIm('botone', 'let me in');
-    await waitFor(() => alice.ims().length === 1);
+    await waitFor(() => imTexts(alice).length === 1);
 
     // What core's /allowlist handler does: clone the parsed file, let the plugin edit the clone, write it; the host then swaps its snapshot.
     const parsedConfig = structuredClone(flow.cfgRef.current);
@@ -41,9 +42,9 @@ describe('/allowlist add', () => {
 
     sdk.agent = () => [{ text: 'welcome' }];
     mallory.sendIm('botone', 'hello again');
-    await waitFor(() => mallory.ims().length === 1, 8000, 'the reply to the newly approved person');
-    expect(mallory.ims()[0]?.text).toBe('welcome');
-    expect(alice.ims()).toHaveLength(1);
+    await waitFor(() => imTexts(mallory).length === 1, 8000, 'the reply to the newly approved person');
+    expect(imTexts(mallory)[0]?.text).toBe('welcome');
+    expect(imTexts(alice)).toHaveLength(1);
 
     const fromBot = flow.server.snacsFrom('botone');
     expect(fromBot.filter((s) => s.conn === 'bos' && s.family === OSERVICE && s.subtype === CLIENT_ONLINE)).toHaveLength(1);

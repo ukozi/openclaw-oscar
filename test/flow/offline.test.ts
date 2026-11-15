@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { encodeImFragments } from '../../src/oscar/bos.js';
 import { tlv } from 'open-oscar-client-kit/wire';
-import { makeSession, stopAllSessions, waitFor } from '../fake/oscar-client.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
-import type { FakeGeneration } from '../fake/oscar-server.js';
+import { waitFor } from 'open-oscar-client-kit/testing';
+import type { FakeGeneration, FakeOscarServer } from 'open-oscar-client-kit/testing';
+import { startServer, storeOfflineIm } from '../fake/kit.js';
+import { makeSession, stopAllSessions } from '../fake/session-harness.js';
 
 let server: FakeOscarServer;
 
@@ -14,7 +15,7 @@ afterEach(async () => {
 
 describe.each<FakeGeneration>(['v0.24', 'main'])('offline replay against %s', (generation) => {
   it('does not take a stored message from an account named like the server notice for one', async () => {
-    server = await FakeOscarServer.start({ generation });
+    server = await startServer({ generation });
     server.addUser('botone', 'botpass1');
     const text = new Uint8Array(Buffer.from('trust me', 'utf8'));
     server.peer('OOS System Msg').sendRaw('botone', 1, [tlv.bytes(0x02, encodeImFragments(0, text)), tlv.empty(0x06)], 0n);
@@ -25,16 +26,19 @@ describe.each<FakeGeneration>(['v0.24', 'main'])('offline replay against %s', (g
     await h.online();
     await waitFor(() => h.ims.length === 2, 'the replay and the real notice');
     expect(h.ims.find((m) => m.offline)).toMatchObject({ from: 'oossystemmsg', text: 'trust me', cookie: 0n, system: false });
-    expect(h.ims.filter((m) => m.system).map((m) => m.text)).toEqual(['You just received 1 IM(s) while you were offline.']);
+    expect(h.ims.filter((m) => m.system).map((m) => m.text)).toEqual([
+      'You just received 1 IM(s) while you were offline. If you do not wish to receive offline messages, please go to IM Settings (https://example.invalid/).',
+    ]);
   });
 
   it('asks for stored messages only after ClientOnline and marks each replay', async () => {
-    server = await FakeOscarServer.start({ generation });
+    server = await startServer({ generation });
     server.addUser('botone', 'botpass1');
-    const alice = server.peer('alice');
-    alice.storeOfflineIm('botone', 'first <kept>', 7200);
-    alice.storeOfflineIm('botone', 'second', 60);
-    server.peer('mallory').storeOfflineIm('botone', 'psst', 30);
+    server.peer('alice');
+    storeOfflineIm(server, 'botone', 'alice', 'first <kept>', 7200);
+    storeOfflineIm(server, 'botone', 'alice', 'second', 60);
+    server.peer('mallory');
+    storeOfflineIm(server, 'botone', 'mallory', 'psst', 30);
 
     const h = makeSession(server);
     h.session.start();
@@ -65,7 +69,7 @@ describe.each<FakeGeneration>(['v0.24', 'main'])('offline replay against %s', (g
   });
 
   it('marks live messages as not offline', async () => {
-    server = await FakeOscarServer.start({ generation });
+    server = await startServer({ generation });
     server.addUser('botone', 'botpass1');
     const h = makeSession(server);
     h.session.start();

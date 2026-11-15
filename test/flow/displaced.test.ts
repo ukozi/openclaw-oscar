@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeSession, stopAllSessions } from '../fake/oscar-client.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
+import { limitBos, startServer } from '../fake/kit.js';
+import { makeSession, stopAllSessions } from '../fake/session-harness.js';
 
 let server: FakeOscarServer;
 
@@ -11,7 +12,7 @@ afterEach(async () => {
 
 describe('disconnected by the server', () => {
   it('does not reconnect for 60 s after a kick and says why', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     const h = makeSession(server);
     h.session.start();
@@ -27,7 +28,7 @@ describe('disconnected by the server', () => {
   });
 
   it('is displaced by a second sign-on with the same screen name, and the two do not fight', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     const first = makeSession(server);
     first.session.start();
@@ -42,12 +43,12 @@ describe('disconnected by the server', () => {
   });
 
   it('blames the rate limit when the governor saw trouble just before', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     const h = makeSession(server);
     h.session.start();
     await h.online();
-    server.setRate('botone', 'bos', 'limited');
+    limitBos(server, 'botone');
     await expect.poll(() => h.rates.at(-1)?.status).toBe('limited');
     server.kick('botone');
     expect((await h.phase('backoff')).detail).toBe('rate limit');

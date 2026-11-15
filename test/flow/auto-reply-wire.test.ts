@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import type { AwayConfig } from '../../src/config.js';
 import { createOscarSession, type OscarSession } from '../../src/oscar/index.js';
 import { createAutoReplier } from '../../src/presence/auto-reply.js';
 import { createAwayController } from '../../src/presence/away.js';
 import { createRunTracker } from '../../src/presence/runs.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
+import { imTexts, startServer } from '../fake/kit.js';
 import { quietLog } from '../fake/stub-session.js';
 
 const IM = 'agent:main:oscar:group:botone/bob';
@@ -35,7 +36,7 @@ describe('the away auto-reply on the wire', () => {
   const sessions: OscarSession[] = [];
 
   beforeEach(async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'hunter22');
     server.addUser('bob', 'hunter24');
   });
@@ -89,7 +90,7 @@ describe('the away auto-reply on the wire', () => {
     tracker.seen('r1', IM);
     await vi.waitFor(() => expect(controller.current()).toBe(DEFAULT));
     replier.contacted('bob');
-    await vi.waitFor(() => expect(bob.ims().map((im) => im.text)).toEqual([DEFAULT]));
+    await vi.waitFor(() => expect(imTexts(bob).map((im) => im.text)).toEqual([DEFAULT]));
     expect(outgoingImTags(server).at(-1)).toContain(TLV_AUTO_RESPONSE);
   });
 
@@ -103,8 +104,8 @@ describe('the away auto-reply on the wire', () => {
     replier.contacted('bob');
     tracker.ended('r1');
     await session.sendIm('bob', 'done');
-    await vi.waitFor(() => expect(bob.ims()).toHaveLength(1));
-    expect(bob.ims().map((im) => im.text)).toEqual(['done']);
+    await vi.waitFor(() => expect(imTexts(bob)).toHaveLength(1));
+    expect(imTexts(bob).map((im) => im.text)).toEqual(['done']);
     expect(outgoingImTags(server).at(-1)).not.toContain(TLV_AUTO_RESPONSE);
   });
 });

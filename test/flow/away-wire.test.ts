@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import type { AwayConfig } from '../../src/config.js';
 import { createOscarSession, type OscarSession } from '../../src/oscar/index.js';
 import { createAwayController } from '../../src/presence/away.js';
 import { createRunTracker } from '../../src/presence/runs.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
+import { imTexts, startServer } from '../fake/kit.js';
 import { quietLog } from '../fake/stub-session.js';
 
 const IM = 'agent:main:oscar:group:botone/alice';
@@ -40,7 +41,7 @@ describe('away on the wire', () => {
   const base: AwayConfig = { enabled: true, message: DEFAULT, blurb: 'agent', graceMs: 30, maxLength: 100, replyCooldownMinutes: 10 };
 
   beforeEach(async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'hunter22');
     server.addUser('alice', 'hunter23');
   });
@@ -106,7 +107,7 @@ describe('away on the wire', () => {
     await secondReady;
     expect(second.tracker.isBusy('botone')).toBe(false);
     await second.session.sendIm('alice', 'ping');
-    await vi.waitFor(() => expect(alice.ims()).toHaveLength(1));
+    await vi.waitFor(() => expect(imTexts(alice)).toHaveLength(1));
     expect(awayTexts(server, mark).filter((text) => text !== '')).toEqual([]);
   });
 
@@ -119,7 +120,7 @@ describe('away on the wire', () => {
     await vi.waitFor(() => expect(awayTexts(server)).toContain(DEFAULT));
     const mark = server.snacsFrom('botone').length;
     const back = online(session);
-    server.dropSocket('botone', 'bos');
+    server.dropSocket('botone');
     await back;
     expect(tracker.isBusy('botone')).toBe(false);
     tracker.toolStart('r1', 't1', 'exec', IM);

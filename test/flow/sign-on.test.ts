@@ -1,14 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { ByteReader, decodeTlvs, findTlv, hasTlv, openConnection, strongHash, tlvStr, tlvU8, toHex } from 'open-oscar-client-kit/wire';
 import { BosClient } from '../../src/oscar/bos.js';
-import { ManualTimers, RawClient, captureLog, makeSession, settle, stopAllSessions, waitFor } from '../fake/oscar-client.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
-import type { FakeGeneration } from '../fake/oscar-server.js';
+import { ManualTimers, RawClient, captureLog, settle, waitFor } from 'open-oscar-client-kit/testing';
+import type { FakeGeneration, FakeOscarServer } from 'open-oscar-client-kit/testing';
+import { startServer } from '../fake/kit.js';
+import { makeSession, stopAllSessions } from '../fake/session-harness.js';
 
 let server: FakeOscarServer;
 
-async function boot(opts: Parameters<typeof FakeOscarServer.start>[0] = {}): Promise<FakeOscarServer> {
-  server = await FakeOscarServer.start(opts);
+async function boot(opts: Parameters<typeof startServer>[0] = {}): Promise<FakeOscarServer> {
+  server = await startServer(opts);
   server.addUser('Bot One', 'botpass1');
   return server;
 }
@@ -100,15 +101,17 @@ describe('sign-on details', () => {
 
   it('still sends BuddyAddBuddies with an empty list, or the account would never appear online', async () => {
     await boot();
+    const alice = server.peer('alice');
+    alice.watch('botone');
     const h = makeSession(server, { buddies: () => [] });
     h.session.start();
     await h.online();
     expect(server.snacsFrom('botone').some((s) => s.family === 3 && s.subtype === 4 && s.body.length === 0)).toBe(true);
-    expect(server.sessionOf('botone')?.contactsInit).toBe(true);
+    expect(alice.sightings().map((s) => [s.name, s.event])).toEqual([['Bot One', 'arrived']]);
   });
 
   it('reads the canonical screen name and the bot flag from its own user info', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('Bot One', 'botpass1', { bot: true });
     const h = makeSession(server);
     h.session.start();
@@ -160,7 +163,7 @@ describe('sign-on details', () => {
     });
     h.session.start();
     await h.online();
-    server.dropSocket('botone', 'bos');
+    server.dropSocket('botone');
     await h.phase('backoff');
     await h.timers.advance(3000);
     await h.online();
@@ -191,9 +194,9 @@ describe('presence', () => {
     expect(h.session.presenceOf('Alice')).toMatchObject({ online: true, away: false, bot: false });
     expect(h.session.presenceOf('bob')).toBeUndefined();
 
-    alice.setAway('out');
+    alice.setAwayMessage('out');
     await expect.poll(() => h.session.presenceOf('alice')?.away).toBe(true);
-    alice.setAway(null);
+    alice.setAway(false);
     await expect.poll(() => h.session.presenceOf('alice')?.away).toBe(false);
     alice.signOff();
     await expect.poll(() => h.session.presenceOf('alice')?.online).toBe(false);

@@ -2,17 +2,18 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ByteReader, decodeTlvs, findTlv, fromHex, hasTlv, tlv } from 'open-oscar-client-kit/wire';
 import { decodeImFragments } from '../../src/oscar/bos.js';
 import { OscarSendError } from '../../src/oscar/types.js';
-import { imSends, makeSession, stopAllSessions, waitFor } from '../fake/oscar-client.js';
-import type { Harness } from '../fake/oscar-client.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
-import type { FakeGeneration, FakePeer } from '../fake/oscar-server.js';
+import { waitFor } from 'open-oscar-client-kit/testing';
+import type { FakeGeneration, FakeOscarServer, FakePeer } from 'open-oscar-client-kit/testing';
+import { imTexts, limitBos, startServer } from '../fake/kit.js';
+import { imSends, makeSession, stopAllSessions } from '../fake/session-harness.js';
+import type { Harness } from '../fake/session-harness.js';
 
 let server: FakeOscarServer;
 let alice: FakePeer;
 let h: Harness;
 
 async function boot(generation: FakeGeneration = 'main', bot = true): Promise<void> {
-  server = await FakeOscarServer.start({ generation });
+  server = await startServer({ generation });
   server.addUser('botone', 'botpass1', { bot });
   alice = server.peer('alice');
   h = makeSession(server);
@@ -30,8 +31,8 @@ describe('receiving IMs', () => {
     await boot();
     alice.sendIm('botone', 'plain');
     alice.sendIm('botone', 'héllo 😀');
-    alice.sendIm('botone', 'café from a web client', { charset: 0 });
-    alice.sendIm('botone', 'naïve', { charset: 3 });
+    alice.sendIm('botone', 'café from a web client', { charset: 0, bytes: new Uint8Array(Buffer.from('café from a web client', 'utf8')) });
+    alice.sendIm('botone', 'naïve', { charset: 3, bytes: new Uint8Array(Buffer.from('naïve', 'latin1')) });
     await waitFor(() => h.ims.length === 4, 'four IMs');
     expect(h.ims.map((m) => m.text)).toEqual(['plain', 'héllo 😀', 'café from a web client', 'naïve']);
     expect(h.ims[0]).toMatchObject({ from: 'alice', fromDisplay: 'alice', autoResponse: false, offline: false, system: false });
@@ -39,7 +40,7 @@ describe('receiving IMs', () => {
 
   it('strips the HTML a classic client wraps around text and keeps typed angle brackets', async () => {
     await boot();
-    alice.sendIm('botone', '<HTML><BODY BGCOLOR="#ffffff"><FONT FACE="Arial">if a &lt; b<BR>then &amp;c</FONT></BODY></HTML>', { html: true });
+    alice.sendIm('botone', '<HTML><BODY BGCOLOR="#ffffff"><FONT FACE="Arial">if a &lt; b<BR>then &amp;c</FONT></BODY></HTML>');
     await waitFor(() => h.ims.length === 1, 'IM');
     expect(h.ims[0]?.text).toBe('if a < b\nthen &c');
   });
@@ -118,7 +119,7 @@ describe('receiving IMs', () => {
     alice.sendIm('botone', 'inbound words nobody should log');
     await waitFor(() => h.ims.length === 1, 'IM');
     await h.session.sendIm('alice', 'outbound words nobody should log');
-    expect(alice.ims()).toHaveLength(1);
+    expect(imTexts(alice)).toHaveLength(1);
     expect(h.logs.text()).toContain('oscar session state');
     expect(h.logs.text()).not.toContain('nobody should log');
   });
@@ -140,7 +141,7 @@ describe.each<FakeGeneration>(['v0.24', 'main'])('sending IMs to %s', (generatio
     const receipt = await h.session.sendIm('alice', '<B>hi</B> there');
     expect(receipt.storedOffline).toBe(false);
     expect(receipt.id).toMatch(/^[0-9a-f]{16}$/);
-    expect(alice.ims()).toEqual([{ from: 'botone', text: 'hi there', storeTlv: false }]);
+    expect(imTexts(alice)).toEqual([{ from: 'botone', text: 'hi there', storeTlv: false }]);
     const [sent] = imSends(server, 'botone');
     expect(sent?.cookie).not.toBe(0n);
     expect(hasTlv(sent?.tlvs ?? [], 0x03)).toBe(true);
@@ -186,11 +187,11 @@ describe('sending IMs', () => {
     await h.session.sendIm('alice', 'café 😀');
     const charsets = imSends(server, 'botone').map((s) => decodeImFragments(findTlv(s.tlvs, 0x02) ?? new Uint8Array())[0]?.charset);
     expect(charsets).toEqual([0, 2]);
-    expect(alice.ims().map((m) => m.text)).toEqual(['plain', 'café 😀']);
+    expect(imTexts(alice).map((m) => m.text)).toEqual(['plain', 'café 😀']);
   });
 
   it('refuses when not online', async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     h = makeSession(server);
     await expect(h.session.sendIm('alice', 'x')).rejects.toMatchObject({ code: 'not-online' });
     await expect(h.session.setAway('x')).rejects.toMatchObject({ code: 'not-online' });
@@ -204,11 +205,11 @@ describe('sending IMs', () => {
 
   it('fails the send in flight and the ones queued behind it when the socket drops', async () => {
     await boot();
-    server.setRate('botone', 'bos', 'limited', { silent: true });
+    limitBos(server, 'botone', { silent: true });
     const inFlight = h.session.sendIm('alice', 'one').catch((e: unknown) => e);
     const queued = h.session.sendIm('alice', 'two').catch((e: unknown) => e);
     await waitFor(() => imSends(server, 'botone').length === 1, 'send on the wire');
-    server.dropSocket('botone', 'bos');
+    server.dropSocket('botone');
     expect(await inFlight).toMatchObject({ code: 'closed' });
     expect(await queued).toMatchObject({ code: 'closed' });
   });
@@ -221,7 +222,7 @@ describe('sending IMs', () => {
       h.session.sendIm('alice', 'control', { priority: 'control' }),
       h.session.sendIm('alice', 'reply', { priority: 'reply' }),
     ]);
-    expect(alice.ims().map((m) => m.text)).toEqual(['first in', 'reply', 'control', 'notice']);
+    expect(imTexts(alice).map((m) => m.text)).toEqual(['first in', 'reply', 'control', 'notice']);
   });
 });
 
@@ -266,9 +267,9 @@ describe('typing and away', () => {
   it('sets and clears away through Locate only', async () => {
     await boot();
     await h.session.setAway('Working on something.');
-    await waitFor(() => server.sessionOf('botone')?.away === 'Working on something.', 'away set');
+    await waitFor(() => server.awayOf('botone') === 'Working on something.', 'away set');
     await h.session.setAway(null);
-    await waitFor(() => server.sessionOf('botone')?.away === null, 'away cleared');
+    await waitFor(() => server.awayOf('botone') === null, 'away cleared');
     const locate = server.snacsFrom('botone').filter((s) => s.family === 2 && s.subtype === 4);
     expect(locate.slice(1).map((s) => decodeTlvs(s.body).map((t) => [t.tag, Buffer.from(t.value).toString()]))).toEqual([
       [[4, 'Working on something.']],

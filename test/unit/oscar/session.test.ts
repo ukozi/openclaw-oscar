@@ -1,9 +1,11 @@
 import { decodeTlvs, tlvStr, tlvU8 } from 'open-oscar-client-kit/wire';
+import { ManualTimers, waitFor } from 'open-oscar-client-kit/testing';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import { OscarRoomError, OscarSendError, createLoginBudget } from '../../../src/oscar/index.js';
 import { OscarSessionImpl, backoffDelay, connectFailureReason } from '../../../src/oscar/session.js';
-import { ManualTimers, makeSession, stopAllSessions, waitFor } from '../../fake/oscar-client.js';
-import { FakeOscarServer } from '../../fake/oscar-server.js';
+import { startServer } from '../../fake/kit.js';
+import { makeSession, stopAllSessions } from '../../fake/session-harness.js';
 
 describe('connectFailureReason', () => {
   it('names TLS failures, unroutable redirects and plain network errors', () => {
@@ -78,7 +80,7 @@ describe('what the session takes from the client kit', () => {
   });
 
   async function signOn() {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     server.addUser('botone', 'botpass1');
     const h = makeSession(server);
     h.session.start();

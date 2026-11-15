@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeSession, settle, stopAllSessions, waitFor } from '../fake/oscar-client.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
+import { settle, waitFor } from 'open-oscar-client-kit/testing';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
+import { restart, startServer } from '../fake/kit.js';
+import { makeSession, stopAllSessions } from '../fake/session-harness.js';
 
 let server: FakeOscarServer;
 
@@ -9,8 +11,8 @@ afterEach(async () => {
   await server.stop();
 });
 
-async function boot(opts: Parameters<typeof FakeOscarServer.start>[0] = {}): Promise<void> {
-  server = await FakeOscarServer.start(opts);
+async function boot(opts: Parameters<typeof startServer>[0] = {}): Promise<void> {
+  server = await startServer(opts);
   server.addUser('botone', 'botpass1', { bot: true });
 }
 
@@ -20,7 +22,7 @@ describe('reconnect', () => {
     const h = makeSession(server);
     h.session.start();
     await h.online();
-    server.dropSocket('botone', 'bos');
+    server.dropSocket('botone');
     const state = await h.phase('backoff');
     expect(state).toMatchObject({ reason: 'network', attempts: 1 });
     expect(h.session.presenceOf('alice')).toBeUndefined();
@@ -62,7 +64,7 @@ describe('reconnect', () => {
     const h = makeSession(server);
     h.session.start();
     await h.online();
-    await server.restart();
+    await restart(server);
     await h.phase('backoff');
     await h.timers.advance(2400);
     await h.online();
@@ -74,16 +76,16 @@ describe('reconnect', () => {
     const h = makeSession(server);
     h.session.start();
     await h.online();
-    server.dropSocket('botone', 'bos');
+    server.dropSocket('botone');
     await h.phase('backoff');
     await h.timers.advance(2400);
     await h.online();
-    server.dropSocket('botone', 'bos');
+    server.dropSocket('botone');
     expect((await h.phase('backoff')).attempts).toBe(2);
     await h.timers.advance(4800);
     await h.online();
     await h.timers.advance(60_000);
-    server.dropSocket('botone', 'bos');
+    server.dropSocket('botone');
     expect((await h.phase('backoff')).attempts).toBe(1);
   });
 
@@ -94,7 +96,7 @@ describe('reconnect', () => {
     await h.online();
     await h.session.stop();
     expect(h.session.getState().phase).toBe('stopped');
-    await waitFor(() => server.sessionOf('botone') === undefined, 'server session gone');
+    await waitFor(() => server.instancesOf('botone') === 0, 'server session gone');
     expect(h.timers.pending()).toEqual([]);
     h.session.start();
     await h.online();
@@ -112,7 +114,7 @@ describe('reconnect', () => {
     await h.timers.advance(200_000);
     await settle(server.port);
     expect(h.session.getState().phase).toBe('stopped');
-    expect(server.sessionOf('botone')).toBeUndefined();
+    expect(server.instancesOf('botone')).toBe(0);
     expect(h.states.map((s) => s.phase)).toEqual(['connecting', 'stopped']);
   });
 
@@ -127,7 +129,7 @@ describe('reconnect', () => {
     h.session.start();
     await h.phase('stopped');
     await settle(server.port);
-    expect(server.sessionOf('botone')).toBeUndefined();
+    expect(server.instancesOf('botone')).toBe(0);
     expect(server.snacsFrom('botone').filter((s) => s.conn === 'bos')).toEqual([]);
     expect(h.states.map((s) => s.phase)).toEqual(['connecting', 'stopped']);
   });
@@ -139,7 +141,7 @@ describe('reconnect', () => {
     await h.session.stop();
     await settle(server.port);
     expect(h.session.getState().phase).toBe('stopped');
-    expect(server.sessionOf('botone')).toBeUndefined();
+    expect(server.instancesOf('botone')).toBe(0);
   });
 
   it('stop() during backoff cancels the retry', async () => {
@@ -147,18 +149,18 @@ describe('reconnect', () => {
     const h = makeSession(server);
     h.session.start();
     await h.online();
-    server.dropSocket('botone', 'bos');
+    server.dropSocket('botone');
     await h.phase('backoff');
     await h.session.stop();
     await h.timers.advance(10_000);
     expect(h.session.getState().phase).toBe('stopped');
-    expect(server.sessionOf('botone')).toBeUndefined();
+    expect(server.instancesOf('botone')).toBe(0);
   });
 });
 
 describe('login limiter', () => {
   it('waits at least 60 s when a first-time address is limited with a bare signoff', async () => {
-    await boot({ loginLimit: 0 });
+    await boot({ loginLimit: 0, limiterShape: 'signoff' });
     const h = makeSession(server);
     h.session.start();
     const state = await h.phase('backoff');
@@ -171,7 +173,7 @@ describe('login limiter', () => {
     const h = makeSession(server);
     h.session.start();
     await h.online();
-    server.dropSocket('botone', 'bos');
+    server.dropSocket('botone');
     await h.phase('backoff');
     await h.timers.advance(h.timers.pending()[0] ?? 0);
     await waitFor(() => h.session.getState().reason === 'login-rate-limited', 'limited');
