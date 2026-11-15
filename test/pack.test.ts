@@ -24,8 +24,10 @@ beforeAll(() => {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  const report = JSON.parse(out) as { files: { path: string }[] }[];
-  packed = (report[0]?.files ?? []).map((f) => f.path).sort();
+  // npm 12 reports an object keyed by package name; earlier versions report an array.
+  const report = JSON.parse(out) as Record<string, { files: { path: string }[] }> | { files: { path: string }[] }[];
+  const first = Array.isArray(report) ? report[0] : Object.values(report)[0];
+  packed = (first?.files ?? []).map((f) => f.path).sort();
 }, 180_000);
 
 describe('file filter', () => {
