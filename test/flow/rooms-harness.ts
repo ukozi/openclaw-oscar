@@ -9,7 +9,8 @@ import type { OscarSession } from '../../src/oscar/index.js';
 import { clearRuntime, setRuntime } from '../../src/runtime.js';
 import type { AccountRuntime } from '../../src/runtime.js';
 import { createInboundKernel } from '../fake/openclaw.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
+import { startServer } from '../fake/kit.js';
 import { policyFixture, silentLog } from '../unit/rooms-fixtures.js';
 import { fastClock } from './room-kit.js';
 
@@ -33,7 +34,7 @@ export type RoomFlow = {
 export async function startRoomFlow(
   opts: { policy?: Partial<RootPolicy>; fastReconnect?: boolean } = {},
 ): Promise<RoomFlow> {
-  const server = await FakeOscarServer.start();
+  const server = await startServer();
   server.addUser('botone', PASSWORD);
   let policy = policyFixture(opts.policy);
   const kernel = createInboundKernel();

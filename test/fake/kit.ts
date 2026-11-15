@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FakeOscarServer, TEST_TLS_CERT } from 'open-oscar-client-kit/testing';
-import type { FakePeer, StartOptions } from 'open-oscar-client-kit/testing';
+import type { FakePeer, PeerLine, StartOptions } from 'open-oscar-client-kit/testing';
 import {
   FAMILY_ICBM,
   FAMILY_OSERVICE,
@@ -18,10 +18,21 @@ import {
   fromWireText,
   hasTlv,
   htmlToText,
+  roomCookie,
 } from 'open-oscar-client-kit/wire';
+import type { RoomRef } from 'open-oscar-client-kit/wire';
 
 export type ServerOptions = Omit<StartOptions, 'tls' | 'checkPasswords'> & { disableAuth?: boolean; tls?: boolean };
 export type PeerIm = { from: string; text: string; storeTlv: boolean };
+export type RoomPeer = {
+  readonly name: string;
+  readonly peer: FakePeer;
+  joinRoom(room: RoomRef): void;
+  leaveRoom(room: RoomRef): void;
+  say(room: RoomRef, text: string, opts?: { cookie?: bigint; whisperTo?: string; toc?: boolean }): void;
+  invite(to: string, room: RoomRef, text?: string): void;
+  roomLines(room: RoomRef): PeerLine[];
+};
 
 const secure = new WeakSet<FakeOscarServer>();
 let caPath: string | undefined;
@@ -95,4 +106,19 @@ export function imTexts(peer: FakePeer, server?: FakeOscarServer): PeerIm[] {
 
 export function storeOfflineIm(server: FakeOscarServer, to: string, from: string, text: string, ageSeconds: number): void {
   server.storeOffline(to, from, escapeText(text), Math.floor(Date.now() / 1000) - ageSeconds);
+}
+
+export function roomPeer(server: FakeOscarServer, name: string): RoomPeer {
+  const peer = server.peer(name);
+  return {
+    name,
+    peer,
+    joinRoom: (room) => server.rooms.peerJoin(name, room),
+    leaveRoom: (room) => server.rooms.peerLeave(name, room),
+    say: (room, text, opts) => server.rooms.peerSay(name, room, text, opts),
+    invite: (to, room, text) => {
+      peer.invite(to, { exchange: room.exchange, cookie: roomCookie(room) }, text === undefined ? {} : { text });
+    },
+    roomLines: (room) => server.rooms.peerLines(name, room),
+  };
 }

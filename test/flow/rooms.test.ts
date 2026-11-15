@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { decodeTlvs, findTlv, toWireHtml } from 'open-oscar-client-kit/wire';
-import { FakeOscarServer, type FakeGeneration } from '../fake/oscar-server.js';
+import type { FakeGeneration, FakeOscarServer } from 'open-oscar-client-kit/testing';
+import { restart, roomPeer, startServer } from '../fake/kit.js';
 import { chatSends, serviceRequests, signOn, until, type Bot } from './room-kit.js';
 
 const testroom = { exchange: 4 as const, name: 'testroom' };
@@ -10,7 +11,7 @@ describe.each<FakeGeneration>(['v0.24', 'main'])('joining rooms on %s', (generat
   let bot: Bot;
 
   beforeEach(async () => {
-    server = await FakeOscarServer.start({ generation });
+    server = await startServer({ generation });
     bot = await signOn(server, 'botone');
   });
 
@@ -20,11 +21,11 @@ describe.each<FakeGeneration>(['v0.24', 'main'])('joining rooms on %s', (generat
   });
 
   it('joins a private room, creating it, and reports who is there', async () => {
-    server.peer('alice').joinRoom(testroom);
+    roomPeer(server, 'alice').joinRoom(testroom);
     await bot.session.joinRoom(testroom);
     expect(bot.seen.roomReady).toEqual([{ room: testroom, occupants: expect.arrayContaining(['alice', 'botone']) }]);
     expect(bot.session.rooms()).toMatchObject([{ room: testroom }]);
-    expect(server.occupants(testroom)).toContain('botone');
+    expect(server.rooms.occupants(testroom)).toContain('botone');
   });
 
   it('resolves through chatnav before asking BOS for the room, and subscribes to rates before going online there', async () => {
@@ -43,7 +44,7 @@ describe('rooms', () => {
   let bot: Bot;
 
   beforeEach(async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     bot = await signOn(server, 'botone');
   });
 
@@ -57,13 +58,13 @@ describe('rooms', () => {
     await expect(bot.session.joinRoom(lobby)).rejects.toMatchObject({ code: 'no-such-room' });
     expect(bot.session.getState().phase).toBe('online');
     expect(serviceRequests(server, 'botone')).toEqual([0x000d]);
-    server.addRoom(lobby);
+    server.rooms.addRoom(lobby);
     await bot.session.joinRoom(lobby);
-    expect(server.occupants(lobby)).toEqual(['botone']);
+    expect(server.rooms.occupants(lobby)).toEqual(['botone']);
   });
 
   it('gets in even when it loses the race to create the room', async () => {
-    server.raceNextCreate();
+    server.rooms.raceNextCreate();
     await bot.session.joinRoom(testroom);
     const creates = server.snacsFrom('botone').filter((s) => s.conn === 'chatnav' && s.subtype === 0x0008);
     expect(creates).toHaveLength(2);
@@ -78,7 +79,7 @@ describe('rooms', () => {
 
   it('reports people coming and going', async () => {
     await bot.session.joinRoom(testroom);
-    const alice = server.peer('Alice');
+    const alice = roomPeer(server, 'Alice');
     alice.joinRoom(testroom);
     await until(() => bot.seen.roomJoin.length === 1, 'roomJoin');
     alice.leaveRoom(testroom);
@@ -88,7 +89,7 @@ describe('rooms', () => {
   });
 
   it('delivers a line as plain text with its cookie', async () => {
-    const alice = server.peer('alice');
+    const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
     await bot.session.joinRoom(testroom);
     alice.say(testroom, '<B>hello</B> room', { cookie: 77n });
@@ -105,7 +106,7 @@ describe('rooms', () => {
   });
 
   it('delivers every line from a TOC occupant: cookie 0, no encoding TLV, UTF-8 bytes', async () => {
-    const alice = server.peer('alice');
+    const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
     await bot.session.joinRoom(testroom);
     alice.say(testroom, 'café', { toc: true });
@@ -115,9 +116,9 @@ describe('rooms', () => {
   });
 
   it('marks a whisper by the missing public flag and never sees whispers to others', async () => {
-    const alice = server.peer('alice');
+    const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
-    server.peer('bob').joinRoom(testroom);
+    roomPeer(server, 'bob').joinRoom(testroom);
     await bot.session.joinRoom(testroom);
     alice.say(testroom, 'not for you', { whisperTo: 'bob' });
     alice.say(testroom, 'psst', { whisperTo: 'botone' });
@@ -127,7 +128,7 @@ describe('rooms', () => {
   });
 
   it('surfaces a line the server rewrote into an OnlineHost line, marked as the server\'s own', async () => {
-    const alice = server.peer('alice');
+    const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
     await bot.session.joinRoom(testroom);
     alice.say(testroom, '//roll');
@@ -140,7 +141,7 @@ describe('rooms', () => {
   });
 
   it('takes its own receipt from a line the server rewrote, sending it once and reading no rate limit', async () => {
-    const alice = server.peer('alice');
+    const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
     await bot.session.joinRoom(testroom);
     // the outbound converter guards a leading //roll; this is the raw HTML the server would rewrite
@@ -155,7 +156,7 @@ describe('rooms', () => {
   });
 
   it('sends with TLVs 0x01 and 0x06 and a non-zero cookie, takes the reflection as receipt, and never hears itself', async () => {
-    const alice = server.peer('alice');
+    const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
     await bot.session.joinRoom(testroom);
     const receipt = await bot.session.sendRoom(testroom, 'café time');
@@ -171,7 +172,7 @@ describe('rooms', () => {
   });
 
   it('keeps a leading space, so a guarded //roll arrives as the bot\'s own line and not as dice', async () => {
-    const alice = server.peer('alice');
+    const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
     await bot.session.joinRoom(testroom);
     await bot.session.sendRoom(testroom, toWireHtml('//roll'));
@@ -188,8 +189,8 @@ describe('rooms', () => {
   });
 
   it('whispers to one occupant', async () => {
-    const alice = server.peer('alice');
-    const bob = server.peer('bob');
+    const alice = roomPeer(server, 'alice');
+    const bob = roomPeer(server, 'bob');
     alice.joinRoom(testroom);
     bob.joinRoom(testroom);
     await bot.session.joinRoom(testroom);
@@ -207,7 +208,7 @@ describe('rooms', () => {
   it('leaves by closing the socket', async () => {
     await bot.session.joinRoom(testroom);
     await bot.session.leaveRoom(testroom);
-    await until(() => server.occupants(testroom).length === 0, 'seat freed');
+    await until(() => server.rooms.occupants(testroom).length === 0, 'seat freed');
     expect(bot.seen.roomClosed).toEqual([{ room: testroom, willRejoin: false }]);
     expect(bot.session.rooms()).toEqual([]);
   });
@@ -218,7 +219,7 @@ describe('invites', () => {
   let bot: Bot;
 
   beforeEach(async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     bot = await signOn(server, 'botone');
   });
 
@@ -228,7 +229,7 @@ describe('invites', () => {
   });
 
   it('surfaces an invite as an invite and not as an IM', async () => {
-    const alice = server.peer('Alice');
+    const alice = roomPeer(server, 'Alice');
     alice.joinRoom(testroom);
     alice.invite('botone', testroom, 'come in');
     const invite = await until(() => bot.seen.invite[0], 'invite');
@@ -238,13 +239,13 @@ describe('invites', () => {
   });
 
   it('joins the invited room by cookie, once', async () => {
-    const alice = server.peer('alice');
+    const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
     alice.invite('botone', testroom);
     const invite = await until(() => bot.seen.invite[0], 'invite');
     await bot.session.joinInvited(invite);
     await bot.session.joinInvited(invite);
-    expect(server.occupants(testroom)).toEqual(['alice', 'botone']);
+    expect(server.rooms.occupants(testroom)).toEqual(['alice', 'botone']);
     const nav = server.snacsFrom('botone').filter((s) => s.conn === 'chatnav');
     expect(nav.map((s) => s.subtype)).toEqual([0x0004]);
     expect(serviceRequests(server, 'botone')).toEqual([0x000d, 0x000e]);
@@ -252,7 +253,7 @@ describe('invites', () => {
 
   it('does not ask BOS for a room that is gone, and stays online with its other rooms', async () => {
     await bot.session.joinRoom(testroom);
-    server.peer('alice').invite('botone', { exchange: 4, name: 'ghost' });
+    roomPeer(server, 'alice').invite('botone', { exchange: 4, name: 'ghost' });
     const invite = await until(() => bot.seen.invite[0], 'invite');
     await expect(bot.session.joinInvited(invite)).rejects.toMatchObject({ code: 'no-such-room' });
     expect(serviceRequests(server, 'botone').filter((g) => g === 0x000e)).toHaveLength(1);
@@ -262,7 +263,7 @@ describe('invites', () => {
 
   it('refuses an invite whose room name would overflow the service cookie', async () => {
     const long = { exchange: 4 as const, name: 'y'.repeat(200) };
-    const alice = server.peer('alice');
+    const alice = roomPeer(server, 'alice');
     alice.joinRoom(long);
     alice.invite('botone', long);
     const invite = await until(() => bot.seen.invite[0], 'invite');
@@ -277,7 +278,7 @@ describe('losing and regaining rooms', () => {
   let bot: Bot;
 
   beforeEach(async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     bot = await signOn(server, 'botone');
   });
 
@@ -288,7 +289,7 @@ describe('losing and regaining rooms', () => {
 
   it('rejoins after the server takes the seat with a bare signoff', async () => {
     await bot.session.joinRoom(testroom);
-    server.evictFromRoom('botone', testroom);
+    server.rooms.evict('botone', testroom);
     await until(() => bot.seen.roomReady.length === 2, 'second roomReady');
     expect(bot.seen.roomClosed).toEqual([{ room: testroom, willRejoin: true }]);
     expect(serviceRequests(server, 'botone').filter((g) => g === 0x000e)).toHaveLength(2);
@@ -297,23 +298,23 @@ describe('losing and regaining rooms', () => {
 
   it('rejoins after the room socket dies, and fails the send that was in flight', async () => {
     await bot.session.joinRoom(testroom);
-    server.setRate('botone', testroom, 'limited', { silent: true });
+    server.rooms.setRoomRate('botone', testroom, 'limited', true);
     const pending = bot.session.sendRoom(testroom, 'lost');
     const failed = expect(pending).rejects.toMatchObject({ code: 'closed' });
     await until(() => chatSends(server, 'botone').length === 1, 'the send');
-    server.dropSocket('botone', 'chat', testroom);
+    server.rooms.dropChat('botone', testroom);
     await failed;
     await until(() => bot.seen.roomReady.length === 2, 'second roomReady');
   });
 
   it('comes back to its persistent room and its invited room after BOS drops', async () => {
-    const alice = server.peer('alice');
+    const alice = roomPeer(server, 'alice');
     const side = { exchange: 4 as const, name: 'side' };
     alice.joinRoom(side);
     await bot.session.joinRoom(testroom, { persistent: true });
     alice.invite('botone', side);
     await bot.session.joinInvited(await until(() => bot.seen.invite[0], 'invite'));
-    server.dropSocket('botone', 'bos');
+    server.dropSocket('botone');
     await until(() => bot.seen.roomReady.length === 4, 'both rooms again', 8000);
     expect(bot.seen.roomClosed).toEqual(
       expect.arrayContaining([
@@ -321,31 +322,31 @@ describe('losing and regaining rooms', () => {
         { room: side, willRejoin: true },
       ]),
     );
-    expect(server.occupants(testroom)).toEqual(['botone']);
-    expect(server.occupants(side)).toEqual(expect.arrayContaining(['botone']));
+    expect(server.rooms.occupants(testroom)).toEqual(['botone']);
+    expect(server.rooms.occupants(side)).toEqual(expect.arrayContaining(['botone']));
   });
 
   it('comes back after a server restart', async () => {
     await bot.session.joinRoom(testroom, { persistent: true });
-    await server.restart();
+    await restart(server);
     await until(() => bot.seen.roomReady.length === 2, 'rejoined', 8000);
-    expect(server.occupants(testroom)).toEqual(['botone']);
+    expect(server.rooms.occupants(testroom)).toEqual(['botone']);
   });
 
   it('closes its rooms on stop', async () => {
     await bot.session.joinRoom(testroom);
     await bot.session.stop();
-    await until(() => server.occupants(testroom).length === 0, 'seat freed');
+    await until(() => server.rooms.occupants(testroom).length === 0, 'seat freed');
     expect(bot.session.rooms()).toEqual([]);
   });
 });
 
 describe('a v0.24 server', () => {
   it('has its BOS rate notice heard when it comes out on the ChatNav socket', async () => {
-    const server = await FakeOscarServer.start({ generation: 'v0.24' });
+    const server = await startServer({ generation: 'v0.24' });
     const bot = await signOn(server, 'botone');
     try {
-      server.strayRateOnNextNav();
+      server.rooms.strayRateOnNextNav();
       await bot.session.joinRoom(testroom);
       expect(bot.seen.rate).toContainEqual({ scope: 'bos', status: 'limited' });
     } finally {
@@ -360,7 +361,7 @@ describe('room rate limits', () => {
   let bot: Bot;
 
   beforeEach(async () => {
-    server = await FakeOscarServer.start();
+    server = await startServer();
     bot = await signOn(server, 'botone');
     await bot.session.joinRoom(testroom);
   });
@@ -371,30 +372,30 @@ describe('room rate limits', () => {
   });
 
   it('hears a limited notice on the room socket, holds its sends, and resumes on clear', async () => {
-    const alice = server.peer('alice');
+    const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
-    server.setRate('botone', testroom, 'limited');
+    server.rooms.setRoomRate('botone', testroom, 'limited');
     await until(() => bot.seen.rate.length === 1, 'limited event');
     expect(bot.seen.rate[0]).toEqual({ scope: testroom, status: 'limited' });
     const pending = bot.session.sendRoom(testroom, 'held');
     alice.say(testroom, 'marker');
     await until(() => bot.seen.roomMessage.some((m) => m.text === 'marker'), 'the marker line');
     expect(chatSends(server, 'botone')).toHaveLength(0);
-    server.setRate('botone', testroom, 'clear');
+    server.rooms.setRoomRate('botone', testroom, 'clear');
     await expect(pending).resolves.toMatchObject({ storedOffline: false });
     expect(chatSends(server, 'botone')).toHaveLength(1);
   });
 
   it('reads a missing reflection as a rate drop and resends the same cookie only after clear', async () => {
-    server.setRate('botone', testroom, 'limited', { silent: true });
-    const alice = server.peer('alice');
+    server.rooms.setRoomRate('botone', testroom, 'limited', true);
+    const alice = roomPeer(server, 'alice');
     alice.joinRoom(testroom);
     const pending = bot.session.sendRoom(testroom, 'dropped once');
     await until(() => bot.seen.rate.some((r) => r.status === 'limited'), 'limited event');
     alice.say(testroom, 'marker');
     await until(() => bot.seen.roomMessage.some((m) => m.text === 'marker'), 'the marker line');
     expect(chatSends(server, 'botone')).toHaveLength(1);
-    server.setRate('botone', testroom, 'clear');
+    server.rooms.setRoomRate('botone', testroom, 'clear');
     await expect(pending).resolves.toBeDefined();
     const sends = chatSends(server, 'botone');
     expect(sends).toHaveLength(2);

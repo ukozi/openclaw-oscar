@@ -10,8 +10,9 @@ import { toAsciiEntities, toWireHtml } from 'open-oscar-client-kit/wire';
 import { handoffToolPolicy } from '../../src/policy.js';
 import type { ToolPolicy } from '../../src/policy.js';
 import type { RoomState } from '../../src/runtime.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
-import type { FakePeer } from '../fake/oscar-server.js';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
+import { roomPeer, startServer } from '../fake/kit.js';
+import type { RoomPeer } from '../fake/kit.js';
 import { FakeRunTracker } from '../fake/run-tracker.js';
 import { ROOM, chainConfig, policyFixture } from '../unit/chain/fixtures.js';
 
@@ -208,7 +209,7 @@ export class Team {
   readonly clock = new VirtualClock();
   private readonly byName = new Map<string, Bot>();
 
-  private constructor(readonly server: FakeOscarServer, readonly alice: FakePeer, readonly bob: FakePeer) {}
+  private constructor(readonly server: FakeOscarServer, readonly alice: RoomPeer, readonly bob: RoomPeer) {}
 
   static async start(opts: {
     instances: string[][];
@@ -216,9 +217,9 @@ export class Team {
     chain?: Partial<ChainConfig>;
     policyFor?: (name: string, base: RootPolicy) => RootPolicy;
   }): Promise<Team> {
-    const server = await FakeOscarServer.start({ generation: 'main' });
-    const alice = server.peer('alice');
-    const bob = server.peer('bob');
+    const server = await startServer({ generation: 'main' });
+    const alice = roomPeer(server, 'alice');
+    const bob = roomPeer(server, 'bob');
     alice.joinRoom(ROOM);
     bob.joinRoom(ROOM);
     const team = new Team(server, alice, bob);

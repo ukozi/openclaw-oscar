@@ -11,6 +11,7 @@ import type { RoomRef } from '../../src/names.js';
 import { toWireHtml } from 'open-oscar-client-kit/wire';
 import { sendRoomHtml, sendRoomLine } from '../../src/outbound.js';
 import { roomKey, roomsExt } from '../../src/runtime.js';
+import { imTexts, roomPeer } from '../fake/kit.js';
 import { startRoomFlow } from './rooms-harness.js';
 import type { RoomFlow } from './rooms-harness.js';
 
@@ -36,7 +37,7 @@ async function joined(f: RoomFlow, key = KEY): Promise<void> {
 }
 
 async function peerIn(f: RoomFlow, name: string, room: RoomRef = ROOM) {
-  const peer = f.server.peer(name);
+  const peer = roomPeer(f.server, name);
   peer.joinRoom(room);
   await vi.waitFor(() => expect(f.rt.rooms.get(roomKey(room))?.occupants.has(name)).toBe(true), WAIT);
   return peer;
@@ -68,7 +69,7 @@ describe('home room', () => {
     await joined(f);
     await peerIn(f, 'alice');
     const closedBefore = f.closed.length;
-    f.server.dropSocket('botone', 'bos');
+    f.server.dropSocket('botone');
     await vi.waitFor(() => {
       expect(f.closed.slice(closedBefore)).toContainEqual({ room: ROOM, willRejoin: true });
       expect(chatOnlineCount(f)).toBeGreaterThanOrEqual(2);
@@ -94,7 +95,7 @@ describe('invites', () => {
     flow = await startRoomFlow();
     const f = flow;
     await joined(f);
-    const bob = f.server.peer('bob');
+    const bob = roomPeer(f.server, 'bob');
     bob.joinRoom(DEN);
     const started = Date.now();
     bob.invite('botone', DEN, 'come in');
@@ -111,12 +112,12 @@ describe('invites', () => {
     const f = flow;
     await joined(f);
     const alice = await peerIn(f, 'alice');
-    const mallory = f.server.peer('mallory');
+    const mallory = roomPeer(f.server, 'mallory');
     mallory.invite('botone', DEN, 'psst');
     await vi.waitFor(() => expect(f.notices).toEqual([{ name: 'mallory', display: expect.any(String) }]), WAIT);
     alice.say(ROOM, 'botone: still there?', { cookie: 51n });
     await vi.waitFor(() => expect(f.turns).toHaveLength(1), WAIT);
-    expect(mallory.ims()).toEqual([]);
+    expect(imTexts(mallory.peer, f.server)).toEqual([]);
     expect(f.rt.rooms.has(DEN_KEY)).toBe(false);
     const mentionsMallory = f.server
       .snacsFrom('botone')
@@ -128,15 +129,15 @@ describe('invites', () => {
     flow = await startRoomFlow({ policy: { invites: { accept: 'approved', maxRooms: 1, leaveWhenAloneMinutes: 10 } } });
     const f = flow;
     await joined(f);
-    const bob = f.server.peer('bob');
+    const bob = roomPeer(f.server, 'bob');
     bob.joinRoom(DEN);
     bob.invite('botone', DEN);
     await joined(f, DEN_KEY);
     const second: RoomRef = { exchange: 4, name: 'bobsattic' };
     bob.joinRoom(second);
     bob.invite('botone', second);
-    await vi.waitFor(() => expect(bob.ims().map((im) => im.from)).toEqual(['botone']), WAIT);
-    expect(bob.ims()[0]?.text).toContain('too many rooms');
+    await vi.waitFor(() => expect(imTexts(bob.peer, f.server).map((im) => im.from)).toEqual(['botone']), WAIT);
+    expect(imTexts(bob.peer, f.server)[0]?.text).toContain('too many rooms');
     expect(copy.inviteFull()).toContain('too many rooms');
     expect(f.rt.rooms.has('room:4:bobsattic')).toBe(false);
   });

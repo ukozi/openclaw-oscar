@@ -21,7 +21,8 @@ import type { RoomRef } from '../../src/names.js';
 import { storeFileFor } from '../../src/rooms/profiles.js';
 import { getRuntime, resetRuntimeForTests, roomKey, roomsExt, setHost } from '../../src/runtime.js';
 import { sdk } from '../fake/openclaw.js';
-import { FakeOscarServer } from '../fake/oscar-server.js';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
+import { imTexts, roomPeer, startServer } from '../fake/kit.js';
 import { waitFor } from './helpers.js';
 
 const ROOM: RoomRef = { exchange: 4, name: 'testroom' };
@@ -41,7 +42,7 @@ async function startGateway(): Promise<{ server: FakeOscarServer; cfg: Record<st
   Object.assign(IM_TIMING, { debounceMs: 30, replyCooldownMs: 0, replaySettleMs: 200 });
   // Join times are stamped on the gateway clock and checked on the chain's; running the gateway behind lets the bots count as settled in the room.
   gatewayDeps.now = () => Date.now() - 2 * SELF_ELIGIBLE_MS;
-  const server = await FakeOscarServer.start();
+  const server = await startServer();
   server.addUser('alice', 'pw-alice');
   const accounts: Record<string, unknown> = {};
   for (const [id, name] of Object.entries(BOTS)) {
@@ -81,14 +82,14 @@ describe('room profiles', () => {
     const names = Object.values(BOTS) as string[];
     expect(readPolicy(cfg).teammates).toEqual(names);
     sdk.agent = (ctx) => [{ text: `${BOTS[String(ctx.AccountId) as keyof typeof BOTS]} here` }];
-    const alice = server.peer('alice');
-    const fromBot = (bot: string) => alice.ims().filter((m) => m.from === bot).map((m) => m.text);
+    const alice = roomPeer(server, 'alice');
+    const fromBot = (bot: string) => imTexts(alice.peer, server).filter((m) => m.from === bot).map((m) => m.text);
 
     alice.joinRoom(ROOM);
     for (const name of names) alice.invite(name, ROOM);
     await waitFor(() => names.every((name) => fromBot(name).length === 1), 10_000, 'every bot to ask for settings');
     for (const name of names) expect(fromBot(name)).toEqual([copy.setupAskNew('testroom', names, 'alice')]);
-    expect(server.occupants(ROOM).sort()).toEqual(['alice', ...names].sort());
+    expect(server.rooms.occupants(ROOM).sort()).toEqual(['alice', ...names].sort());
 
     alice.say(ROOM, 'what is the plan?', { cookie: 7001n });
     await waitFor(() => names.every((name) => fromBot(name).length === 2), 10_000, 'every bot to say it is waiting');
@@ -96,7 +97,7 @@ describe('room profiles', () => {
     expect(sdk.inbound).toEqual([]);
     expect(alice.roomLines(ROOM).filter((l) => l.from !== 'alice')).toEqual([]);
 
-    for (const name of names) alice.sendIm(name, 'team private botone bottwo botthree');
+    for (const name of names) alice.peer.sendIm(name, 'team private botone bottwo botthree');
     const applied = copy.setupApplied('testroom', 'team, private, rank botone bottwo botthree');
     await waitFor(() => names.every((name) => fromBot(name).includes(applied)), 10_000, 'every bot to confirm');
     await waitFor(() => alice.roomLines(ROOM).some((l) => l.text === 'botone here'), 10_000, 'the lead to answer the held line');
@@ -118,7 +119,7 @@ describe('room profiles', () => {
     expect(getRuntime('one')?.rooms.get(key)?.omittedCount).toBe(0);
 
     alice.say(ROOM, '/leave', { cookie: 7003n });
-    await waitFor(() => server.occupants(ROOM).length === 1, 10_000, 'every bot to leave');
-    expect(server.occupants(ROOM)).toEqual(['alice']);
+    await waitFor(() => server.rooms.occupants(ROOM).length === 1, 10_000, 'every bot to leave');
+    expect(server.rooms.occupants(ROOM)).toEqual(['alice']);
   }, 40_000);
 });

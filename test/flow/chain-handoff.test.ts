@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { roomPeer } from '../fake/kit.js';
 import { ROOM } from '../unit/chain/fixtures.js';
 import { ACK_MS, RK, TAKEOVER_MS, Team, gate } from './chain-harness.js';
 import type { Agent } from './chain-harness.js';
@@ -96,7 +97,7 @@ describe('chain hand-off flows', () => {
   it('an echo bot above the worker cannot start more wakes than the guard budget', async () => {
     const t = await Team.start({ instances: [['bottwo']], ghosts: ['botone'] });
     team = t;
-    const echo = t.server.peer('botone');
+    const echo = roomPeer(t.server, 'botone');
     echo.joinRoom(ROOM);
     await t.until(() => t.bot('bottwo').rooms.get('room:4:testroom')?.occupants.has('botone'), 'the echo bot to join');
     t.settle();
@@ -194,7 +195,7 @@ describe('chain hand-off flows', () => {
     t.bot('botone').agent = async (api) => {
       await api.delegate('bottwo', 'tighten the intro').catch((err: Error) => errors.push(err.message));
     };
-    t.server.setRate('botone', ROOM, 'limited');
+    t.server.rooms.setRoomRate('botone', ROOM, 'limited');
     await t.until(() => t.bot('botone').controller.roomLimited(RK), 'the limited notice');
     t.alice.say(ROOM, 'botone: the intro is too long', { cookie: 2011n });
     await t.until(() => errors.length === 1, 'the tool error');

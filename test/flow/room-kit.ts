@@ -1,5 +1,5 @@
 import { createOscarSession, type OscarEvents, type OscarSession } from '../../src/oscar/index.js';
-import type { FakeOscarServer } from '../fake/oscar-server.js';
+import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 
 export const PASSWORD = 'hunter22';
 export const SCALE = 20;
