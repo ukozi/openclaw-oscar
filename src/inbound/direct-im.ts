@@ -4,7 +4,7 @@ import { normalizeName } from '../names.js';
 import { directImLimits } from '../oscar/index.js';
 import type { DirectImOfferEvent, DirectImStateEvent, DirectMessageEvent, Logger, OscarSession } from '../oscar/index.js';
 import type { Timers } from '../runtime.js';
-import { FILES_LIMITS, senderGate } from './media-gate.js';
+import { FILES_LIMITS, Ignored, senderGate } from './media-gate.js';
 import type { GateResult, MediaEvent, Refusal, Slots, TurnMedia } from './media-gate.js';
 import type { saveInbound } from './media-store.js';
 import { baseName, sniff } from './sniff.js';
@@ -37,6 +37,7 @@ export function createDirectImIntake(
   deps: IntakeDeps,
 ): { stop(): void; idle(): Promise<void> } {
   const live = new Map<string, Live>();
+  const ignored = new Ignored();
   let stopped = false;
   let tail: Promise<void> = Promise.resolve();
 
@@ -93,14 +94,16 @@ export function createDirectImIntake(
   const onOffer = async (ev: DirectImOfferEvent): Promise<void> => {
     const from = normalizeName(ev.from);
     const policy = readPolicy(deps.getCfg());
-    if (!policy.files.directIm) {
-      await decline(ev.id);
-      return;
-    }
     const verdict = await gate(from, policy);
     if (stopped) return;
+    // Anyone not allowed gets no answer: an answer costs a send.
     if (verdict !== 'allow') {
-      if (verdict === 'stranger') deps.stranger(from, ev.fromDisplay);
+      if (verdict === 'stranger' && policy.files.directIm) deps.stranger(from, ev.fromDisplay);
+      const oldest = ignored.add(ev.id);
+      if (oldest !== undefined) await decline(oldest);
+      return;
+    }
+    if (!policy.files.directIm) {
       await decline(ev.id);
       return;
     }
@@ -123,6 +126,7 @@ export function createDirectImIntake(
 
   const onState = async (ev: DirectImStateEvent): Promise<void> => {
     if (ev.state !== 'closed') return;
+    ignored.drop(ev.id);
     const s = end(ev.id);
     if (!s || ev.end !== 'too-large') return;
     // The session's total ends it the same way, after a message that was taken.

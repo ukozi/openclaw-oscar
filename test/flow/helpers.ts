@@ -48,6 +48,15 @@ export function imsSentTo(server: FakeOscarServer, bot: string, name: string): n
   return new Set(cookies).size;
 }
 
+const ICBM_CLIENT_ERR = 0x0b;
+
+// Every ICBM the bot addressed to the name: IMs, rendezvous answers, client errors and typing.
+export function icbmsSentTo(server: FakeOscarServer, bot: string, name: string): { subtype: number }[] {
+  return server.snacsFrom(bot)
+    .filter((s) => s.conn !== 'auth' && s.family === ICBM && [ICBM_SEND, ICBM_CLIENT_ERR, ICBM_TYPING].includes(s.subtype) && imRecipient(s.body) === name)
+    .map((s) => ({ subtype: s.subtype }));
+}
+
 export function imsNaming(server: FakeOscarServer, bot: string, name: string): { to: string; cookie: string }[] {
   const byCookie = new Map<string, { to: string; cookie: string }>();
   for (const s of server.snacsFrom(bot)) {

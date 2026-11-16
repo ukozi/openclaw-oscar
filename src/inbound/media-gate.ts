@@ -5,7 +5,7 @@ import { normalizeName } from '../names.js';
 import type { Logger } from '../oscar/index.js';
 import { roleOf } from '../policy.js';
 
-export const FILES_LIMITS = { perOffer: 3, active: 4, idleMs: 300_000, stallMs: 180_000, transferMs: 900_000, refusalCooldownMs: 60_000, textChars: 8000 };
+export const FILES_LIMITS = { perOffer: 3, active: 4, idleMs: 300_000, stallMs: 180_000, transferMs: 900_000, refusalCooldownMs: 60_000, textChars: 8000, ignoredOffers: 12 };
 
 export type Refusal = 'too-large' | 'wrong-type' | 'too-many' | 'busy' | 'busy-others' | 'damaged';
 // silent: the bot itself, a teammate bot, or a listed person the host does not admit.
@@ -43,6 +43,24 @@ export class Slots {
 
   active(): number {
     return this.held.size;
+  }
+}
+
+// Offers left with no answer. The client drops each after five minutes and holds 16 of a kind.
+export class Ignored {
+  private readonly ids = new Set<string>();
+
+  // Returns the oldest id when more than the limit wait, for the caller to decline.
+  add(id: string): string | undefined {
+    this.ids.add(id);
+    if (this.ids.size <= FILES_LIMITS.ignoredOffers) return undefined;
+    const [oldest] = this.ids;
+    if (oldest !== undefined) this.ids.delete(oldest);
+    return oldest;
+  }
+
+  drop(id: string): void {
+    this.ids.delete(id);
   }
 }
 

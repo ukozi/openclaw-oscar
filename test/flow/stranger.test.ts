@@ -16,7 +16,7 @@ import { copy } from '../../src/copy.js';
 import { NOTICE_TIMING } from '../../src/notice.js';
 import { imTexts } from '../fake/kit.js';
 import { sdk } from '../fake/openclaw.js';
-import { imsNaming, imsSentTo, snacsReferencing, startFlow, waitFor } from './helpers.js';
+import { icbmsSentTo, imsNaming, imsSentTo, snacsReferencing, startFlow, waitFor } from './helpers.js';
 import type { Flow } from './helpers.js';
 
 let flow: Flow | undefined;
@@ -26,36 +26,58 @@ const NOTES = new TextEncoder().encode('# Notes\n\nBring the cake.\n');
 const fileNotice = `${copy.noticeFile('mallory')}\nTo let them in, reply: /allowlist add dm mallory`;
 
 describe('a stranger trying to send a file', () => {
-  it("a stranger's file offer is declined with no connection, and the owner gets the notice", async () => {
+  it("ten file offers from a stranger get no answer and no connection, and the owner gets one notice", async () => {
     flow = await startFlow({ server: { relay: true }, sec: { files: { sendFile: true } } });
     const alice = flow.peer('alice');
     const mallory = flow.peer('mallory');
-    expect((await mallory.offerFile('botone', 'notes.md', NOTES)).outcome).toBe('declined');
+    void mallory.offerFile('botone', 'notes.md', NOTES);
     await waitFor(() => imTexts(alice).length === 1, 8000, 'the notice');
     expect(imTexts(alice)[0]?.text).toBe(fileNotice);
-    expect((await mallory.offerFile('botone', 'notes.md', NOTES)).outcome).toBe('declined');
+    for (let i = 0; i < 9; i++) void mallory.offerFile('botone', `notes-${i}.md`, NOTES);
     sdk.agent = () => [{ text: 'noted' }];
     alice.sendIm('botone', 'anything new?');
     await waitFor(() => imTexts(alice).some((m) => m.text === 'noted'), 8000, 'the owner turn');
     const entries = sdk.inbound[0]?.ctx.UntrustedStructuredContext as { type: string; payload: { attempts: { name: string; kind: string; count: number }[] } }[];
-    expect(entries.find((e) => e.type === 'oscar_contact_attempts')?.payload.attempts).toMatchObject([{ name: 'mallory', kind: 'file', count: 2 }]);
+    expect(entries.find((e) => e.type === 'oscar_contact_attempts')?.payload.attempts).toMatchObject([{ name: 'mallory', kind: 'file', count: 10 }]);
     expect(imTexts(alice).filter((m) => m.text === fileNotice)).toHaveLength(1);
+    expect(icbmsSentTo(flow.server, 'botone', 'mallory')).toEqual([]);
+    expect(mallory.fileTransfers()).toEqual([]);
     expect(flow.server.relayed()).toEqual([]);
     expect(sdk.media).toEqual([]);
-    expect(imTexts(mallory)).toEqual([]);
   });
 
-  it("a stranger's Direct IM offer is declined with no connection, and the owner gets the notice", async () => {
+  it("a stranger's Direct IM offer gets no answer and no connection, and the owner gets the notice", async () => {
     flow = await startFlow({ server: { relay: true }, sec: { files: { directIm: true } } });
     const alice = flow.peer('alice');
     const mallory = flow.peer('mallory');
-    expect((await mallory.openDirectIm('botone')).outcome).toBe('declined');
+    void mallory.openDirectIm('botone');
     await waitFor(() => imTexts(alice).length === 1, 8000, 'the notice');
     expect(imTexts(alice)[0]?.text).toBe(fileNotice);
+    expect(icbmsSentTo(flow.server, 'botone', 'mallory')).toEqual([]);
     expect(flow.server.relayed()).toEqual([]);
     expect(sdk.media).toEqual([]);
     expect(sdk.inbound).toEqual([]);
-    expect(imTexts(mallory)).toEqual([]);
+  });
+
+  it('ten quick offers of each kind from strangers cost the bot no send, and an owner is answered at once', async () => {
+    // One notice an hour, so ten names do not make a burst of notices.
+    flow = await startFlow({ server: { relay: true }, sec: { files: { directIm: true, sendFile: true }, contactNotice: { maxPerHour: 1 } } });
+    const alice = flow.peer('alice');
+    const mallory = flow.peer('mallory');
+    // The client answers a second Direct IM offer of one name itself, so each comes from another name.
+    const others = Array.from({ length: 9 }, (_, i) => `stranger${i}`);
+    for (const name of others) flow.server.addUser(name, `pw-${name}`);
+    for (let i = 0; i < 10; i++) void mallory.offerFile('botone', `notes-${i}.md`, NOTES);
+    void mallory.openDirectIm('botone');
+    for (const name of others) void flow.server.peer(name).openDirectIm('botone');
+    await waitFor(() => imTexts(alice).length === 1, 8000, 'the notice');
+    sdk.agent = () => [{ text: 'here' }];
+    alice.sendIm('botone', 'are you there?');
+    await waitFor(() => imTexts(alice).some((m) => m.text === 'here'), 3000, 'the prompt reply to the owner');
+    for (const name of ['mallory', ...others]) expect(icbmsSentTo(flow.server, 'botone', name), name).toEqual([]);
+    expect(imTexts(alice).map((m) => m.text)).toEqual([fileNotice, 'here']);
+    expect(flow.server.relayed()).toEqual([]);
+    expect(sdk.inbound.map((r) => r.ctx.SenderId)).toEqual(['alice']);
   });
 });
 

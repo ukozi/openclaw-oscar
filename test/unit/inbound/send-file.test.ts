@@ -190,10 +190,10 @@ describe('Send File intake', () => {
     ]);
   });
 
-  it('declines a stranger before accepting and reports the attempt', async () => {
+  it('sends a stranger nothing and reports the attempt', async () => {
     const s = setup();
-    const id = await s.offer('Mallory');
-    expect(s.calls).toEqual([`decline ${id}`]);
+    await s.offer('Mallory');
+    expect(s.calls).toEqual([]);
     expect(s.strangers).toEqual([{ name: 'mallory', display: 'Mallory' }]);
     expect(s.refused).toEqual([]);
     expect(s.slots.active()).toBe(0);
@@ -201,31 +201,46 @@ describe('Send File intake', () => {
     expect(s.sinks.size).toBe(0);
   });
 
-  it('declines a stranger under dmPolicy open, and a folder from a stranger without a message', async () => {
+  it('sends a stranger nothing under dmPolicy open, and nothing for a folder from a stranger', async () => {
     const s = setup({ dmPolicy: 'open', dangerouslyAllowOpenDm: true });
-    const id = await s.offer('Mallory', { folder: true, count: 9 });
-    expect(s.calls).toEqual([`decline ${id}`]);
+    await s.offer('Mallory', { folder: true, count: 9 });
+    expect(s.calls).toEqual([]);
     expect(s.strangers).toHaveLength(1);
     expect(s.refused).toEqual([]);
   });
 
-  it('declines a teammate bot and a person the host does not admit without a notice', async () => {
+  it('sends nothing to a teammate bot or a person the host does not admit, with no notice', async () => {
     const s = setup();
-    const bot = await s.offer('BotTwo');
+    await s.offer('BotTwo');
     s.state.admit = false;
-    const bob = await s.offer('Bob');
-    expect(s.calls).toEqual([`decline ${bot}`, `decline ${bob}`]);
+    await s.offer('Bob');
+    expect(s.calls).toEqual([]);
     expect(s.strangers).toEqual([]);
     expect(s.refused).toEqual([]);
   });
 
-  it('declines every offer while the setting is off', async () => {
+  it('while the setting is off, declines an allowed sender and sends a stranger nothing', async () => {
     const s = setup({ files: { sendFile: false, directIm: true } });
     const a = await s.offer('Alice');
-    const m = await s.offer('Mallory');
-    expect(s.calls).toEqual([`decline ${a}`, `decline ${m}`]);
+    await s.offer('Mallory');
+    expect(s.calls).toEqual([`decline ${a}`]);
     expect(s.strangers).toEqual([]);
     expect(s.refused).toEqual([]);
+  });
+
+  it('declines the oldest unanswered offer once more than the limit wait', async () => {
+    const s = setup();
+    const max = FILES_LIMITS.ignoredOffers;
+    for (let i = 0; i < max; i++) await s.offer('Mallory', { id: `m-${i}` });
+    expect(s.calls).toEqual([]);
+    await s.transfer('m-0', 'mallory', { state: 'failed', failure: 'timed-out' });
+    await s.transfer('m-1', 'mallory', { state: 'cancelled', by: 'peer' });
+    await s.offer('Mallory', { id: 'm-a' });
+    await s.offer('Mallory', { id: 'm-b' });
+    expect(s.calls).toEqual([]);
+    await s.offer('Mallory', { id: 'm-c' });
+    expect(s.calls).toEqual(['decline m-2']);
+    expect(s.strangers).toHaveLength(max + 3);
   });
 
   it('declines a folder with the too-many refusal', async () => {

@@ -15,7 +15,7 @@ vi.mock('openclaw/plugin-sdk/status-helpers', async () => (await import('../fake
 import { copy } from '../../src/copy.js';
 import { imTexts } from '../fake/kit.js';
 import { sdk } from '../fake/openclaw.js';
-import { startFlow, waitFor } from './helpers.js';
+import { icbmsSentTo, startFlow, waitFor } from './helpers.js';
 import type { Flow } from './helpers.js';
 
 const PNG = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4);
@@ -92,15 +92,15 @@ describe('pictures and files reach the agent', () => {
     alice.sendIm('botone', 'hi');
     await waitFor(() => imTexts(alice).some((m) => m.text === 'hello'), 8000, 'the reply to alice');
     const mallory = flow.peer('mallory');
-    expect((await mallory.openDirectIm('botone')).outcome).toBe('declined');
-    expect((await mallory.offerFile('botone', 'notes.md', NOTES)).outcome).toBe('declined');
+    void mallory.openDirectIm('botone');
+    void mallory.offerFile('botone', 'notes.md', NOTES);
     const notice = copy.noticeFile('mallory');
     await waitFor(() => imTexts(alice).some((m) => m.text.startsWith(notice)), 8000, 'the owner notice');
     expect(imTexts(alice).map((m) => m.text.split('\n')[0])).toEqual(['hello', notice]);
     expect(flow.server.relayed()).toEqual([]);
     expect(sdk.media).toEqual([]);
     expect(sdk.inbound.map((r) => r.ctx.SenderId)).toEqual(['alice']);
-    expect(imTexts(mallory)).toEqual([]);
+    expect(icbmsSentTo(flow.server, 'botone', 'mallory')).toEqual([]);
   });
 });
 
@@ -122,12 +122,12 @@ describe('refused files', () => {
   it('a stranger gets no message', async () => {
     flow = await startFlow({ server: { relay: true }, sec: { files: { directIm: true, sendFile: true, maxMb: 1 } } });
     const mallory = flow.peer('mallory');
-    expect((await mallory.offerFile('botone', 'big.txt', BIG)).outcome).toBe('declined');
-    expect((await mallory.offerFolder('botone', 'docs', [{ path: ['a.md'], bytes: NOTES }])).outcome).toBe('declined');
+    void mallory.offerFile('botone', 'big.txt', BIG);
+    void mallory.offerFolder('botone', 'docs', [{ path: ['a.md'], bytes: NOTES }]);
     const bob = flow.peer('bob');
     expect((await bob.offerFile('botone', 'big.txt', BIG)).outcome).toBe('declined');
     await waitFor(() => imTexts(bob).length === 1, 8000, 'the refusal to bob');
-    expect(imTexts(mallory)).toEqual([]);
+    expect(icbmsSentTo(flow.server, 'botone', 'mallory')).toEqual([]);
   });
 });
 

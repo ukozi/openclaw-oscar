@@ -131,49 +131,65 @@ describe('Direct IM intake', () => {
     expect(s.delivered.map((d) => d.text)).toEqual(['one', 'two']);
   });
 
-  it('declines a stranger before accepting and reports the attempt', async () => {
+  it('sends a stranger nothing and reports the attempt', async () => {
     const s = setup();
     const id = await s.offer('Mallory');
-    expect(s.calls).toEqual([`decline ${id}`]);
+    expect(s.calls).toEqual([]);
     expect(s.strangers).toEqual([{ name: 'mallory', display: 'Mallory' }]);
     expect(s.refused).toEqual([]);
     expect(s.slots.active()).toBe(0);
+    expect(s.clock.pending()).toBe(0);
     await s.message(id, { from: 'mallory', fromDisplay: 'Mallory', text: 'hi', pictures: [{ name: 'a.png', bytes: PNG }] });
     expect(s.delivered).toEqual([]);
     expect(s.saved).toEqual([]);
   });
 
-  it('declines a stranger under dmPolicy open', async () => {
+  it('sends a stranger nothing under dmPolicy open', async () => {
     const s = setup({ dmPolicy: 'open', dangerouslyAllowOpenDm: true });
-    const id = await s.offer('Mallory');
-    expect(s.calls).toEqual([`decline ${id}`]);
+    await s.offer('Mallory');
+    expect(s.calls).toEqual([]);
     expect(s.strangers).toHaveLength(1);
   });
 
-  it('declines a teammate bot without a notice', async () => {
+  it('sends a teammate bot nothing, with no notice', async () => {
     const s = setup();
-    const id = await s.offer('BotTwo');
-    expect(s.calls).toEqual([`decline ${id}`]);
+    await s.offer('BotTwo');
+    expect(s.calls).toEqual([]);
     expect(s.strangers).toEqual([]);
     expect(s.refused).toEqual([]);
   });
 
-  it('declines an approved person the host does not admit', async () => {
+  it('sends nothing to an approved person the host does not admit', async () => {
     const s = setup();
     s.state.admit = false;
-    const id = await s.offer('Bob');
-    expect(s.calls).toEqual([`decline ${id}`]);
+    await s.offer('Bob');
+    expect(s.calls).toEqual([]);
     expect(s.strangers).toEqual([]);
   });
 
-  it('declines every offer while the setting is off', async () => {
+  it('while the setting is off, declines an allowed sender and sends a stranger nothing', async () => {
     const s = setup({ files: { directIm: false } });
     const a = await s.offer('Alice');
-    const m = await s.offer('Mallory');
-    expect(s.calls).toEqual([`decline ${a}`, `decline ${m}`]);
+    await s.offer('Mallory');
+    expect(s.calls).toEqual([`decline ${a}`]);
     expect(s.strangers).toEqual([]);
     expect(s.refused).toEqual([]);
     expect(s.slots.active()).toBe(0);
+  });
+
+  it('declines the oldest unanswered offer once more than the limit wait', async () => {
+    const s = setup();
+    const max = FILES_LIMITS.ignoredOffers;
+    for (let i = 0; i < max; i++) await s.offer('Mallory', `m-${i}`);
+    expect(s.calls).toEqual([]);
+    await s.closed('m-0', 'mallory', 'timed-out');
+    await s.closed('m-1', 'mallory', 'cancelled', 'peer');
+    await s.offer('Mallory', 'm-a');
+    await s.offer('Mallory', 'm-b');
+    expect(s.calls).toEqual([]);
+    await s.offer('Mallory', 'm-c');
+    expect(s.calls).toEqual(['decline m-2']);
+    expect(s.strangers).toHaveLength(max + 3);
   });
 
   it('declines a fifth session and tells the sender that others are sending', async () => {
