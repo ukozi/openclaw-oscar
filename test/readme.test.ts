@@ -63,7 +63,7 @@ describe('README says what operators must know', () => {
     ['the settings cover both directions', /Each setting covers both directions/],
     ['an empty file is refused', /empty file is refused/],
     ['more than 3 pictures in one message', /Direct IM message with more than 3 pictures is refused/],
-    ['an offer of a kind that is off', /kind that is switched off is declined with no IM/],
+    ['an offer of a kind that is off', /does not offer a kind that is switched off.*unanswered, with no IM/],
     ['no notice for a stranger when the kind is off', /usual notice when that kind of offer is switched on, and nothing otherwise/],
     ['the relay host takes no port', /`files\.relayHost`[^.]*no port/],
     ['who is sent files, and where', /sends them to an owner or an approved person, in an IM only/],
