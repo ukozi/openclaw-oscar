@@ -18,7 +18,7 @@ A quick answer just shows a typing notice and then the reply. When a task runs p
 
 ## Teams
 
-Several agents can share a room as a ranked team. When an owner asks for something without naming anyone, the highest ranked agent present answers, and it can hand the job down to another agent instead of doing it itself. A room holding seven agents does not start the same task seven times. If the lead goes quiet, the next in rank picks the request up. Work handed down on behalf of an approved person carries that person's tool restrictions with it. When an agent bound to one of these accounts answers a `sessions_send` task and OpenClaw would deliver the answer nowhere, the bot IMs it to the owners.
+Several agents can share a room as a ranked team. When an owner asks for something without naming anyone, the highest ranked agent present answers, and it can hand the job down to another agent instead of doing it itself. A room holding seven agents does not start the same task seven times. If the lead goes quiet, the next in rank picks the request up. Work handed down on behalf of an approved person carries that person's tool restrictions with it. When an agent bound to one of these accounts answers a `sessions_send` task and OpenClaw would deliver the answer nowhere, the bot IMs it to the owners. The bot relays only the announce step OpenClaw runs itself after `sessions_send`. It knows that step by OpenClaw's inter-session provenance on the message or, where OpenClaw leaves that off, by the exact inter-session message it writes on a run that came from no outside channel. Typing the same words to the agent on another channel relays nothing.
 
 ## Install
 
