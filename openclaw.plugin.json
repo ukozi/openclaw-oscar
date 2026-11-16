@@ -797,12 +797,12 @@
           "advanced": true
         },
         "files.directIm": {
-          "label": "Take pictures over Direct IM",
-          "help": "Owners and approved people can send the bot pictures. Off by default."
+          "label": "Pictures over Direct IM",
+          "help": "The bot takes pictures from owners and approved people, and sends them pictures. Off by default."
         },
         "files.sendFile": {
-          "label": "Take files over Send File",
-          "help": "Owners and approved people can send the bot pictures, PDFs and text files, Markdown included. Off by default."
+          "label": "Files over Send File",
+          "help": "The bot takes pictures, PDFs and text files from owners and approved people, Markdown included, and sends them files of any kind. Off by default."
         },
         "files.maxMb": {
           "label": "Largest file (MB)",

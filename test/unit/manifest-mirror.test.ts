@@ -23,6 +23,14 @@ describe('manifest', () => {
     expect(manifest.channelConfigs?.[CHANNEL_ID]?.uiHints?.password?.sensitive).toBe(true);
   });
 
+  it('says both file settings cover sending and receiving', () => {
+    const hints = manifest.channelConfigs?.[CHANNEL_ID]?.uiHints as Record<string, { label?: string; help?: string }> | undefined;
+    for (const key of ['files.directIm', 'files.sendFile']) {
+      expect(hints?.[key]?.label, key).not.toMatch(/^Take /);
+      expect(hints?.[key]?.help, key).toMatch(/takes .*sends /);
+    }
+  });
+
   it('declares every tool name', () => {
     expect([...(manifest.contracts?.tools ?? [])].sort()).toEqual([...TOOL_NAMES].sort());
   });
