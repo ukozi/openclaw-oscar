@@ -52,6 +52,7 @@ export const sdk = {
   foreignParams: [] as Rec[],
   foreignFail: 'none' as 'none' | 'failed' | 'throw' | 'partial' | 'suppressed' | 'failed-after-send',
   sessions: new Set<string>(),
+  media: [] as { buffer: Buffer; contentType?: string; subdir?: string; maxBytes?: number; originalFilename?: string; path: string }[],
   secretFiles: new Map<string, string>(),
   agent: (() => []) as (ctx: Rec) => Promise<FakeReply[]> | FakeReply[],
   plugin: undefined as Rec | undefined,
@@ -74,6 +75,7 @@ export const sdk = {
     sdk.foreignParams.length = 0;
     sdk.foreignFail = 'none';
     sdk.sessions.clear();
+    sdk.media.length = 0;
     sdk.secretFiles.clear();
     sdk.agent = () => [];
     sdk.plugin = undefined;
@@ -295,6 +297,15 @@ function createChatChannelPlugin(params: Rec): Rec {
 
 const secretRef = z.object({ source: z.enum(['env', 'file', 'exec']), provider: z.string(), id: z.string() }).strict();
 
+async function saveMediaBuffer(buffer: Buffer, contentType?: string, subdir?: string, maxBytes?: number, originalFilename?: string): Promise<Rec> {
+  if (maxBytes !== undefined && buffer.byteLength > maxBytes) throw new Error(`Media exceeds ${maxBytes} bytes`);
+  const id = `media-${sdk.media.length + 1}`;
+  const path = `/fake/state/media/${subdir ?? ''}/${id}`;
+  sdk.media.push({ buffer, contentType, subdir, maxBytes, originalFilename, path });
+  return { id, path, size: buffer.byteLength, contentType };
+}
+
+export const mediaStore: Rec = { saveMediaBuffer };
 export const channelInbound: Rec = { runChannelInboundEvent, buildChannelInboundEventContext };
 export const routing: Rec = { resolveAgentRoute };
 export const sessionStoreRuntime: Rec = { resolveStorePath: (_store?: string, opts?: { agentId?: string }) => `/fake/state/${opts?.agentId ?? 'main'}/sessions.json` };
