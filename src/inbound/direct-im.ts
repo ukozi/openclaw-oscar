@@ -20,7 +20,7 @@ export type IntakeDeps = {
   stranger: (name: string, display: string) => void;
 };
 
-type Batch = { pictures: Picture[]; onEnd: (outcome: SendOutcome) => void };
+type Batch = { peer: string; pictures: Picture[]; onEnd: (outcome: SendOutcome) => void; over: boolean };
 // waiting: what goes out once the session is open. sending: the last message on its way.
 type Live = { peer: string; bytes: number; open: boolean; waiting: Batch[]; sending: Promise<void>; timer?: ReturnType<typeof setTimeout> };
 
@@ -41,12 +41,15 @@ export function createDirectImIntake(
   deps: IntakeDeps,
 ): {
   // Sends the pictures in the live session with the person, or in a new one. onEnd is called once.
-  send(to: string, pictures: Picture[], onEnd: (outcome: SendOutcome) => void): void;
+  // 'too-many' when the person would have more than 3 pictures waiting or on their way.
+  send(to: string, pictures: Picture[], onEnd: (outcome: SendOutcome) => void): 'queued' | 'too-many';
   stop(): void;
   idle(): Promise<void>;
 } {
   const live = new Map<string, Live>();
   const ignored = new Ignored();
+  // Pictures handed over and not yet sent, by person.
+  const held = new Map<string, number>();
   const pending = new Set<Promise<void>>();
   let stopped = false;
   let tail: Promise<void> = Promise.resolve();
@@ -74,6 +77,11 @@ export function createDirectImIntake(
 
   // Nothing is told once the intake has stopped.
   const tell = (batch: Batch, outcome: SendOutcome): void => {
+    if (batch.over) return;
+    batch.over = true;
+    const left = (held.get(batch.peer) ?? 0) - batch.pictures.length;
+    if (left > 0) held.set(batch.peer, left);
+    else held.delete(batch.peer);
     if (stopped) return;
     try {
       batch.onEnd(outcome);
@@ -332,22 +340,35 @@ export function createDirectImIntake(
   ];
 
   return {
-    send(to, pictures, onEnd): void {
+    send(to, pictures, onEnd) {
       const peer = normalizeName(to);
       if (stopped || !peer) {
         onEnd('failed');
-        return;
+        return 'queued';
       }
       if (pictures.length === 0) {
         onEnd('done');
-        return;
+        return 'queued';
       }
-      queue('send', () => give(peer, { pictures, onEnd }));
+      const count = (held.get(peer) ?? 0) + pictures.length;
+      if (count > FILES_LIMITS.perSend) return 'too-many';
+      held.set(peer, count);
+      const batch: Batch = { peer, pictures, onEnd, over: false };
+      queue('send', async () => {
+        try {
+          await give(peer, batch);
+        } catch (err) {
+          tell(batch, 'failed');
+          throw err;
+        }
+      });
+      return 'queued';
     },
     stop(): void {
       stopped = true;
       for (const off of offs) off();
       for (const id of [...live.keys()]) end(id);
+      held.clear();
     },
     async idle(): Promise<void> {
       for (;;) {

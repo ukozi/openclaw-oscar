@@ -541,23 +541,14 @@ describe('Direct IM intake, sending', () => {
     const s = setup();
     await s.give('alice', 'a.gif', 'b.gif');
     await s.give('alice', 'c.gif');
-    await s.give('alice', 'd.gif');
     expect(s.calls).toEqual(['open alice']);
     expect(s.slots.active()).toBe(1);
     await s.opens(OUT, 'alice');
-    expect(s.sent).toEqual([
-      { id: OUT, names: ['a.gif', 'b.gif', 'c.gif'] },
-      { id: OUT, names: ['d.gif'] },
-    ]);
+    expect(s.sent).toEqual([{ id: OUT, names: ['a.gif', 'b.gif', 'c.gif'] }]);
+    expect(s.ends).toEqual(['done', 'done']);
+    await s.give('alice', 'd.gif');
+    expect(s.sent.slice(1)).toEqual([{ id: OUT, names: ['d.gif'] }]);
     expect(s.ends).toEqual(['done', 'done', 'done']);
-  });
-
-  it('puts no more than three pictures in one message', async () => {
-    const s = setup();
-    await s.give('alice', 'a.gif', 'b.gif', 'c.gif', 'd.gif');
-    await s.opens(OUT, 'alice');
-    expect(s.sent.map((m) => m.names)).toEqual([['a.gif', 'b.gif', 'c.gif'], ['d.gif']]);
-    expect(s.ends).toEqual(['done']);
   });
 
   it('keeps the pictures of one message within the size limit', async () => {
@@ -568,13 +559,73 @@ describe('Direct IM intake, sending', () => {
       return { name, bytes, width: 1, height: 1 };
     };
     const end = (outcome: SendOutcome): void => void s.ends.push(outcome);
-    s.intake.send('alice', [big('a.gif', 600 * 1024), big('b.gif', 600 * 1024), big('c.gif', 100 * 1024)], end);
-    s.intake.send('alice', [big('d.gif', 300 * 1024)], end);
-    s.intake.send('alice', [big('e.gif', MB)], end);
+    s.intake.send('alice', [big('a.gif', 600 * 1024)], end);
+    s.intake.send('alice', [big('b.gif', 600 * 1024)], end);
+    s.intake.send('alice', [big('c.gif', 100 * 1024)], end);
     await s.intake.idle();
     await s.opens(OUT, 'alice');
-    expect(s.sent.map((m) => m.names)).toEqual([['a.gif'], ['b.gif', 'c.gif', 'd.gif'], ['e.gif']]);
+    expect(s.sent.map((m) => m.names)).toEqual([['a.gif'], ['b.gif', 'c.gif']]);
     expect(s.ends).toEqual(['done', 'done', 'done']);
+    s.intake.send('alice', [big('d.gif', 300 * 1024), big('e.gif', MB)], end);
+    await s.intake.idle();
+    expect(s.sent.map((m) => m.names).slice(2)).toEqual([['d.gif'], ['e.gif']]);
+  });
+
+  it('holds at most three pictures for one person while the session opens', async () => {
+    const s = setup();
+    const end = (outcome: SendOutcome): void => void s.ends.push(outcome);
+    const one = (name: string): Picture[] => [{ name, bytes: GIF, width: 1, height: 1 }];
+    const results = ['a.gif', 'b.gif', 'c.gif', 'd.gif', 'e.gif'].map((name) => s.intake.send('alice', one(name), end));
+    expect(results).toEqual(['queued', 'queued', 'queued', 'too-many', 'too-many']);
+    await s.intake.idle();
+    expect(s.intake.send('Alice', one('f.gif'), end)).toBe('too-many');
+    expect(s.intake.send('alice', [...one('1.gif'), ...one('2.gif'), ...one('3.gif'), ...one('4.gif')], end)).toBe('too-many');
+    // Another person has a count of their own.
+    expect(s.intake.send('bob', one('a.gif'), end)).toBe('queued');
+    expect(s.ends).toEqual([]);
+    await s.opens(OUT, 'alice');
+    expect(s.sent.map((m) => m.names)).toEqual([['a.gif', 'b.gif', 'c.gif']]);
+    expect(s.ends).toEqual(['done', 'done', 'done']);
+    expect(s.intake.send('alice', one('g.gif'), end)).toBe('queued');
+    expect(FILES_LIMITS.perSend).toBe(3);
+  });
+
+  it('holds at most three pictures for one person while a message is on its way', async () => {
+    const s = setup();
+    const end = (outcome: SendOutcome): void => void s.ends.push(outcome);
+    const one = (name: string): Picture[] => [{ name, bytes: GIF, width: 1, height: 1 }];
+    await s.give('alice', 'a.gif');
+    await s.opens(OUT, 'alice');
+    let release = (): void => {};
+    s.state.holdSend = new Promise<void>((resolve) => (release = resolve));
+    expect(['b.gif', 'c.gif', 'd.gif', 'e.gif'].map((name) => s.intake.send('alice', one(name), end))).toEqual(['queued', 'queued', 'queued', 'too-many']);
+    await flush();
+    expect(s.intake.send('alice', one('f.gif'), end)).toBe('too-many');
+    release();
+    await s.intake.idle();
+    expect(s.ends).toEqual(['done', 'done', 'done', 'done']);
+    expect(s.intake.send('alice', one('g.gif'), end)).toBe('queued');
+  });
+
+  it('frees the count of pictures that were not sent', async () => {
+    const s = setup();
+    const end = (outcome: SendOutcome): void => void s.ends.push(outcome);
+    const three: Picture[] = ['a.gif', 'b.gif', 'c.gif'].map((name) => ({ name, bytes: GIF, width: 1, height: 1 }));
+    expect(s.intake.send('alice', three, end)).toBe('queued');
+    await s.intake.idle();
+    await s.closed(OUT, 'alice', 'declined', 'peer', 'offering');
+    expect(s.ends).toEqual(['failed']);
+    s.fail.open = new Error('no');
+    expect(s.intake.send('alice', three, end)).toBe('queued');
+    await s.intake.idle();
+    expect(s.ends).toEqual(['failed', 'failed']);
+    // A stranger's pictures are refused and counted no longer.
+    for (let n = 0; n < 2; n += 1) {
+      expect(s.intake.send('mallory', three, end)).toBe('queued');
+      await s.intake.idle();
+    }
+    expect(s.ends).toEqual(['failed', 'failed', 'failed', 'failed']);
+    expect(s.intake.send('alice', three, end)).toBe('queued');
   });
 
   it("accepts the person's offer that came while the bot was opening a session", async () => {
@@ -677,18 +728,24 @@ describe('Direct IM intake, sending', () => {
   });
 
   it('reports failed when the session ends while the pictures go out', async () => {
-    const s = setup();
+    const s = setup({ files: { directIm: true, maxMb: 1 } });
     await s.give('alice', 'a.gif');
     await s.opens(OUT, 'alice');
     let release = (): void => {};
     s.state.holdSend = new Promise<void>((resolve) => (release = resolve));
-    s.intake.send('alice', [1, 2, 3, 4].map((n) => ({ name: `${n}.gif`, bytes: GIF, width: 1, height: 1 })), (outcome) => void s.ends.push(outcome));
+    // Two messages: the two pictures do not fit in one.
+    const big = (name: string): Picture => {
+      const bytes = new Uint8Array(600 * 1024);
+      bytes.set(GIF);
+      return { name, bytes, width: 1, height: 1 };
+    };
+    s.intake.send('alice', [big('1.gif'), big('2.gif')], (outcome) => void s.ends.push(outcome));
     await flush();
     s.emit('directIm', { id: OUT, peer: 'alice', role: 'offering', state: 'closed', end: 'peer-closed' });
     await flush();
     release();
     await s.intake.idle();
-    expect(s.sent.map((m) => m.names)).toEqual([['a.gif'], ['1.gif', '2.gif', '3.gif']]);
+    expect(s.sent.map((m) => m.names)).toEqual([['a.gif'], ['1.gif']]);
     expect(s.ends).toEqual(['done', 'failed']);
     expect(s.clock.pending()).toBe(0);
   });
