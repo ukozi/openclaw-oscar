@@ -43,15 +43,25 @@ function whyOf(err: unknown): Why {
   return /\bexceeds [^/\\]{1,24} limit\b|could not be reduced below /.test(message) ? 'too-large' : 'failed';
 }
 
-// Only an absolute path or a file URL counts as a local file for a person who is not an owner.
+// Two leading separators name another computer or a device on Windows.
+export function networkPath(path: string): boolean {
+  return /^[\\/]{2}/.test(path);
+}
+
+// Only an absolute path or a file URL with no host counts as a local file for a person who is not an owner.
 function plainPath(url: string): string | undefined {
-  try {
-    if (/^file:/i.test(url)) return resolve(fileURLToPath(url));
-  } catch {
-    return undefined;
+  let path = url;
+  if (/^file:/i.test(url)) {
+    try {
+      if (new URL(url).hostname !== '') return undefined;
+      path = fileURLToPath(url);
+    } catch {
+      return undefined;
+    }
   }
-  if (!isAbsolute(url) || url.includes('\u0000')) return undefined;
-  return resolve(url);
+  if (networkPath(path) || !isAbsolute(path) || path.includes('\u0000')) return undefined;
+  const full = resolve(path);
+  return networkPath(full) ? undefined : full;
 }
 
 async function real(path: string): Promise<string> {
@@ -67,11 +77,14 @@ function within(dir: string, path: string): boolean {
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
-async function inInbound(path: string): Promise<boolean> {
-  const inbound = resolve(getMediaDir(), 'inbound');
+// The file system is asked about the path only when its text is inside the media folder.
+async function refusal(path: string): Promise<string | undefined> {
+  const media = resolve(getMediaDir());
+  if (![media, await real(media)].some((dir) => within(dir, path))) return 'outside the media folder';
+  const inbound = resolve(media, 'inbound');
   const dirs = [inbound, await real(inbound)];
   const paths = [path, await real(path)];
-  return dirs.some((dir) => paths.some((p) => within(dir, p)));
+  return dirs.some((dir) => paths.some((p) => within(dir, p))) ? 'received from somebody' : undefined;
 }
 
 // The load is stopped, and given up on even if it does not stop.
@@ -112,8 +125,9 @@ export async function loadOutgoing(p: {
     } else {
       if (!HTTP.test(url)) {
         const path = plainPath(url);
-        if (path === undefined || (await inInbound(path))) {
-          p.log.info('a file was not loaded for a person who is not an owner', { why: path === undefined ? 'not a plain path' : 'received from somebody' });
+        const why = path === undefined ? 'not a plain path' : await refusal(path);
+        if (path === undefined || why !== undefined) {
+          p.log.info('a file was not loaded for a person who is not an owner', { why });
           return { ok: false, why: 'not-allowed' };
         }
         url = path;

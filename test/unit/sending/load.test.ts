@@ -1,9 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const fsSpy = vi.hoisted(() => ({ realpaths: [] as string[] }));
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof import('node:fs/promises')>();
+  const realpath = async (path: string) => {
+    fsSpy.realpaths.push(String(path));
+    return actual.realpath(path);
+  };
+  return { ...actual, default: { ...actual, realpath }, realpath };
+});
 vi.mock('openclaw/plugin-sdk/web-media', async () => (await import('../../fake/openclaw.js')).webMedia);
 vi.mock('openclaw/plugin-sdk/media-runtime', async () => (await import('../../fake/openclaw.js')).mediaRuntime);
 
-import { linkOf, loadOutgoing } from '../../../src/sending/load.js';
+import { linkOf, loadOutgoing, networkPath } from '../../../src/sending/load.js';
 import type { HostAccess } from '../../../src/sending/load.js';
 import { FAKE_MEDIA_DIR, sdk } from '../../fake/openclaw.js';
 import { silentLog } from '../rooms-fixtures.js';
@@ -23,6 +32,7 @@ const lastOptions = () => sdk.loads.at(-1)?.options ?? {};
 
 beforeEach(() => {
   sdk.reset();
+  fsSpy.realpaths.length = 0;
   sdk.files.set(CHART, { buffer: PNG, contentType: 'image/png' });
   sdk.files.set(MEMORY, { buffer: NOTES, contentType: 'text/markdown' });
   sdk.files.set(THEIRS, { buffer: PNG, contentType: 'image/png' });
@@ -75,11 +85,43 @@ describe('loadOutgoing for an approved person', () => {
     const readFile = vi.fn(async () => NOTES);
     const host: HostAccess = { mediaAccess: { localRoots: ['/fake/home'], readFile, workspaceDir: '/fake/home' }, mediaLocalRoots: ['/fake/home'], mediaReadFile: readFile };
     expect(await load(ELSEWHERE, 'approved', { host })).toEqual({ ok: false, why: 'not-allowed' });
+    expect(await load(CHART, 'approved', { host })).toMatchObject({ ok: true, name: 'chart.png' });
     expect(readFile).not.toHaveBeenCalled();
     expect(lastOptions()).toMatchObject({ maxBytes: MB, localRoots: [FAKE_MEDIA_DIR], optimizeImages: false });
     expect(lastOptions()).not.toHaveProperty('readFile');
     expect(lastOptions()).not.toHaveProperty('hostReadCapability');
     expect(lastOptions()).not.toHaveProperty('workspaceDir');
+  });
+
+  it('refuses a path on another computer for an approved person, and never looks at it', async () => {
+    const forms = [
+      'file://evil/share/x.png',
+      'FILE://evil/share/x.png',
+      'file://evil.example.net/share/x.png',
+      'file:////evil/share/x.png',
+      'file:///%2Fevil/share/x.png',
+      '//evil/share/x.png',
+      '\\\\evil\\share\\x.png',
+      '/\\evil\\share\\x.png',
+      '\\/evil/share/x.png',
+      '\\\\?\\UNC\\evil\\share\\x.png',
+      ` //evil/share/x.png`,
+    ];
+    for (const url of forms) expect(await load(url, 'approved'), url).toEqual({ ok: false, why: 'not-allowed' });
+    expect(fsSpy.realpaths).toEqual([]);
+    expect(sdk.loads).toEqual([]);
+  });
+
+  it('never looks at a path outside the media folder for an approved person', async () => {
+    const forms = [ELSEWHERE, MEMORY, `file://${ELSEWHERE}`, `${FAKE_MEDIA_DIR}/../home/report.pdf`, `${FAKE_MEDIA_DIR}-other/chart.png`, '/'];
+    for (const url of forms) expect(await load(url, 'approved'), url).toEqual({ ok: false, why: 'not-allowed' });
+    expect(fsSpy.realpaths.filter((path) => path !== FAKE_MEDIA_DIR)).toEqual([]);
+    expect(sdk.loads).toEqual([]);
+  });
+
+  it('looks at a path of the media folder before the load', async () => {
+    expect(await load(CHART, 'approved')).toMatchObject({ ok: true });
+    expect(fsSpy.realpaths).toContain(CHART);
   });
 
   it('gives an http url to the loader for an approved person', async () => {
@@ -238,6 +280,13 @@ describe('loadOutgoing and time', () => {
     sdk.loadFail = new Error('boom');
     expect(await load(URL_SLOW, 'owner')).toEqual({ ok: false, why: 'failed' });
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('networkPath', () => {
+  it('knows a path on another computer on every platform', () => {
+    for (const path of ['//evil/share/x.png', '\\\\evil\\share\\x.png', '/\\evil\\share', '\\/evil/share', '\\\\?\\C:\\x.png', '\\\\.\\pipe\\x']) expect(networkPath(path), path).toBe(true);
+    for (const path of [CHART, '/a//b', 'C:\\media\\chart.png', 'C:/media/chart.png', 'chart.png', '']) expect(networkPath(path), path).toBe(false);
   });
 });
 
