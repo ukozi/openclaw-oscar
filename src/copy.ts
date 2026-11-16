@@ -37,7 +37,7 @@ const FILE_REFUSALS: Record<Refusal, (maxMb: number) => string> = {
   damaged: () => "That file didn't arrive in one piece. Please send it again.",
 };
 
-// Draft wording for the lines said when a file is not sent.
+// The lines said when a file is not sent.
 const FILE_NOT_SENT: Record<SendProblem, (p: { maxMb: number; link?: string }) => string> = {
   off: () => "I can't send files here.",
   failed: ({ link }) => (link ? `I couldn't send you that file. Here is the link: ${link}` : "I couldn't send you that file."),
