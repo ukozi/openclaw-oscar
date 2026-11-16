@@ -1,5 +1,8 @@
+import { readPolicy } from '../config.js';
 import type { RootPolicy } from '../config.js';
+import { copy } from '../copy.js';
 import { normalizeName } from '../names.js';
+import type { Logger } from '../oscar/index.js';
 import { roleOf } from '../policy.js';
 
 export const FILES_LIMITS = { perOffer: 3, active: 4, idleMs: 300_000, stallMs: 180_000, transferMs: 900_000, refusalCooldownMs: 60_000, textChars: 8000 };
@@ -45,6 +48,27 @@ export class Slots {
 
 function slotKey(peer: string, kind: TransferKind): string {
   return `${kind}:${normalizeName(peer)}`;
+}
+
+export function createRefusals(p: {
+  getCfg: () => unknown;
+  now: () => number;
+  log: Logger;
+  send: (to: string, text: string) => Promise<void>;
+}): (to: string, why: Refusal) => void {
+  const lastAt = new Map<string, number>();
+  return (to, why) => {
+    const name = normalizeName(to);
+    const at = p.now();
+    for (const [key, sent] of lastAt) if (at - sent >= FILES_LIMITS.refusalCooldownMs) lastAt.delete(key);
+    const key = `${why}:${name}`;
+    if (!name || lastAt.has(key)) return;
+    lastAt.set(key, at);
+    const maxMb = Math.round(readPolicy(p.getCfg()).files.maxBytes / (1024 * 1024));
+    p.send(name, copy.fileRefused(why, maxMb)).catch((err: unknown) => {
+      p.log.warn('refusal was not delivered', { to: name, why, error: err instanceof Error ? err.message : String(err) });
+    });
+  };
 }
 
 export type TurnMedia = { path: string; contentType: string; kind: 'image' | 'document'; name: string; bytes: number; via: TransferKind };

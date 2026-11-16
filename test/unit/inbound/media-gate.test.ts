@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FILES_LIMITS, Slots, senderGate } from '../../../src/inbound/media-gate.js';
+import { copy } from '../../../src/copy.js';
+import { FILES_LIMITS, Slots, createRefusals, senderGate } from '../../../src/inbound/media-gate.js';
 import { policyFixture } from '../rooms-fixtures.js';
 
 const yes = async (): Promise<boolean> => true;
@@ -71,5 +72,55 @@ describe('Slots', () => {
     slots.release('alice', 'direct-im');
     slots.release('alice', 'direct-im');
     expect(slots.active()).toBe(1);
+  });
+});
+
+describe('createRefusals', () => {
+  const cfg = { channels: { oscar: { owners: ['alice'], allowFrom: ['bob'], files: { sendFile: true, maxMb: 5 } } } };
+  const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+  function harness(send?: (to: string, text: string) => Promise<void>) {
+    const clock = { at: 1_000_000 };
+    const sent: { to: string; text: string }[] = [];
+    const warnings: { msg: string; fields?: Record<string, unknown> }[] = [];
+    const refuse = createRefusals({
+      getCfg: () => cfg,
+      now: () => clock.at,
+      log: { debug() {}, info() {}, warn: (msg, fields) => void warnings.push({ msg, ...(fields ? { fields } : {}) }), error() {} },
+      send: send ?? (async (to, text) => void sent.push({ to, text })),
+    });
+    return { clock, sent, warnings, refuse };
+  }
+
+  it('sends one IM for a refusal', async () => {
+    const h = harness();
+    h.refuse('Bob', 'too-large');
+    await settle();
+    expect(h.sent).toEqual([{ to: 'bob', text: copy.fileRefused('too-large', 5) }]);
+  });
+
+  it('sends the same refusal to the same person once a minute', async () => {
+    const h = harness();
+    h.refuse('bob', 'busy');
+    h.clock.at += FILES_LIMITS.refusalCooldownMs - 1;
+    h.refuse('Bob', 'busy');
+    h.refuse('bob', 'wrong-type');
+    h.refuse('alice', 'busy');
+    await settle();
+    expect(h.sent.map((m) => `${m.to}:${m.text}`)).toEqual([
+      `bob:${copy.fileRefused('busy', 5)}`, `bob:${copy.fileRefused('wrong-type', 5)}`, `alice:${copy.fileRefused('busy', 5)}`,
+    ]);
+    h.clock.at += 1;
+    h.refuse('bob', 'busy');
+    await settle();
+    expect(h.sent).toHaveLength(4);
+    expect(h.sent[3]).toEqual({ to: 'bob', text: copy.fileRefused('busy', 5) });
+  });
+
+  it('logs a refusal that could not be sent', async () => {
+    const h = harness(async () => { throw new Error('rate limited'); });
+    h.refuse('bob', 'damaged');
+    await settle();
+    expect(h.warnings).toEqual([{ msg: 'refusal was not delivered', fields: { to: 'bob', why: 'damaged', error: 'rate limited' } }]);
   });
 });

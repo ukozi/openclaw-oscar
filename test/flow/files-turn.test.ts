@@ -12,6 +12,7 @@ vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake
 vi.mock('openclaw/plugin-sdk/media-store', async () => (await import('../fake/openclaw.js')).mediaStore);
 vi.mock('openclaw/plugin-sdk/status-helpers', async () => (await import('../fake/openclaw.js')).statusHelpers);
 
+import { copy } from '../../src/copy.js';
 import { imTexts } from '../fake/kit.js';
 import { sdk } from '../fake/openclaw.js';
 import { startFlow, waitFor } from './helpers.js';
@@ -99,3 +100,31 @@ describe('pictures and files reach the agent', () => {
     expect(imTexts(mallory)).toEqual([]);
   });
 });
+
+describe('refused files', () => {
+  const BIG = new Uint8Array(1024 * 1024 + 1).fill(0x61);
+
+  it('a file over the limit is declined and the sender gets the too-large message', async () => {
+    flow = await startFlow({ server: { relay: true }, sec: { files: { sendFile: true, maxMb: 1 } } });
+    const bob = flow.peer('bob');
+    expect((await bob.offerFile('botone', 'big.txt', BIG)).outcome).toBe('declined');
+    await waitFor(() => imTexts(bob).length === 1, 8000, 'the refusal to bob');
+    expect(imTexts(bob)[0]).toMatchObject({ from: 'botone', text: copy.fileRefused('too-large', 1) });
+    expect(copy.fileRefused('too-large', 1)).toContain('1 MB');
+    expect(flow.server.relayed()).toEqual([]);
+    expect(sdk.media).toEqual([]);
+    expect(sdk.inbound).toEqual([]);
+  });
+
+  it('a stranger gets no message', async () => {
+    flow = await startFlow({ server: { relay: true }, sec: { files: { directIm: true, sendFile: true, maxMb: 1 } } });
+    const mallory = flow.peer('mallory');
+    expect((await mallory.offerFile('botone', 'big.txt', BIG)).outcome).toBe('declined');
+    expect((await mallory.offerFolder('botone', 'docs', [{ path: ['a.md'], bytes: NOTES }])).outcome).toBe('declined');
+    const bob = flow.peer('bob');
+    expect((await bob.offerFile('botone', 'big.txt', BIG)).outcome).toBe('declined');
+    await waitFor(() => imTexts(bob).length === 1, 8000, 'the refusal to bob');
+    expect(imTexts(mallory)).toEqual([]);
+  });
+});
+

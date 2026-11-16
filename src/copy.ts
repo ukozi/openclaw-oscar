@@ -1,4 +1,5 @@
 import type { RoomProfile } from './config.js';
+import type { Refusal } from './inbound/media-gate.js';
 
 export type AwayFamily = 'shell' | 'files' | 'web' | 'handoff' | 'memory';
 export type Outcome = 'done' | 'none' | 'failed';
@@ -25,6 +26,15 @@ const TRUST_LINES = {
   public:
     'This room is public: anyone on the server can read it. Do not share personal details about your owner, such as where they live, family, money, health or contacts. Offer to continue by IM instead.',
 } as const;
+
+const FILE_REFUSALS: Record<Refusal, (maxMb: number) => string> = {
+  'too-large': (maxMb) => `That file is too large for me. I can take files up to ${maxMb} MB.`,
+  'wrong-type': () => "I can't take that kind of file. I can take pictures, PDFs and text files.",
+  'too-many': () => 'I can take up to 3 files at a time, and no folders.',
+  busy: () => "I'm still receiving your last file. Send the next one when it's done.",
+  'busy-others': () => "I'm busy receiving other files. Send it again in a minute.",
+  damaged: () => "That file didn't arrive in one piece. Please send it again.",
+};
 
 function orDefault(text: string, fallback: string): string {
   return text.trim().length > 0 ? text : fallback;
@@ -144,4 +154,5 @@ export const copy = {
   ownersFixed: (list: string): string => `Added ${list} to commands.ownerAllowFrom.`,
   ownersNothingToFix: (): string => 'Nothing to add; every owner is already listed.',
   ownersFixFailed: (reason: string): string => `I couldn't change the config: ${reason}.`,
+  fileRefused: (why: Refusal, maxMb: number): string => FILE_REFUSALS[why](maxMb),
 };

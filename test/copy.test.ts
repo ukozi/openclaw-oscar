@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { copy } from '../src/copy.js';
+import type { Refusal } from '../src/inbound/media-gate.js';
+
+const REFUSALS: Refusal[] = ['too-large', 'wrong-type', 'too-many', 'busy', 'busy-others', 'damaged'];
 
 const BANNED = [/\baim\b/i, /\baol\b/i, /oscar/i, /instant\s+messenger/i];
 const ALLOWED_PATH = /channels\.oscar\.[A-Za-z]+/g;
@@ -16,6 +19,7 @@ function samples(): string[] {
     copy.awayDefault(),
     copy.awayPhrase('shell'), copy.awayPhrase('files'), copy.awayPhrase('web'), copy.awayPhrase('handoff'), copy.awayPhrase('memory'),
     copy.awayAutoReply('Working in some files'), copy.awayAutoReply('   '),
+    ...REFUSALS.map((why) => copy.fileRefused(why, 10)),
   ];
 }
 
@@ -60,6 +64,18 @@ describe('copy', () => {
 
   it('uses the singular for one', () => {
     expect(copy.noticeRollup(1)).toBe('1 more person tried to reach me this hour. I did not reply to them.');
+  });
+
+  it('says the limit from the setting in the too-large message', () => {
+    expect(copy.fileRefused('too-large', 10)).toContain('10 MB');
+    expect(copy.fileRefused('too-large', 25)).toContain('25 MB');
+    expect(copy.fileRefused('too-large', 25)).not.toContain('10 MB');
+  });
+
+  it('has a message for every refusal', () => {
+    const texts = REFUSALS.map((why) => copy.fileRefused(why, 10));
+    for (const text of texts) expect(text.trim().length).toBeGreaterThan(0);
+    expect(new Set(texts).size).toBe(REFUSALS.length);
   });
 
   it('falls back to the default ack and busy lines', () => {

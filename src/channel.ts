@@ -12,7 +12,7 @@ import { createDirectImIntake } from './inbound/direct-im.js';
 import type { IntakeDeps } from './inbound/direct-im.js';
 import { attachRooms } from './inbound/home.js';
 import { addImControlHandler, admitSender, createImHandler } from './inbound/im.js';
-import { Slots } from './inbound/media-gate.js';
+import { Slots, createRefusals } from './inbound/media-gate.js';
 import { saveInbound } from './inbound/media-store.js';
 import { recordRoomLine, roomSink } from './inbound/room.js';
 import { createSendFileIntake } from './inbound/send-file.js';
@@ -202,7 +202,10 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     admit: (from, policy) => admitSender(accountId, from, policy),
     save: saveInbound,
     deliver: (ev) => im.onMedia(ev),
-    refuse: (to, why) => log.info('refused a file', { to, why }),
+    refuse: createRefusals({
+      getCfg, now, log,
+      send: (to, text) => sendNotice({ cfg: getCfg(), accountId, bot: self(), owner: to, text }),
+    }),
     stranger: () => undefined,
   };
   const intakes = [
