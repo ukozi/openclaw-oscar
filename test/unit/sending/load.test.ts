@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('openclaw/plugin-sdk/web-media', async () => (await import('../../fake/openclaw.js')).webMedia);
 vi.mock('openclaw/plugin-sdk/media-runtime', async () => (await import('../../fake/openclaw.js')).mediaRuntime);
@@ -76,7 +76,10 @@ describe('loadOutgoing for an approved person', () => {
     const host: HostAccess = { mediaAccess: { localRoots: ['/fake/home'], readFile, workspaceDir: '/fake/home' }, mediaLocalRoots: ['/fake/home'], mediaReadFile: readFile };
     expect(await load(ELSEWHERE, 'approved', { host })).toEqual({ ok: false, why: 'not-allowed' });
     expect(readFile).not.toHaveBeenCalled();
-    expect(lastOptions()).toEqual({ maxBytes: MB, localRoots: [FAKE_MEDIA_DIR], optimizeImages: false });
+    expect(lastOptions()).toMatchObject({ maxBytes: MB, localRoots: [FAKE_MEDIA_DIR], optimizeImages: false });
+    expect(lastOptions()).not.toHaveProperty('readFile');
+    expect(lastOptions()).not.toHaveProperty('hostReadCapability');
+    expect(lastOptions()).not.toHaveProperty('workspaceDir');
   });
 
   it('gives an http url to the loader for an approved person', async () => {
@@ -179,6 +182,62 @@ describe('loadOutgoing results', () => {
     expect(await load('https://example.net/a', 'owner')).toMatchObject({ ok: true, name: 'file.png' });
     expect(await load('https://example.net/b', 'owner')).toMatchObject({ ok: true, name: 'file' });
     expect(await load('https://example.net/c', 'owner')).toMatchObject({ ok: true, name: 'cat.png' });
+  });
+});
+
+describe('loadOutgoing and time', () => {
+  const URL_SLOW = 'https://example.net/slow.bin';
+  const signalOf = () => (lastOptions().requestInit as { signal?: AbortSignal } | undefined)?.signal;
+  const settled = (load: Promise<unknown>) => {
+    const state = { done: false };
+    void load.then(() => (state.done = true));
+    return state;
+  };
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('gives up on a load that never ends, and stops it', async () => {
+    for (const role of ['owner', 'approved'] as const) {
+      sdk.loadHangs = 'until-aborted';
+      const got = load(URL_SLOW, role);
+      const state = settled(got);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(state.done, role).toBe(false);
+      expect(signalOf()?.aborted, role).toBe(false);
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(state.done, role).toBe(true);
+      expect(await got, role).toEqual({ ok: false, why: 'failed' });
+      expect(signalOf()?.aborted, role).toBe(true);
+    }
+  });
+
+  it('gives up on a load that does not heed the stop', async () => {
+    sdk.loadHangs = 'for-ever';
+    const got = load(URL_SLOW, 'approved');
+    const state = settled(got);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(state.done).toBe(true);
+    expect(await got).toEqual({ ok: false, why: 'failed' });
+  });
+
+  it('limits the wait between two parts of a remote file', async () => {
+    sdk.remote.set(URL_SLOW, { buffer: PNG, contentType: 'image/png' });
+    expect(await load(URL_SLOW, 'approved')).toMatchObject({ ok: true });
+    const idle = lastOptions().readIdleTimeoutMs as number;
+    expect(idle).toBeGreaterThan(0);
+    expect(idle).toBeLessThan(5 * 60_000);
+  });
+
+  it('leaves no timer behind and does not stop a load that ended', async () => {
+    sdk.remote.set(URL_SLOW, { buffer: PNG, contentType: 'image/png' });
+    expect(await load(URL_SLOW, 'owner')).toMatchObject({ ok: true });
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(signalOf()?.aborted).toBe(false);
+    sdk.loadFail = new Error('boom');
+    expect(await load(URL_SLOW, 'owner')).toEqual({ ok: false, why: 'failed' });
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

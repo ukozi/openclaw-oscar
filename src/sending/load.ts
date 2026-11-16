@@ -17,6 +17,8 @@ type Why = Extract<Loaded, { ok: false }>['why'];
 
 const HTTP = /^https?:\/\//i;
 const MISSING = new Set(['not-found', 'not-file']);
+const LOAD_MS = 60_000;
+const IDLE_MS = 15_000;
 
 export function linkOf(url: string): string | undefined {
   const link = typeof url === 'string' ? url.trim() : '';
@@ -72,6 +74,26 @@ async function inInbound(path: string): Promise<boolean> {
   return dirs.some((dir) => paths.some((p) => within(dir, p)));
 }
 
+// The load is stopped, and given up on even if it does not stop.
+async function inTime<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const stop = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error('the load took too long');
+      stop.abort(err);
+      reject(err);
+    }, LOAD_MS);
+  });
+  try {
+    const load = run(stop.signal);
+    load.catch(() => undefined);
+    return await Promise.race([load, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function loadOutgoing(p: {
   url: string;
   cfg: unknown;
@@ -98,7 +120,11 @@ export async function loadOutgoing(p: {
       }
       params = { mediaLocalRoots: [getMediaDir()] };
     }
-    const got = await loadWebMedia(url, buildOutboundMediaLoadOptions({ ...params, maxBytes: p.maxBytes, optimizeImages: false }));
+    const got = await inTime((signal) => {
+      const built = buildOutboundMediaLoadOptions({ ...params, maxBytes: p.maxBytes, optimizeImages: false, requestInit: { signal } });
+      const options = { ...built, readIdleTimeoutMs: IDLE_MS };
+      return loadWebMedia(url, options);
+    });
     const bytes = new Uint8Array(got.buffer);
     if (bytes.byteLength === 0) return { ok: false, why: 'empty' };
     if (bytes.byteLength > p.maxBytes) return { ok: false, why: 'too-large' };

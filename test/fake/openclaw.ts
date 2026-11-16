@@ -60,6 +60,7 @@ export const sdk = {
   loads: [] as { url: string; options: Rec }[],
   loadFail: undefined as unknown,
   loadResult: undefined as Rec | undefined,
+  loadHangs: undefined as 'until-aborted' | 'for-ever' | undefined,
   agent: (() => []) as (ctx: Rec) => Promise<FakeReply[]> | FakeReply[],
   plugin: undefined as Rec | undefined,
   usePlugin(plugin: unknown): void {
@@ -89,6 +90,7 @@ export const sdk = {
     sdk.loads.length = 0;
     sdk.loadFail = undefined;
     sdk.loadResult = undefined;
+    sdk.loadHangs = undefined;
     sdk.agent = () => [];
     sdk.plugin = undefined;
   },
@@ -341,6 +343,12 @@ function loadError(name: string, code: string, message: string): Error {
 async function loadWebMedia(url: string, options: Rec = {}): Promise<Rec> {
   sdk.loads.push({ url, options });
   if (sdk.loadFail !== undefined) throw sdk.loadFail;
+  if (sdk.loadHangs !== undefined) {
+    const signal = (options.requestInit as { signal?: AbortSignal } | undefined)?.signal;
+    return new Promise((_, reject) => {
+      if (sdk.loadHangs === 'until-aborted') signal?.addEventListener('abort', () => reject(signal.reason));
+    });
+  }
   if (sdk.loadResult !== undefined) return sdk.loadResult;
   const maxBytes = options.maxBytes as number | undefined;
   const tooLarge = (size: number): Error => new Error(`Media exceeds ${Math.round((maxBytes ?? 0) / 1048576)}MB limit (got ${(size / 1048576).toFixed(2)}MB)`);
@@ -374,6 +382,7 @@ function buildOutboundMediaLoadOptions(params: Rec = {}): Rec {
     ...(params.maxBytes !== undefined ? { maxBytes: params.maxBytes } : {}),
     ...(localRoots ? { localRoots } : {}),
     ...(readFile ? { readFile, hostReadCapability: true } : {}),
+    ...(params.requestInit ? { requestInit: params.requestInit } : {}),
     ...(params.optimizeImages !== undefined ? { optimizeImages: params.optimizeImages } : {}),
     ...(access.workspaceDir ? { workspaceDir: access.workspaceDir } : {}),
   };
