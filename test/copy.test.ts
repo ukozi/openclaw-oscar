@@ -20,6 +20,8 @@ function samples(): string[] {
     copy.awayPhrase('shell'), copy.awayPhrase('files'), copy.awayPhrase('web'), copy.awayPhrase('handoff'), copy.awayPhrase('memory'),
     copy.awayAutoReply('Working in some files'), copy.awayAutoReply('   '),
     ...REFUSALS.map((why) => copy.fileRefused(why, 10)),
+    ...(['off', 'failed', 'too-large', 'too-many'] as const).map((why) => copy.fileNotSent(why, { maxMb: 10 })),
+    copy.fileNotSent('failed', { maxMb: 10, link: 'https://example.com/a.pdf' }),
   ];
 }
 

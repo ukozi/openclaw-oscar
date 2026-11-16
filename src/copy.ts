@@ -1,5 +1,6 @@
 import type { RoomProfile } from './config.js';
 import type { Refusal } from './inbound/media-gate.js';
+import type { SendProblem } from './sending/notes.js';
 
 export type AwayFamily = 'shell' | 'files' | 'web' | 'handoff' | 'memory';
 export type Outcome = 'done' | 'none' | 'failed';
@@ -34,6 +35,14 @@ const FILE_REFUSALS: Record<Refusal, (maxMb: number) => string> = {
   busy: () => "I'm still receiving your last file. Send the next one when it's done.",
   'busy-others': () => "I'm busy receiving other files. Send it again in a minute.",
   damaged: () => "That file didn't arrive in one piece. Please send it again.",
+};
+
+// Draft wording for the lines said when a file is not sent.
+const FILE_NOT_SENT: Record<SendProblem, (p: { maxMb: number; link?: string }) => string> = {
+  off: () => "I can't send files here.",
+  failed: ({ link }) => (link ? `I couldn't send you that file. Here is the link: ${link}` : "I couldn't send you that file."),
+  'too-large': ({ maxMb }) => `That file is too large for me to send. I can send files up to ${maxMb} MB.`,
+  'too-many': () => 'I can send up to 3 files at a time. I left the rest out.',
 };
 
 function orDefault(text: string, fallback: string): string {
@@ -156,4 +165,5 @@ export const copy = {
   ownersNothingToFix: (): string => 'Nothing to add; every owner is already listed.',
   ownersFixFailed: (reason: string): string => `I couldn't change the config: ${reason}.`,
   fileRefused: (why: Refusal, maxMb: number): string => FILE_REFUSALS[why](maxMb),
+  fileNotSent: (why: SendProblem, p: { maxMb: number; link?: string }): string => FILE_NOT_SENT[why](p),
 };
