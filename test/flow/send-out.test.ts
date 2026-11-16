@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { ByteReader, RDV_CANCEL_DECLINED, decodeTlvs, encodeRendezvousCancel } from 'open-oscar-client-kit/wire';
+import { createDirectImIntake } from '../../src/inbound/direct-im.js';
 import { Slots } from '../../src/inbound/media-gate.js';
+import type { MediaEvent } from '../../src/inbound/media-gate.js';
 import { OscarSendError } from '../../src/oscar/index.js';
 import type { FileSink, OscarSessionOptions, OutgoingFile, TransferOptions } from '../../src/oscar/index.js';
 import { createFileSender } from '../../src/sending/send-file.js';
@@ -117,6 +119,121 @@ describe('sending from the session', () => {
     expect(slots.active()).toBe(0);
     sender.stop();
     await sender.idle();
+  });
+
+  it("a picture reaches a peer that accepts Direct IM, and the peer's answer in that session reaches the agent", async () => {
+    const h = await signOn();
+    server.peer('alice').acceptDirectIm();
+    const slots = new Slots();
+    const delivered: MediaEvent[] = [];
+    const refused: string[] = [];
+    const intake = createDirectImIntake(h.session, {
+      self: () => 'botone',
+      getCfg: () => ({ channels: { oscar: { owners: ['alice'], files: { directIm: true } } } }),
+      now: h.timers.now,
+      timers: h.timers.api,
+      log: h.logs.log,
+      slots,
+      admit: async () => true,
+      save: async (p) => ({ path: `/media/inbound/${p.name}` }) as never,
+      deliver: (ev) => void delivered.push(ev),
+      refuse: (to, why) => void refused.push(`${to} ${why}`),
+      stranger: () => {},
+    });
+    const ends: SendOutcome[] = [];
+    intake.send('Alice', [{ name: 'dot.gif', bytes: GIF, width: 1, height: 1 }], (outcome) => void ends.push(outcome));
+    await waitFor(() => ends.length === 1, 'the end of the send');
+    expect(ends).toEqual(['done']);
+    expect(slots.active()).toBe(1);
+    const peerSide = server.peer('alice').directIms()[0];
+    await waitFor(() => (peerSide?.received().length ?? 0) === 1, 'the picture');
+    expect(peerSide?.received()[0]?.attachments.map((a) => ({ name: a.name, bytes: Buffer.from(a.bytes) }))).toEqual([
+      { name: 'dot.gif', bytes: Buffer.from(GIF) },
+    ]);
+    expect(server.relayed()).toHaveLength(1);
+
+    await peerSide?.sendPicture('back.gif', GIF, 'thanks');
+    await waitFor(() => delivered.length === 1, "the peer's answer");
+    expect(delivered).toEqual([
+      {
+        from: 'alice',
+        fromDisplay: 'alice',
+        text: 'thanks',
+        media: [{ path: '/media/inbound/back.gif', contentType: 'image/gif', kind: 'image', name: 'back.gif', bytes: GIF.byteLength, via: 'direct-im' }],
+      },
+    ]);
+    expect(refused).toEqual([]);
+
+    // A second picture uses the same session.
+    intake.send('alice', [{ name: 'again.gif', bytes: GIF, width: 1, height: 1 }], (outcome) => void ends.push(outcome));
+    await waitFor(() => ends.length === 2, 'the end of the second send');
+    expect(ends).toEqual(['done', 'done']);
+    expect(h.directIms.filter((d) => d.state === 'open')).toHaveLength(1);
+    expect(server.peer('alice').directIms()).toHaveLength(1);
+
+    peerSide?.close();
+    await waitFor(() => slots.active() === 0, 'the slot given back');
+    intake.stop();
+    await intake.idle();
+  });
+
+  it('a picture is not sent to a peer that does not answer, and the session is cancelled', async () => {
+    const h = await signOn();
+    const slots = new Slots();
+    const intake = createDirectImIntake(h.session, {
+      self: () => 'botone',
+      getCfg: () => ({ channels: { oscar: { owners: ['alice'], files: { directIm: true } } } }),
+      now: h.timers.now,
+      timers: h.timers.api,
+      log: h.logs.log,
+      slots,
+      admit: async () => true,
+      save: async () => ({ path: '/media/inbound/none' }) as never,
+      deliver: () => {},
+      refuse: () => {},
+      stranger: () => {},
+    });
+    const ends: SendOutcome[] = [];
+    // Signed on, with no client that answers the offer.
+    server.peer('alice');
+    intake.send('alice', [{ name: 'dot.gif', bytes: GIF, width: 1, height: 1 }], (outcome) => void ends.push(outcome));
+    await waitFor(() => slots.active() === 1, 'the offer');
+    expect(ends).toEqual([]);
+    h.timers.advance(300_000);
+    await waitFor(() => ends.length === 1, 'the end of the send');
+    expect(ends).toEqual(['failed']);
+    await waitFor(() => h.directIms.at(-1)?.state === 'closed', 'the end of the session');
+    expect(h.directIms.at(-1)).toMatchObject({ peer: 'alice', role: 'offering', state: 'closed' });
+    expect(slots.active()).toBe(0);
+    expect(server.relayed()).toEqual([]);
+    intake.stop();
+    await intake.idle();
+  });
+
+  it('a picture for a peer that is signed off fails at once and holds no slot', async () => {
+    const h = await signOn();
+    const slots = new Slots();
+    const intake = createDirectImIntake(h.session, {
+      self: () => 'botone',
+      getCfg: () => ({ channels: { oscar: { owners: ['alice'], files: { directIm: true } } } }),
+      now: h.timers.now,
+      timers: h.timers.api,
+      log: h.logs.log,
+      slots,
+      admit: async () => true,
+      save: async () => ({ path: '/media/inbound/none' }) as never,
+      deliver: () => {},
+      refuse: () => {},
+      stranger: () => {},
+    });
+    const ends: SendOutcome[] = [];
+    intake.send('alice', [{ name: 'dot.gif', bytes: GIF, width: 1, height: 1 }], (outcome) => void ends.push(outcome));
+    await waitFor(() => ends.length === 1, 'the end of the send');
+    expect(ends).toEqual(['failed']);
+    expect(slots.active()).toBe(0);
+    expect(server.relayed()).toEqual([]);
+    intake.stop();
+    await intake.idle();
   });
 
   it('reports a declined file offer', async () => {

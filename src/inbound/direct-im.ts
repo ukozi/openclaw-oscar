@@ -4,6 +4,8 @@ import { normalizeName } from '../names.js';
 import { directImLimits } from '../oscar/index.js';
 import type { DirectImOfferEvent, DirectImStateEvent, DirectMessageEvent, Logger, OscarSession } from '../oscar/index.js';
 import type { Timers } from '../runtime.js';
+import type { Picture } from '../sending/plan.js';
+import type { SendOutcome } from '../sending/send-file.js';
 import { FILES_LIMITS, Ignored, senderGate } from './media-gate.js';
 import type { GateResult, MediaEvent, Refusal, Slots, TurnMedia } from './media-gate.js';
 import type { saveInbound } from './media-store.js';
@@ -18,7 +20,9 @@ export type IntakeDeps = {
   stranger: (name: string, display: string) => void;
 };
 
-type Live = { peer: string; bytes: number; timer?: ReturnType<typeof setTimeout> };
+type Batch = { pictures: Picture[]; onEnd: (outcome: SendOutcome) => void };
+// waiting: what goes out once the session is open. sending: the last message on its way.
+type Live = { peer: string; bytes: number; open: boolean; waiting: Batch[]; sending: Promise<void>; timer?: ReturnType<typeof setTimeout> };
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -33,11 +37,17 @@ function cutText(text: string): string {
 }
 
 export function createDirectImIntake(
-  session: Pick<OscarSession, 'on' | 'acceptDirectIm' | 'declineDirectIm' | 'closeDirectIm'>,
+  session: Pick<OscarSession, 'on' | 'acceptDirectIm' | 'declineDirectIm' | 'closeDirectIm' | 'openDirectIm' | 'sendDirectMessage'>,
   deps: IntakeDeps,
-): { stop(): void; idle(): Promise<void> } {
+): {
+  // Sends the pictures in the live session with the person, or in a new one. onEnd is called once.
+  send(to: string, pictures: Picture[], onEnd: (outcome: SendOutcome) => void): void;
+  stop(): void;
+  idle(): Promise<void>;
+} {
   const live = new Map<string, Live>();
   const ignored = new Ignored();
+  const pending = new Set<Promise<void>>();
   let stopped = false;
   let tail: Promise<void> = Promise.resolve();
 
@@ -62,12 +72,23 @@ export function createDirectImIntake(
     }
   };
 
+  // Nothing is told once the intake has stopped.
+  const tell = (batch: Batch, outcome: SendOutcome): void => {
+    if (stopped) return;
+    try {
+      batch.onEnd(outcome);
+    } catch (err) {
+      deps.log.warn('the end of a Direct IM send was not handled', { error: errText(err) });
+    }
+  };
+
   const end = (id: string): Live | undefined => {
     const s = live.get(id);
     if (!s) return undefined;
     live.delete(id);
     if (s.timer !== undefined) deps.timers.clearTimeout(s.timer);
     deps.slots.release(s.peer, 'direct-im');
+    for (const batch of s.waiting.splice(0)) tell(batch, 'failed');
     return s;
   };
 
@@ -83,6 +104,90 @@ export function createDirectImIntake(
   const arm = (id: string, s: Live): void => {
     if (s.timer !== undefined) deps.timers.clearTimeout(s.timer);
     s.timer = deps.timers.setTimeout(() => close(id, 'idle'), FILES_LIMITS.idleMs);
+  };
+
+  // The pictures go out in the order given, at most three to a message.
+  const post = (id: string, s: Live, batches: Batch[]): void => {
+    const items = batches.flatMap((batch) => batch.pictures.map((picture) => ({ batch, picture })));
+    const lastOf = new Map(items.map((item, at) => [item.batch, at]));
+    const failed = new Set<Batch>();
+    for (let from = 0; from < items.length; from += FILES_LIMITS.perOffer) {
+      const part = items.slice(from, from + FILES_LIMITS.perOffer);
+      const over = batches.filter((batch) => {
+        const at = lastOf.get(batch) ?? 0;
+        return at >= from && at < from + FILES_LIMITS.perOffer;
+      });
+      s.sending = s.sending.then(async () => {
+        let sent = false;
+        if (live.get(id) === s) {
+          arm(id, s);
+          try {
+            await session.sendDirectMessage(id, { pictures: part.map((item) => item.picture) });
+            sent = true;
+            if (live.get(id) === s) arm(id, s);
+          } catch (err) {
+            deps.log.warn('a Direct IM message was not sent', { to: s.peer, error: errText(err) });
+          }
+        }
+        if (!sent) for (const item of part) failed.add(item.batch);
+        for (const batch of over) tell(batch, failed.has(batch) ? 'failed' : 'done');
+      });
+    }
+    const work = s.sending;
+    pending.add(work);
+    void work.finally(() => pending.delete(work));
+  };
+
+  const opened = (id: string, s: Live): void => {
+    if (s.open) return;
+    s.open = true;
+    post(id, s, s.waiting.splice(0));
+  };
+
+  const give = async (peer: string, batch: Batch): Promise<void> => {
+    const policy = readPolicy(deps.getCfg());
+    if (!policy.files.directIm || (await gate(peer, policy)) !== 'allow') {
+      deps.log.info('no Direct IM goes to this name', { to: peer });
+      tell(batch, 'failed');
+      return;
+    }
+    if (stopped) return;
+    for (const [id, s] of live) {
+      if (s.peer !== peer) continue;
+      if (s.open) post(id, s, [batch]);
+      else s.waiting.push(batch);
+      return;
+    }
+    if (deps.slots.take(peer, 'direct-im') !== 'ok') {
+      deps.log.info('no free slot to open Direct IM', { to: peer });
+      tell(batch, 'failed');
+      return;
+    }
+    let id: string;
+    try {
+      id = await session.openDirectIm(peer);
+    } catch (err) {
+      deps.slots.release(peer, 'direct-im');
+      deps.log.warn('Direct IM was not opened', { to: peer, error: errText(err) });
+      tell(batch, 'failed');
+      return;
+    }
+    const s: Live = { peer, bytes: 0, open: false, waiting: [batch], sending: Promise.resolve() };
+    live.set(id, s);
+    if (stopped) {
+      close(id, 'stopped');
+      return;
+    }
+    // The wait for an answer ends here too, should the session never report its end.
+    arm(id, s);
+    // The id of an offer the person made and the bot left unanswered: that offer is taken.
+    if (!ignored.drop(id)) return;
+    try {
+      await session.acceptDirectIm(id);
+    } catch (err) {
+      end(id);
+      deps.log.warn('a Direct IM offer was not accepted', { from: peer, error: errText(err) });
+    }
   };
 
   const decline = async (id: string): Promise<void> => {
@@ -113,7 +218,7 @@ export function createDirectImIntake(
       if (slot === 'busy-others') deps.refuse(from, 'busy-others');
       return;
     }
-    const s: Live = { peer: from, bytes: 0 };
+    const s: Live = { peer: from, bytes: 0, open: false, waiting: [], sending: Promise.resolve() };
     live.set(ev.id, s);
     arm(ev.id, s);
     try {
@@ -125,7 +230,11 @@ export function createDirectImIntake(
   };
 
   const onState = async (ev: DirectImStateEvent): Promise<void> => {
-    if (ev.state !== 'closed' || ev.role !== 'receiving') return;
+    if (ev.state === 'open') {
+      const s = live.get(ev.id);
+      if (s) opened(ev.id, s);
+      return;
+    }
     ignored.drop(ev.id);
     const s = end(ev.id);
     if (!s || ev.end !== 'too-large') return;
@@ -189,16 +298,35 @@ export function createDirectImIntake(
 
   const offs = [
     session.on('directImOffer', (ev) => queue('offer', () => onOffer(ev))),
-    session.on('directIm', (ev) => queue('ending', () => onState(ev))),
+    session.on('directIm', (ev) => queue('state', () => onState(ev))),
     session.on('directMessage', (ev) => queue('message', () => onMessage(ev))),
   ];
 
   return {
+    send(to, pictures, onEnd): void {
+      const peer = normalizeName(to);
+      if (stopped || !peer) {
+        onEnd('failed');
+        return;
+      }
+      if (pictures.length === 0) {
+        onEnd('done');
+        return;
+      }
+      queue('send', () => give(peer, { pictures, onEnd }));
+    },
     stop(): void {
       stopped = true;
       for (const off of offs) off();
       for (const id of [...live.keys()]) end(id);
     },
-    idle: () => tail,
+    async idle(): Promise<void> {
+      for (;;) {
+        const step = tail;
+        await step;
+        await Promise.all([...pending]);
+        if (step === tail && pending.size === 0) return;
+      }
+    },
   };
 }

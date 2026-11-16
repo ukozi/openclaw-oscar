@@ -59,8 +59,9 @@ export class Ignored {
     return oldest;
   }
 
-  drop(id: string): void {
-    this.ids.delete(id);
+  // True when the id was held.
+  drop(id: string): boolean {
+    return this.ids.delete(id);
   }
 }
 
