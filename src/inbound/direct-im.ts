@@ -150,9 +150,22 @@ export function createDirectImIntake(
     void work.finally(() => pending.delete(work));
   };
 
-  const opened = (id: string, s: Live): void => {
+  // What waited goes out only if the setting and the person still allow it.
+  const opened = async (id: string, s: Live): Promise<void> => {
     if (s.open) return;
     s.open = true;
+    if (s.waiting.length === 0) return;
+    const policy = readPolicy(deps.getCfg());
+    if (!policy.files.directIm) {
+      close(id, 'the setting is off');
+      return;
+    }
+    const verdict = await gate(s.peer, policy);
+    if (stopped || live.get(id) !== s) return;
+    if (verdict !== 'allow') {
+      close(id, 'the sender is no longer allowed');
+      return;
+    }
     post(id, s, s.waiting.splice(0));
   };
 
@@ -248,7 +261,7 @@ export function createDirectImIntake(
   const onState = async (ev: DirectImStateEvent): Promise<void> => {
     if (ev.state === 'open') {
       const s = live.get(ev.id);
-      if (s) opened(ev.id, s);
+      if (s) await opened(ev.id, s);
       return;
     }
     ignored.drop(ev.id);

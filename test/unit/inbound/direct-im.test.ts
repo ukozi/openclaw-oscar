@@ -594,6 +594,28 @@ describe('Direct IM intake, sending', () => {
     expect(s.ends).toEqual(['done']);
   });
 
+  it('sends nothing that waited when the setting went off before the session opened', async () => {
+    const s = setup();
+    await s.give('alice', 'a.gif');
+    s.state.cfg = { channels: { oscar: { owners: ['alice'], files: { directIm: false } } } };
+    await s.opens(OUT, 'alice');
+    expect(s.sent).toEqual([]);
+    expect(s.ends).toEqual(['failed']);
+    expect(s.calls).toEqual(['open alice', `close ${OUT}`]);
+    expect(s.slots.active()).toBe(0);
+  });
+
+  it('sends nothing that waited when the person was removed before the session opened', async () => {
+    const s = setup();
+    await s.give('bob', 'a.gif');
+    s.state.admit = false;
+    await s.opens('bob-out-1', 'bob');
+    expect(s.sent).toEqual([]);
+    expect(s.ends).toEqual(['failed']);
+    expect(s.calls).toEqual(['open bob', 'close bob-out-1']);
+    expect(s.slots.active()).toBe(0);
+  });
+
   it('reports failed when the person declines, and when nobody answers', async () => {
     for (const [end, by] of [['declined', 'peer'], ['timed-out', undefined], ['refused-address', undefined], ['signed-off', undefined]] as const) {
       const s = setup();
