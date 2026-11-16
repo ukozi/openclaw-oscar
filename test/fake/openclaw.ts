@@ -55,6 +55,11 @@ export const sdk = {
   sessions: new Set<string>(),
   media: [] as { buffer: Buffer; contentType?: string; subdir?: string; maxBytes?: number; originalFilename?: string; path: string }[],
   secretFiles: new Map<string, string>(),
+  files: new Map<string, { buffer: Buffer; contentType?: string }>(),
+  remote: new Map<string, { buffer: Buffer; contentType?: string; fileName?: string }>(),
+  loads: [] as { url: string; options: Rec }[],
+  loadFail: undefined as unknown,
+  loadResult: undefined as Rec | undefined,
   agent: (() => []) as (ctx: Rec) => Promise<FakeReply[]> | FakeReply[],
   plugin: undefined as Rec | undefined,
   usePlugin(plugin: unknown): void {
@@ -79,6 +84,11 @@ export const sdk = {
     sdk.sessions.clear();
     sdk.media.length = 0;
     sdk.secretFiles.clear();
+    sdk.files.clear();
+    sdk.remote.clear();
+    sdk.loads.length = 0;
+    sdk.loadFail = undefined;
+    sdk.loadResult = undefined;
     sdk.agent = () => [];
     sdk.plugin = undefined;
   },
@@ -316,6 +326,68 @@ async function saveMediaBuffer(buffer: Buffer, contentType?: string, subdir?: st
   return { id, path, size: buffer.byteLength, contentType };
 }
 
+export const FAKE_MEDIA_DIR = '/fake/state/media';
+const DEFAULT_ROOTS = [FAKE_MEDIA_DIR, '/fake/state/workspace'];
+
+function inside(root: string, path: string): boolean {
+  return path === root || path.startsWith(`${root}/`);
+}
+
+function loadError(name: string, code: string, message: string): Error {
+  return Object.assign(new Error(message), { name, code });
+}
+
+// Like the host's loader: a file under inbound passes whatever the roots are.
+async function loadWebMedia(url: string, options: Rec = {}): Promise<Rec> {
+  sdk.loads.push({ url, options });
+  if (sdk.loadFail !== undefined) throw sdk.loadFail;
+  if (sdk.loadResult !== undefined) return sdk.loadResult;
+  const maxBytes = options.maxBytes as number | undefined;
+  const tooLarge = (size: number): Error => new Error(`Media exceeds ${Math.round((maxBytes ?? 0) / 1048576)}MB limit (got ${(size / 1048576).toFixed(2)}MB)`);
+  if (/^https?:\/\//i.test(url)) {
+    const hit = sdk.remote.get(url);
+    if (!hit) throw loadError('MediaFetchError', 'fetch_failed', `Failed to fetch media from ${url}`);
+    if (maxBytes !== undefined && hit.buffer.byteLength > maxBytes) throw loadError('MediaFetchError', 'max_bytes', `Failed to fetch media from ${url}: payload exceeds maxBytes ${maxBytes}`);
+    return { buffer: hit.buffer, contentType: hit.contentType, kind: undefined, fileName: hit.fileName };
+  }
+  const path = url.startsWith('file://') ? decodeURIComponent(new URL(url).pathname) : url;
+  const roots = (options.localRoots as readonly string[] | undefined) ?? DEFAULT_ROOTS;
+  if (!inside(`${FAKE_MEDIA_DIR}/inbound`, path) && !roots.some((root) => inside(root, path))) {
+    throw loadError('LocalMediaAccessError', 'path-not-allowed', `Local media path is not under an allowed directory: ${path}`);
+  }
+  const readFile = options.readFile as ((path: string) => Promise<Buffer>) | undefined;
+  const hit = sdk.files.get(path);
+  if (!readFile && !hit) throw loadError('LocalMediaAccessError', 'not-found', `Local media file not found: ${path}`);
+  const buffer = readFile ? await readFile(path) : (hit?.buffer ?? Buffer.alloc(0));
+  if (maxBytes !== undefined && buffer.byteLength > maxBytes) throw tooLarge(buffer.byteLength);
+  return { buffer, contentType: hit?.contentType, kind: undefined, fileName: path.split('/').pop() };
+}
+
+function buildOutboundMediaLoadOptions(params: Rec = {}): Rec {
+  const access = (params.mediaAccess ?? {}) as { localRoots?: readonly string[] | 'any'; readFile?: unknown; workspaceDir?: string };
+  const explicit = params.mediaLocalRoots as readonly string[] | undefined;
+  const hostRoots = access.localRoots === 'any' ? undefined : access.localRoots;
+  const localRoots = hostRoots?.length ? hostRoots : explicit?.length ? explicit : undefined;
+  const readFile = access.readFile ?? params.mediaReadFile;
+  if (readFile && !localRoots) throw new Error('Host media read requires explicit localRoots.');
+  return {
+    ...(params.maxBytes !== undefined ? { maxBytes: params.maxBytes } : {}),
+    ...(localRoots ? { localRoots } : {}),
+    ...(readFile ? { readFile, hostReadCapability: true } : {}),
+    ...(params.optimizeImages !== undefined ? { optimizeImages: params.optimizeImages } : {}),
+    ...(access.workspaceDir ? { workspaceDir: access.workspaceDir } : {}),
+  };
+}
+
+const MIME_EXTENSIONS: Record<string, string> = { 'image/png': '.png', 'image/jpeg': '.jpg', 'application/pdf': '.pdf', 'text/plain': '.txt' };
+
+export const webMedia: Rec = { loadWebMedia };
+export const mediaRuntime: Rec = {
+  buildOutboundMediaLoadOptions,
+  getAgentScopedMediaLocalRoots: (_cfg: unknown, agentId?: string) => (agentId ? [...DEFAULT_ROOTS, `/fake/agents/${agentId}`] : [...DEFAULT_ROOTS]),
+  getMediaDir: () => FAKE_MEDIA_DIR,
+  extensionForMime: (mime?: string | null) => (mime ? MIME_EXTENSIONS[mime] : undefined),
+};
 export const mediaStore: Rec = { saveMediaBuffer };
 export const channelInbound: Rec = { runChannelInboundEvent, buildChannelInboundEventContext };
 export const routing: Rec = { resolveAgentRoute };
