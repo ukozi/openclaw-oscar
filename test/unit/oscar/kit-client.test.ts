@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { SignOnError, adapterTicketSource } from 'open-oscar-client-kit/client';
-import { ByteReader, strongHash } from 'open-oscar-client-kit/wire';
+import { ByteReader, CAP_CHAT, strongHash } from 'open-oscar-client-kit/wire';
 import { captureLog, settle, waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
-import { makeKitClient } from '../../../src/oscar/kit-client.js';
+import { kitOptions, makeKitClient } from '../../../src/oscar/kit-client.js';
 import type { KitClient } from '../../../src/oscar/kit-client.js';
 import { login } from '../../../src/oscar/login.js';
 import type { OscarSessionOptions } from '../../../src/oscar/types.js';
@@ -76,5 +76,44 @@ describe('makeKitClient', () => {
     const { s, tickets } = await signOn();
     expect(tickets()).toBe(1);
     expect(s.bucpLogins.map((l) => ({ clientId: l.clientId, multiConn: l.multiConn }))).toEqual([{ clientId: 'openclaw-oscar', multiConn: 0x03 }]);
+  });
+});
+
+describe('kitOptions', () => {
+  const hooks = { reconnect: { next: () => ({ retry: false as const, reason: { kind: 'unreachable' as const } }) } };
+  const base = (over: Partial<OscarSessionOptions> = {}): OscarSessionOptions => ({
+    host: 'chat.example',
+    port: 5190,
+    tls: false,
+    redirect: 'auto',
+    screenName: 'botone',
+    getPassword: async () => 'botpass1',
+    buddies: () => [],
+    log: captureLog().log,
+    loginBudget: { take: async () => {} },
+    ...over,
+  });
+
+  it('builds the client without Direct IM when the setting is off', () => {
+    for (const opts of [base(), base({ transfers: { directIm: false, sendFile: false, maxBytes: 10 * 1024 * 1024 } })]) {
+      const built = kitOptions(opts, hooks);
+      expect('directIm' in built).toBe(false);
+      expect('fileTransfer' in built).toBe(false);
+      expect(built.capabilities).toEqual([CAP_CHAT]);
+    }
+  });
+
+  it('turns Direct IM on with the dial rule and the size limits', async () => {
+    const lookup = async (host: string): Promise<string[]> => (host === 'chat.example' ? ['192.0.2.1'] : []);
+    const built = kitOptions(base({ transfers: { directIm: true, sendFile: false, maxBytes: 1000, relayHost: '198.51.100.7', lookup } }), hooks);
+    expect(built.capabilities).toEqual([CAP_CHAT]);
+    expect('fileTransfer' in built).toBe(false);
+    expect(built.directIm).toMatchObject({ maxMessageBytes: 1000 + 262_144, maxSessionBytes: 5 * (1000 + 262_144) });
+    const allowDial = built.directIm?.allowDial;
+    if (!allowDial) throw new Error('no dial rule');
+    const context = { server: { host: 'chat.example', port: 5190 }, bos: { host: 'chat.example', port: 5190 } };
+    expect(await allowDial({ ip: '192.0.2.1', port: 4443 }, context)).toBe(true);
+    expect(await allowDial({ ip: '198.51.100.7', port: 4443 }, context)).toBe(true);
+    expect(await allowDial({ ip: '203.0.113.9', port: 4443 }, context)).toBe(false);
   });
 });

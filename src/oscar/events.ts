@@ -1,6 +1,6 @@
 import { ROOM_SERVER_SENDER, htmlToText, normalizeScreenName } from 'open-oscar-client-kit/wire';
-import type { IncomingIm, Invite, MessageWire, RichText, RoomMessage } from 'open-oscar-client-kit/model';
-import type { ImEvent, InviteEvent, RoomMessageEvent, RoomRef } from './types.js';
+import type { DirectImOffer, DirectMessage, IncomingIm, Invite, MessageWire, RichText, RoomMessage } from 'open-oscar-client-kit/model';
+import type { DirectImOfferEvent, DirectMessageEvent, ImEvent, InviteEvent, RoomMessageEvent, RoomRef } from './types.js';
 
 const SYSTEM_SENDER = 'oossystemmsg';
 
@@ -63,5 +63,25 @@ export function toInviteEvent(invite: Invite): InviteEvent {
     room: { exchange: invite.room.exchange, name: invite.room.name.toLowerCase() },
     roomCookie: invite.id,
     text: htmlToText(wire.html),
+  };
+}
+
+export function toDirectImOfferEvent(offer: DirectImOffer): DirectImOfferEvent {
+  return { id: offer.id, from: normalizeScreenName(offer.from), fromDisplay: offer.from };
+}
+
+// A link reads as it does in an IM.
+const plain = (body: RichText): string =>
+  body.map((run) => (run.link === undefined || run.link === run.text ? run.text : `${run.text} (${run.link})`)).join('');
+
+export function toDirectMessageEvent(message: DirectMessage): DirectMessageEvent {
+  return {
+    id: message.id,
+    from: normalizeScreenName(message.from),
+    fromDisplay: message.from,
+    text: message.parts.map((part) => (part.kind === 'text' ? plain(part.body) : '')).join(''),
+    autoResponse: message.autoResponse,
+    damaged: message.damaged,
+    pictures: message.attachments.map((a) => ({ name: a.name, bytes: a.bytes })),
   };
 }

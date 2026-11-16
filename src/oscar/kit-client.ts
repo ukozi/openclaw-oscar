@@ -1,6 +1,7 @@
 import { OscarClient } from 'open-oscar-client-kit/client';
-import type { ReconnectPolicy } from 'open-oscar-client-kit/client';
+import type { OscarClientOptions, ReconnectPolicy } from 'open-oscar-client-kit/client';
 import { CAP_CHAT } from 'open-oscar-client-kit/wire';
+import { makeDialRule } from './dial.js';
 import { CLIENT_ID } from './login.js';
 import type { OscarSessionOptions } from './types.js';
 
@@ -21,10 +22,28 @@ export type KitClient = Pick<
   | 'rooms'
   | 'sendRoomMessage'
   | 'forgetInvite'
+  | 'acceptDirectIm'
+  | 'declineDirectIm'
+  | 'closeDirectIm'
 >;
 
-export function makeKitClient(opts: OscarSessionOptions, hooks: { reconnect: ReconnectPolicy }): KitClient {
-  return new OscarClient({
+// Room for the text and the frame around the pictures of one message.
+const DIRECT_IM_SPARE_BYTES = 256 * 1024;
+
+export function kitOptions(opts: OscarSessionOptions, hooks: { reconnect: ReconnectPolicy }): OscarClientOptions {
+  const t = opts.transfers;
+  const dial = (): OscarClientOptions => {
+    if (!t?.directIm) return {};
+    const allowDial = makeDialRule({
+      host: opts.host,
+      log: opts.log,
+      ...(t.relayHost === undefined ? {} : { relayHost: t.relayHost }),
+      ...(t.lookup === undefined ? {} : { lookup: t.lookup }),
+    });
+    const maxMessageBytes = t.maxBytes + DIRECT_IM_SPARE_BYTES;
+    return { directIm: { allowDial, maxMessageBytes, maxSessionBytes: 5 * maxMessageBytes } };
+  };
+  return {
     log: opts.log,
     now: opts.now,
     timers: opts.timers,
@@ -42,5 +61,10 @@ export function makeKitClient(opts: OscarSessionOptions, hooks: { reconnect: Rec
     autoRespond: () => 'skip',
     reconnect: hooks.reconnect,
     rejoin: { afterReconnect: async () => [], afterRoomClosed: async () => 'stay' },
-  });
+    ...dial(),
+  };
+}
+
+export function makeKitClient(opts: OscarSessionOptions, hooks: { reconnect: ReconnectPolicy }): KitClient {
+  return new OscarClient(kitOptions(opts, hooks));
 }

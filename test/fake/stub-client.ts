@@ -162,4 +162,16 @@ export class StubClient implements KitClient {
   forgetInvite(inviteId: string): void {
     this.calls.push({ method: 'forgetInvite', args: [inviteId] });
   }
+
+  async acceptDirectIm(id: string): Promise<void> {
+    this.calls.push({ method: 'acceptDirectIm', args: [id] });
+  }
+
+  async declineDirectIm(id: string): Promise<void> {
+    this.calls.push({ method: 'declineDirectIm', args: [id] });
+  }
+
+  async closeDirectIm(id: string): Promise<void> {
+    this.calls.push({ method: 'closeDirectIm', args: [id] });
+  }
 }

@@ -6,6 +6,10 @@ export { checkLogin, checkPasswordEnforced } from './login.js';
 export type { LoginCheckOptions, LoginCheckResult } from './login.js';
 export { OscarRoomError, OscarSendError } from './types.js';
 export type {
+  DirectImEnd,
+  DirectImOfferEvent,
+  DirectImStateEvent,
+  DirectMessageEvent,
   ImEvent,
   InviteEvent,
   Logger,
@@ -29,4 +33,5 @@ export type {
   SessionState,
   StateReason,
   TimerApi,
+  TransferOptions,
 } from './types.js';

@@ -8,6 +8,7 @@ export class FakeSession {
   invitedJoins: InviteEvent[] = [];
   leaves: RoomRef[] = [];
   roomSent: { room: RoomRef; html: string; whisperTo?: string; priority: SendPriority }[] = [];
+  directIm: { call: 'accept' | 'decline' | 'close'; id: string }[] = [];
   typing: { to: string; state: 'typing' | 'typed' | 'none' }[] = [];
   away: (string | null)[] = [];
   buddyUpdates = 0;
@@ -80,6 +81,9 @@ export class FakeSession {
         self.roomSent.push({ room, html, whisperTo: opts?.whisperTo, priority: opts?.priority ?? 'reply' });
         return { id: String(self.nextId++), storedOffline: false };
       },
+      async acceptDirectIm(id: string): Promise<void> { self.directIm.push({ call: 'accept', id }); },
+      async declineDirectIm(id: string): Promise<void> { self.directIm.push({ call: 'decline', id }); },
+      async closeDirectIm(id: string): Promise<void> { self.directIm.push({ call: 'close', id }); },
     };
     return api as unknown as OscarSession;
   }

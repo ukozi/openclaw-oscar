@@ -12,7 +12,7 @@ import {
   normalizeScreenName,
   strongHash,
 } from 'open-oscar-client-kit/wire';
-import { toImEvent, toInviteEvent } from './events.js';
+import { toDirectImOfferEvent, toDirectMessageEvent, toImEvent, toInviteEvent } from './events.js';
 import { makeKitClient } from './kit-client.js';
 import type { KitClient } from './kit-client.js';
 import { login, probeLogin } from './login.js';
@@ -36,7 +36,21 @@ import type {
 } from './types.js';
 
 const FATAL: ReadonlySet<StateReason> = new Set<StateReason>(['bad-password', 'unknown-name', 'suspended', 'md5-unavailable']);
-const EVENTS = ['state', 'im', 'invite', 'roomMessage', 'roomJoin', 'roomLeave', 'roomReady', 'roomClosed', 'presence', 'rate'] as const;
+const EVENTS = [
+  'state',
+  'im',
+  'invite',
+  'roomMessage',
+  'roomJoin',
+  'roomLeave',
+  'roomReady',
+  'roomClosed',
+  'presence',
+  'rate',
+  'directImOffer',
+  'directIm',
+  'directMessage',
+] as const;
 
 type Listeners = { [E in keyof OscarEvents]: Set<(payload: OscarEvents[E]) => void> };
 type Failure = [reason: StateReason, detail: string];
@@ -62,6 +76,8 @@ export class KitSession implements OscarSession {
   private readonly typing: Typing;
   private readonly roomList: RoomList;
   private readonly seenAt = new Map<string, number>();
+  // Direct IM sessions another person offered and that have not ended, and whether each one opened.
+  private readonly directIms = new Map<string, boolean>();
   private state: SessionState;
   private generation = 0;
   private failures = 0;
@@ -113,6 +129,25 @@ export class KitSession implements OscarSession {
       if (limited || this.limited) this.limitedAt = this.now();
       this.limited = limited;
       this.emit('rate', { scope: 'bos', status: limited ? 'limited' : 'clear' });
+    });
+    this.client.on('directImOffer', (offer) => this.emit('directImOffer', toDirectImOfferEvent(offer)));
+    this.client.on('directIm', (s) => {
+      if (s.role !== 'receiving') return;
+      // The client reports an open session again when the peer shows the cookie.
+      const repeat = s.state === 'open' && this.directIms.get(s.id) === true;
+      if (s.state === 'closed') this.directIms.delete(s.id);
+      else this.directIms.set(s.id, s.state === 'open');
+      if (repeat || (s.state !== 'open' && s.state !== 'closed')) return;
+      this.emit('directIm', {
+        id: s.id,
+        peer: normalizeScreenName(s.peer),
+        state: s.state,
+        ...(s.end === undefined ? {} : { end: s.end }),
+        ...(s.by === undefined ? {} : { by: s.by }),
+      });
+    });
+    this.client.on('directMessage', (message) => {
+      if (this.directIms.has(message.id)) this.emit('directMessage', toDirectMessageEvent(message));
     });
   }
 
@@ -332,6 +367,18 @@ export class KitSession implements OscarSession {
     await this.client.setAway(text === null ? null : { html: text }).catch((error: unknown) => {
       throw toSendError(error);
     });
+  }
+
+  acceptDirectIm(id: string): Promise<void> {
+    return this.client.acceptDirectIm(id);
+  }
+
+  declineDirectIm(id: string): Promise<void> {
+    return this.client.declineDirectIm(id);
+  }
+
+  closeDirectIm(id: string): Promise<void> {
+    return this.client.closeDirectIm(id);
   }
 }
 

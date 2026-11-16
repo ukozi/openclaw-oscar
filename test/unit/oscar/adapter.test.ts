@@ -1,6 +1,6 @@
 import { OscarError, SignOnError, backoffDelay } from 'open-oscar-client-kit/client';
 import type { DropEvidence, IssuedTicket, TicketSource } from 'open-oscar-client-kit/client';
-import type { BuddyPresence, IncomingIm, Invite, SelfInfo } from 'open-oscar-client-kit/model';
+import type { BuddyPresence, DirectImStatus, IncomingIm, Invite, SelfInfo } from 'open-oscar-client-kit/model';
 import { ManualTimers } from 'open-oscar-client-kit/testing';
 import { PASSWORD_CHECK_CACHE_MS } from 'open-oscar-client-kit/wire';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -636,5 +636,64 @@ describe('what the package gives the session', () => {
     });
     expect(session).toBeInstanceOf(KitSession);
     expect(session.getState().phase).toBe('idle');
+  });
+});
+
+describe('Direct IM on the session', () => {
+  const ID = 'alicesmith:00000000000000aa';
+  const status = (over: Partial<DirectImStatus>): DirectImStatus => ({ id: ID, peer: 'Alice Smith', role: 'receiving', state: 'open', verified: false, ...over });
+  const text = { id: ID, from: 'Alice Smith', at: 1, autoResponse: false, parts: [], attachments: [], unreferenced: 0, damaged: false };
+
+  function listen() {
+    const w = world();
+    const states: OscarEvents['directIm'][] = [];
+    const messages: OscarEvents['directMessage'][] = [];
+    w.session.on('directIm', (e) => states.push(e));
+    w.session.on('directMessage', (e) => messages.push(e));
+    return { ...w, states, messages };
+  }
+
+  it('reports a session once when it opens and once when it ends', () => {
+    const w = listen();
+    w.client.emit('directIm', status({ state: 'waiting' }));
+    w.client.emit('directIm', status({ state: 'connecting' }));
+    w.client.emit('directIm', status({}));
+    w.client.emit('directIm', status({ verified: true }));
+    w.client.emit('directIm', status({ state: 'closed', end: 'peer-closed', by: 'peer', verified: true }));
+    expect(w.states).toEqual([
+      { id: ID, peer: 'alicesmith', state: 'open' },
+      { id: ID, peer: 'alicesmith', state: 'closed', end: 'peer-closed', by: 'peer' },
+    ]);
+  });
+
+  it('passes on a message only while its session is live', () => {
+    const w = listen();
+    w.client.emit('directMessage', text);
+    w.client.emit('directIm', status({}));
+    w.client.emit('directMessage', text);
+    w.client.emit('directIm', status({ state: 'closed', end: 'closed', by: 'self' }));
+    w.client.emit('directMessage', text);
+    expect(w.messages).toHaveLength(1);
+  });
+
+  it('passes on nothing of a session the bot offered', () => {
+    const w = listen();
+    w.client.emit('directIm', status({ role: 'offering' }));
+    w.client.emit('directMessage', text);
+    w.client.emit('directIm', status({ role: 'offering', state: 'closed', end: 'closed', by: 'peer' }));
+    expect(w.states).toEqual([]);
+    expect(w.messages).toEqual([]);
+  });
+
+  it('hands accept, decline and close to the client', async () => {
+    const w = listen();
+    await w.session.acceptDirectIm(ID);
+    await w.session.declineDirectIm(ID);
+    await w.session.closeDirectIm(ID);
+    expect(w.client.calls.map((c) => [c.method, ...c.args])).toEqual([
+      ['acceptDirectIm', ID],
+      ['declineDirectIm', ID],
+      ['closeDirectIm', ID],
+    ]);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { htmlToText } from 'open-oscar-client-kit/wire';
-import type { IncomingIm, Invite, RoomMessage } from 'open-oscar-client-kit/model';
-import { toImEvent, toInviteEvent, toRoomMessageEvent } from '../../../src/oscar/events.js';
+import type { DirectMessage, IncomingIm, Invite, RoomMessage } from 'open-oscar-client-kit/model';
+import { toDirectImOfferEvent, toDirectMessageEvent, toImEvent, toInviteEvent, toRoomMessageEvent } from '../../../src/oscar/events.js';
 
 const LINK = '<A HREF="https://example.com">x</A> &amp; <B>y</B>';
 
@@ -134,5 +134,68 @@ describe('toInviteEvent', () => {
   it('throws on an invite with no wire detail', () => {
     const { wire: _wire, ...bare } = invite();
     expect(() => toInviteEvent(bare)).toThrow();
+  });
+});
+
+describe('Direct IM events', () => {
+  const message = (over: Partial<DirectMessage> = {}): DirectMessage => ({
+    id: 'alicesmith:00000000000000aa',
+    from: 'Alice Smith',
+    at: 3_000,
+    autoResponse: false,
+    parts: [],
+    attachments: [],
+    unreferenced: 0,
+    damaged: false,
+    ...over,
+  });
+
+  it('normalises the sender of an offer and keeps the name as it came', () => {
+    expect(toDirectImOfferEvent({ id: 'alicesmith:00000000000000aa', from: 'Alice Smith', at: 3_000 })).toEqual({
+      id: 'alicesmith:00000000000000aa',
+      from: 'alicesmith',
+      fromDisplay: 'Alice Smith',
+    });
+  });
+
+  it('joins the text parts of a Direct IM message and lists its pictures', () => {
+    const cat = Uint8Array.of(1, 2, 3);
+    const dog = Uint8Array.of(4, 5);
+    const event = toDirectMessageEvent(
+      message({
+        parts: [
+          { kind: 'text', body: [{ text: 'look at ' }, { text: 'this', bold: true }] },
+          { kind: 'attachment', index: 0 },
+          { kind: 'missing' },
+          { kind: 'text', body: [{ text: ' and ' }, { text: 'x', link: 'https://example.com' }] },
+          { kind: 'attachment', index: 1 },
+        ],
+        attachments: [
+          { id: 1, name: 'cat.png', bytes: cat },
+          { id: 2, name: 'dog.gif', bytes: dog },
+        ],
+      }),
+    );
+    expect(event).toEqual({
+      id: 'alicesmith:00000000000000aa',
+      from: 'alicesmith',
+      fromDisplay: 'Alice Smith',
+      text: 'look at this and x (https://example.com)',
+      autoResponse: false,
+      damaged: false,
+      pictures: [
+        { name: 'cat.png', bytes: cat },
+        { name: 'dog.gif', bytes: dog },
+      ],
+    });
+  });
+
+  it('writes a link once when its text is the address', () => {
+    const body = [{ text: 'https://example.com', link: 'https://example.com' }];
+    expect(toDirectMessageEvent(message({ parts: [{ kind: 'text', body }] })).text).toBe('https://example.com');
+  });
+
+  it('keeps the auto-response and damaged marks', () => {
+    expect(toDirectMessageEvent(message({ autoResponse: true, damaged: true }))).toMatchObject({ autoResponse: true, damaged: true, text: '', pictures: [] });
   });
 });

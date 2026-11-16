@@ -3,7 +3,16 @@ import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { ByteReader, decodeTlvs } from 'open-oscar-client-kit/wire';
 import type { Tlv } from 'open-oscar-client-kit/wire';
 import { KitSession } from '../../src/oscar/adapter.js';
-import type { ImEvent, OscarEvents, OscarSessionOptions, RateEvent, SessionState } from '../../src/oscar/types.js';
+import type {
+  DirectImOfferEvent,
+  DirectImStateEvent,
+  DirectMessageEvent,
+  ImEvent,
+  OscarEvents,
+  OscarSessionOptions,
+  RateEvent,
+  SessionState,
+} from '../../src/oscar/types.js';
 import { caFileOf } from './kit.js';
 
 export type Harness = {
@@ -14,6 +23,9 @@ export type Harness = {
   ims: ImEvent[];
   presence: OscarEvents['presence'][];
   rates: RateEvent[];
+  directImOffers: DirectImOfferEvent[];
+  directIms: DirectImStateEvent[];
+  directMessages: DirectMessageEvent[];
   online(): Promise<void>;
   phase(phase: SessionState['phase']): Promise<SessionState>;
 };
@@ -45,6 +57,9 @@ export function makeSession(server: FakeOscarServer, over: Partial<OscarSessionO
     ims: [],
     presence: [],
     rates: [],
+    directImOffers: [],
+    directIms: [],
+    directMessages: [],
     online: async () => {
       await h.phase('online');
     },
@@ -57,6 +72,9 @@ export function makeSession(server: FakeOscarServer, over: Partial<OscarSessionO
   session.on('im', (e) => h.ims.push(e));
   session.on('presence', (e) => h.presence.push(e));
   session.on('rate', (e) => h.rates.push(e));
+  session.on('directImOffer', (e) => h.directImOffers.push(e));
+  session.on('directIm', (e) => h.directIms.push(e));
+  session.on('directMessage', (e) => h.directMessages.push(e));
   harnesses.push(h);
   return h;
 }
