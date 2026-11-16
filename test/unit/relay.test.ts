@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sent = vi.hoisted(() => [] as { accountId?: string | null; to: string; markdown: string }[]);
@@ -133,6 +135,22 @@ describe('isAnnounceInput', () => {
     expect(isAnnounceInput(user([header(), PHRASE].join('\n')), internal)).toBe(false);
   });
 
+  it('ignores a header whose session key holds a space', () => {
+    const first = '[Inter-session message] sourceSession=agent:main:my room sourceChannel=webchat sourceTool=sessions_send isUser=false';
+    expect(isAnnounceInput(user([first, EXPLANATION, PHRASE].join('\n')), internal)).toBe(false);
+  });
+
+  it('relays the bare phrase of a run OpenClaw marked as the announce step', () => {
+    expect(isAnnounceInput(user(PHRASE), { ...internal, stamped: true })).toBe(true);
+    expect(isAnnounceInput(annotated, { ...internal, stamped: true })).toBe(true);
+    expect(isAnnounceInput(user(`${PHRASE} And more.`), { ...internal, stamped: true })).toBe(false);
+  });
+
+  it('ignores every text of a run OpenClaw marked as something else', () => {
+    expect(isAnnounceInput(user(PHRASE), { ...internal, stamped: false })).toBe(false);
+    expect(isAnnounceInput(annotated, { ...internal, stamped: false })).toBe(false);
+  });
+
   it('ignores anything that is not a message', () => {
     expect(isAnnounceInput(undefined, internal)).toBe(false);
     expect(isAnnounceInput({ role: 'user', content: 7, provenance: stamp }, internal)).toBe(false);
@@ -141,6 +159,7 @@ describe('isAnnounceInput', () => {
 
 describe('registerAnnounceRelay', () => {
   let handler: Handler;
+  let promptBuild: Handler;
   const warn = vi.fn();
 
   beforeEach(() => {
@@ -148,7 +167,7 @@ describe('registerAnnounceRelay', () => {
     sent.length = 0;
     warn.mockClear();
     setHost({ config: { current: () => cfg } });
-    const on = vi.fn((name: string, fn: Handler) => { if (name === 'agent_end') handler = fn; });
+    const on = vi.fn((name: string, fn: Handler) => { if (name === 'agent_end') handler = fn; if (name === 'before_prompt_build') promptBuild = fn; });
     registerAnnounceRelay({ on, logger: { info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() } } as never);
   });
 
@@ -200,5 +219,66 @@ describe('registerAnnounceRelay', () => {
     handler({ messages: [announce, reply('Other.')], success: true }, { runId: 'c1', agentId: 'helper', sessionKey: 'agent:helper:main' });
     await flush();
     expect(sent.map((s) => s.markdown)).toEqual(['Done.', 'Done.']);
+  });
+
+  // 2026.9.5 moves the header out of the user message and gives the provenance to the prompt hook.
+  describe('when the prompt hook carries the provenance', () => {
+    const ctx = { agentId: 'helper', sessionKey: 'agent:helper:main', ...internal };
+    const sessionsSend = { kind: 'inter_session', sourceSessionKey: 'agent:main:main', sourceChannel: 'webchat', sourceTool: 'sessions_send' };
+    const end = async (runId: string, input: Obj, text: string) => {
+      handler({ runId, messages: [input, reply(text)], success: true }, { ...ctx, runId });
+      await flush();
+    };
+
+    it('relays the bare phrase of the announce step', async () => {
+      expect(promptBuild({ prompt: PHRASE, messages: [] }, { ...ctx, runId: 'n1', inputProvenance: sessionsSend })).toBeUndefined();
+      await end('n1', user(PHRASE), 'Found three papers.');
+      expect(sent.map((s) => s.to)).toEqual(['alice', 'bob']);
+    });
+
+    it('ignores the bare phrase of a run that has no provenance', async () => {
+      promptBuild({ prompt: PHRASE, messages: [] }, { ...ctx, runId: 'n2' });
+      await end('n2', user(PHRASE), 'Done.');
+      expect(sent).toEqual([]);
+    });
+
+    it('ignores a run whose provenance is not from sessions_send', async () => {
+      promptBuild({ prompt: annotatedText, messages: [] }, { ...ctx, runId: 'n3', inputProvenance: { kind: 'external_user' } });
+      await end('n3', annotated, 'Done.');
+      promptBuild({ prompt: PHRASE, messages: [] }, { ...ctx, runId: 'n4', inputProvenance: { ...sessionsSend, sourceTool: 'subagent_announce' } });
+      await end('n4', user(PHRASE), 'Done.');
+      expect(sent).toEqual([]);
+    });
+
+    it('ignores a sessions_send run whose prompt was not the phrase', async () => {
+      promptBuild({ prompt: 'Please look into this.', messages: [] }, { ...ctx, runId: 'n5', inputProvenance: sessionsSend });
+      await end('n5', user(PHRASE), 'Done.');
+      expect(sent).toEqual([]);
+    });
+
+    it('forgets the provenance of a run once it ended', async () => {
+      promptBuild({ prompt: PHRASE, messages: [] }, { ...ctx, runId: 'n6', inputProvenance: sessionsSend });
+      await end('n6', user(PHRASE), 'First.');
+      vi.advanceTimersByTime(RELAY_DEDUPE_MS + 1);
+      await end('n6', user(PHRASE), 'Second.');
+      expect(sent.map((s) => s.markdown)).toEqual(['First.', 'First.']);
+    });
+
+    it('forgets the provenance of a run that never ended', async () => {
+      promptBuild({ prompt: PHRASE, messages: [] }, { ...ctx, runId: 'n7', inputProvenance: sessionsSend });
+      vi.advanceTimersByTime(RELAY_DEDUPE_MS + 1);
+      promptBuild({ prompt: 'hello', messages: [] }, { ...ctx, runId: 'n8' });
+      await end('n7', user(PHRASE), 'Late.');
+      expect(sent).toEqual([]);
+    });
+  });
+});
+
+describe('the installed OpenClaw', () => {
+  it('still writes the explanation line the relay matches', () => {
+    const dist = fileURLToPath(new URL('../../node_modules/openclaw/dist/', import.meta.url));
+    const files = readdirSync(dist).filter((name) => name.startsWith('input-provenance-'));
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.some((name) => readFileSync(dist + name, 'utf8').includes(EXPLANATION))).toBe(true);
   });
 });
