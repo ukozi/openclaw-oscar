@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { HistoryEntry } from 'openclaw/plugin-sdk/reply-history';
 import type { ChainController } from './chain/controller.js';
+import type { BuddyIcon } from './icon.js';
 import { formatTarget, normalizeName } from './names.js';
 import type { PeerRef, RoomRef } from './names.js';
 import { createLoginBudget } from './oscar/index.js';
@@ -26,6 +27,7 @@ export type AccountRuntime = {
   stopPresence?: () => Promise<void>;
   chain?: ChainController;
   media?: MediaSender;
+  icon?: BuddyIcon;
   log?: Logger;
 };
 type MutationParams = { afterWrite: { mode: 'auto' }; mutate: (draft: Record<string, unknown>) => void };

@@ -414,6 +414,11 @@ export class KitSession implements OscarSession {
     if (!this.isOnline()) throw new OscarSendError('not-online');
     await this.client.sendDirectMessage(id, { pictures: message.pictures });
   }
+
+  async setOwnIcon(bytes: Uint8Array): Promise<void> {
+    if (!this.isOnline()) throw new OscarSendError('not-online');
+    await this.client.setOwnIcon(bytes);
+  }
 }
 
 export function createOscarSession(opts: OscarSessionOptions): OscarSession {

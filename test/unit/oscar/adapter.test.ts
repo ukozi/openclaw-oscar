@@ -790,6 +790,15 @@ describe('sending from the session', () => {
     ]);
   });
 
+  it('hands the icon to the client, and only when the session is online', async () => {
+    const w = world();
+    const icon = Uint8Array.of(1, 2, 3);
+    await expect(w.session.setOwnIcon(icon)).rejects.toMatchObject({ code: 'not-online' });
+    await w.up();
+    await w.session.setOwnIcon(icon);
+    expect(w.client.calls.filter((c) => c.method === 'setOwnIcon').map((c) => c.args)).toEqual([[icon]]);
+  });
+
   it('rejects each of the three when the session is not online, without the client', async () => {
     const w = world();
     for (const call of [

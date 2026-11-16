@@ -55,6 +55,7 @@ export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void
   // A group-shaped peer keeps every host dmScope from folding this conversation into agent:main:main.
   const route = resolveAgentRoute({ cfg, channel: CHANNEL_ID, accountId: deps.accountId, peer: { kind: 'group', id: peerId } });
   getRuntime(deps.accountId)?.sessionKeys.set(route.sessionKey, { accountId: deps.accountId, peer });
+  getRuntime(deps.accountId)?.icon?.onTurn();
 
   const files = turn.media ?? [];
   const text = files.length > 0 && turn.text.trim() === '' ? mediaPlaceholder(files) : turn.text;
@@ -180,6 +181,7 @@ export async function dispatchRoomTurn(req: TurnRequest, deps: RoomTurnDeps): Pr
   const to = formatTarget({ kind: 'room', room: peer.room });
   const route = resolveAgentRoute({ cfg, channel: CHANNEL_ID, accountId: deps.accountId, peer: { kind: 'group', id: peerId } });
   getRuntime(deps.accountId)?.sessionKeys.set(route.sessionKey, { accountId: deps.accountId, peer });
+  getRuntime(deps.accountId)?.icon?.onTurn();
   const presence = presenceDispatch(
     { sessionKey: route.sessionKey, accountId: deps.accountId, origin: req.origin, text: req.text },
     runtimeWiring,

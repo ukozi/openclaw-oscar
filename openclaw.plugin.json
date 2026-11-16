@@ -536,6 +536,9 @@
             },
             "additionalProperties": false
           },
+          "buddyIcon": {
+            "type": "boolean"
+          },
           "accounts": {
             "type": "object",
             "propertyNames": {
@@ -805,6 +808,10 @@
           "label": "Largest file (MB)",
           "placeholder": "10",
           "help": "From 1 to 25. The default is 10."
+        },
+        "buddyIcon": {
+          "label": "Use the agent's avatar as the buddy icon",
+          "help": "The avatar must be square. On by default."
         },
         "files.relayHost": {
           "label": "Relay host",

@@ -37,7 +37,8 @@ type Scripted =
   | 'refreshSessionBuddies'
   | 'sendFiles'
   | 'openDirectIm'
-  | 'sendDirectMessage';
+  | 'sendDirectMessage'
+  | 'setOwnIcon';
 type Listeners = { [E in keyof OscarClientEvents]?: Set<(payload: OscarClientEvents[E]) => void> };
 
 export class StubClient implements KitClient {
@@ -225,5 +226,9 @@ export class StubClient implements KitClient {
 
   sendDirectMessage(id: string, message: OutgoingDirectMessage): Promise<void> {
     return this.next('sendDirectMessage', [id, message], () => undefined);
+  }
+
+  setOwnIcon(bytes: Uint8Array): Promise<void> {
+    return this.next('setOwnIcon', [bytes], () => undefined);
   }
 }

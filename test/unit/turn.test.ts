@@ -81,6 +81,14 @@ describe('owner turn', () => {
     expect((sdk.inbound[0]?.turn as { replyOptions: Record<string, unknown> }).replyOptions.disableBlockStreaming).toBe(false);
   });
 
+  it('tells the buddy icon that a turn starts', async () => {
+    let turns = 0;
+    const rt = getRuntime('default');
+    if (rt) rt.icon = { onOnline: () => undefined, onTurn: () => { turns += 1; }, stop: () => undefined, idle: async () => undefined };
+    await dispatchImTurn(turn(), deps());
+    expect(turns).toBe(1);
+  });
+
   it('binds the session key to the account and peer', async () => {
     await dispatchImTurn(turn(), deps());
     expect(getRuntime('default')?.sessionKeys.get('agent:main:oscar:group:botone/alice')).toEqual({ accountId: 'default', peer: { kind: 'im', bot: 'botone', peer: 'alice' } });

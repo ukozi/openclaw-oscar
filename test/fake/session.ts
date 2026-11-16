@@ -29,6 +29,7 @@ export class FakeSession {
     | { call: 'sendDirectMessage'; id: string; pictures: readonly OutgoingPicture[] }
   )[] = [];
   outgoingIds: string[] = [];
+  icons: Uint8Array[] = [];
   away: (string | null)[] = [];
   buddyUpdates = 0;
   started = false;
@@ -120,6 +121,9 @@ export class FakeSession {
       },
       async sendDirectMessage(id: string, message: { pictures: readonly OutgoingPicture[] }): Promise<void> {
         self.outgoing.push({ call: 'sendDirectMessage', id, pictures: message.pictures });
+      },
+      async setOwnIcon(bytes: Uint8Array): Promise<void> {
+        self.icons.push(bytes);
       },
     };
     return api as unknown as OscarSession;

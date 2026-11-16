@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { resolveAgentAvatar } from 'openclaw/plugin-sdk/agent-runtime';
 import { resolveStableChannelMessageIngress } from 'openclaw/plugin-sdk/channel-ingress-runtime';
 import { buildOutboundMediaLoadOptions, getMediaDir } from 'openclaw/plugin-sdk/media-runtime';
 import { resolveOutboundMediaUrls } from 'openclaw/plugin-sdk/reply-payload';
@@ -11,6 +12,8 @@ import { loadWebMedia } from 'openclaw/plugin-sdk/web-media';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readPolicy } from '../../src/config.js';
 import { ingressParams } from '../../src/inbound/im.js';
+import { makeIcon } from '../../src/icon.js';
+import { isOwnIcon } from '../../src/oscar/index.js';
 import { loadOutgoing } from '../../src/sending/load.js';
 import { replyPayload } from '../fake/openclaw.js';
 import { silentLog } from './rooms-fixtures.js';
@@ -163,5 +166,19 @@ describe('real media loader', () => {
     expect(await loadOutgoing({ url: chart, cfg: {}, role: 'owner', maxBytes: MB, host, log: silentLog })).toMatchObject({ ok: true, name: 'chart.png' });
     // Under a linked temporary folder the loader reports a missing file as a path it does not allow.
     expect(['failed', 'not-allowed']).toContain((await load(join(media, 'outbound', 'gone.png'), 'approved') as { why?: string }).why);
+  });
+});
+
+describe('real avatar and resize', () => {
+  it('says an agent with no avatar has none', () => {
+    expect(resolveAgentAvatar({}, 'main').kind).toBe('none');
+  });
+
+  it('makes an icon the client takes from a square picture, and none from a wide one', async () => {
+    const square = readFileSync(new URL('../../assets/icon.png', import.meta.url));
+    const made = await makeIcon(square);
+    expect('icon' in made && isOwnIcon(made.icon)).toBe(true);
+    const wide = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGP4z8DwH4QBEfcD/ePF9e8AAAAASUVORK5CYII=', 'base64');
+    expect(await makeIcon(wide)).not.toHaveProperty('icon');
   });
 });

@@ -436,3 +436,18 @@ describe('fallback', () => {
     if (!result.success) expect(result.error.issues.map((i) => i.message)).toContain('"alice" already has a fallback');
   });
 });
+
+describe('buddyIcon', () => {
+  it('is on by default and can be turned off', () => {
+    expect(readPolicy(cfgOf(good())).buddyIcon).toBe(true);
+    expect(readPolicy(undefined).buddyIcon).toBe(true);
+    expect(configProblems(cfgOf({ ...good(), buddyIcon: false }))).toEqual([]);
+    expect(readPolicy(cfgOf({ ...good(), buddyIcon: false })).buddyIcon).toBe(false);
+  });
+
+  it('is a root setting that restarts the account', () => {
+    const problems = configProblems(cfgOf({ ...good(), accounts: { botone: { buddyIcon: false } } }));
+    expect(problems.some((p) => p.startsWith('channels.oscar.accounts.botone.buddyIcon:')), problems.join(' | ')).toBe(true);
+    expect(RELOAD_NOOP_PREFIXES.some((prefix) => 'channels.oscar.buddyIcon'.startsWith(prefix))).toBe(false);
+  });
+});

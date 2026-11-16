@@ -14,7 +14,7 @@ const ICBM_TYPING = 0x14;
 
 export type Flow = {
   server: FakeOscarServer; cfgRef: { current: Record<string, unknown> }; status(): Record<string, unknown>;
-  peer(name: string): FakePeer; stop(): Promise<void>;
+  peer(name: string): FakePeer; restart(): Promise<void>; stop(): Promise<void>;
 };
 
 export async function waitFor(check: () => boolean, ms = 8000, what = 'condition'): Promise<void> {
@@ -88,20 +88,30 @@ export async function startFlow(opts: { sec?: Record<string, unknown>; host?: Re
   setHost({ config: { current: () => cfgRef.current } });
   sdk.usePlugin(oscarPlugin);
 
-  const abort = new AbortController();
   let status: Record<string, unknown> = { accountId: 'default' };
-  const parked = startAccount({
-    cfg: cfgRef.current, accountId: 'default', account: resolveAccount(cfgRef.current, 'default'), runtime: {}, abortSignal: abort.signal,
-    log: { info: () => undefined, warn: () => undefined, error: () => undefined, debug: () => undefined },
-    getStatus: () => status, setStatus: (next: Record<string, unknown>) => { status = next; },
-  } as never);
-  if (opts.expectOnline !== false) {
-    await waitFor(() => getRuntime('default')?.session.getState().phase === 'online', 10_000, 'the bot to sign on');
-  }
+  let abort = new AbortController();
+  let parked: Promise<void> = Promise.resolve();
+  const run = async (): Promise<void> => {
+    abort = new AbortController();
+    parked = startAccount({
+      cfg: cfgRef.current, accountId: 'default', account: resolveAccount(cfgRef.current, 'default'), runtime: {}, abortSignal: abort.signal,
+      log: { info: () => undefined, warn: () => undefined, error: () => undefined, debug: () => undefined },
+      getStatus: () => status, setStatus: (next: Record<string, unknown>) => { status = next; },
+    } as never);
+    if (opts.expectOnline !== false) {
+      await waitFor(() => getRuntime('default')?.session.getState().phase === 'online', 10_000, 'the bot to sign on');
+    }
+  };
+  await run();
 
   return {
     server, cfgRef, status: () => status,
     peer: (name) => server.peer(name),
+    async restart(): Promise<void> {
+      abort.abort();
+      await parked;
+      await run();
+    },
     async stop(): Promise<void> {
       abort.abort();
       await parked;

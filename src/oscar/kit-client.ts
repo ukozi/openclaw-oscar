@@ -31,6 +31,7 @@ export type KitClient = Pick<
   | 'sendFiles'
   | 'openDirectIm'
   | 'sendDirectMessage'
+  | 'setOwnIcon'
 >;
 
 // Room for the text and the frame around the pictures of one message.
@@ -75,6 +76,7 @@ export function kitOptions(opts: OscarSessionOptions, hooks: { reconnect: Reconn
     wireDetail: true,
     botFlagExempt: true,
     iconsFrom: 'none',
+    ...(opts.buddyIcon ? { buddyIcon: true } : {}),
     // The plugin's own room limit is the one a person meets.
     maxRooms: 10_000,
     autoRespond: () => 'skip',

@@ -94,6 +94,12 @@ describe('kitOptions', () => {
     ...over,
   });
 
+  it('shows the buddy icon capability only when the setting is on', () => {
+    expect(kitOptions(base({ buddyIcon: true }), hooks).buddyIcon).toBe(true);
+    expect(kitOptions(base(), hooks).buddyIcon).toBeUndefined();
+    expect(kitOptions(base({ buddyIcon: false }), hooks).buddyIcon).toBeUndefined();
+  });
+
   it('builds the client without Direct IM when the setting is off', () => {
     for (const opts of [base(), base({ transfers: { directIm: false, sendFile: false, maxBytes: 10 * 1024 * 1024 } })]) {
       const built = kitOptions(opts, hooks);

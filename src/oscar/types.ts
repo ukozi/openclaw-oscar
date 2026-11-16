@@ -130,6 +130,7 @@ export type OscarSessionOptions = {
   now?: () => number;
   timers?: TimerApi;
   transfers?: TransferOptions;
+  buddyIcon?: boolean;
 };
 
 export interface OscarSession {
@@ -159,4 +160,5 @@ export interface OscarSession {
   // The id of the live session with that person when there is one.
   openDirectIm(to: string): Promise<string>;
   sendDirectMessage(id: string, message: { pictures: readonly OutgoingPicture[] }): Promise<void>;
+  setOwnIcon(bytes: Uint8Array): Promise<void>;
 }

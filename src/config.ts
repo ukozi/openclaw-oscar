@@ -18,7 +18,7 @@ const WILDCARD = '*';
 
 export const ROOT_ONLY_KEYS = [
   'owners', 'allowFrom', 'dmPolicy', 'dangerouslyAllowOpenDm', 'contactNotice', 'nonOwnerTools', 'outbound',
-  'room', 'invites', 'rooms', 'awareness', 'chain', 'files',
+  'room', 'invites', 'rooms', 'awareness', 'chain', 'files', 'buddyIcon',
 ] as const;
 
 export const RELOAD_NOOP_PREFIXES = [
@@ -43,6 +43,7 @@ export const UI_HINTS = {
   'files.directIm': { label: 'Take pictures over Direct IM', help: 'Owners and approved people can send the bot pictures. Off by default.' },
   'files.sendFile': { label: 'Take files over Send File', help: 'Owners and approved people can send the bot pictures, PDFs and text files, Markdown included. Off by default.' },
   'files.maxMb': { label: 'Largest file (MB)', placeholder: '10', help: 'From 1 to 25. The default is 10.' },
+  buddyIcon: { label: 'Use the agent\'s avatar as the buddy icon', help: 'The avatar must be square. On by default.' },
   'files.relayHost': { label: 'Relay host', help: 'The server\'s rendezvous relay, when it runs on another host. The bot connects only to its server and this host.', advanced: true },
 };
 
@@ -80,6 +81,7 @@ export type RootPolicy = {
   chain: ChainConfig;
   teammates: string[];
   files: FilesPolicy;
+  buddyIcon: boolean;
 };
 
 type Obj = Record<string, unknown>;
@@ -186,6 +188,7 @@ const rootShape = {
     maxMb: z.number().int().min(MAX_MB.min).max(MAX_MB.max).optional(),
     relayHost: relayHostSchema.optional(),
   }).strict().optional(),
+  buddyIcon: z.boolean().optional(),
   accounts: z.record(z.string(), z.object(transportShape).strict()).optional(),
   defaultAccount: z.string().optional(),
 };
@@ -452,6 +455,7 @@ export function readPolicy(cfg: unknown): RootPolicy {
     },
     teammates,
     files: readFiles(obj(sec.files) ?? {}, owned),
+    buddyIcon: bool(sec.buddyIcon, true),
   };
 }
 

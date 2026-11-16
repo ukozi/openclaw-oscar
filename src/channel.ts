@@ -8,6 +8,7 @@ import {
   CHANNEL_ID, RELOAD_NOOP_PREFIXES, buddyList, defaultAccountId, listAccountIds, oscarChannelConfigSchema, readPolicy, resolveAccount,
 } from './config.js';
 import type { ResolvedAccount } from './config.js';
+import { createBuddyIcon } from './icon.js';
 import { createDirectImIntake } from './inbound/direct-im.js';
 import type { IntakeDeps } from './inbound/direct-im.js';
 import { attachRooms } from './inbound/home.js';
@@ -141,7 +142,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
   }
 
   const self = (): string => botName(getCfg(), accountId);
-  const files = readPolicy(getCfg()).files;
+  const { files, buddyIcon } = readPolicy(getCfg());
   const fileStranger = (name: string, display: string): void => notices.contact({ name, display, kind: 'file', at: now() });
   const session = gatewayDeps.createSession({
     host: account.host, port: account.port, tls: account.tls, ...(account.caFile ? { caFile: account.caFile } : {}), redirect: account.redirect,
@@ -151,6 +152,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     log, loginBudget: sharedLoginBudget(),
     now, timers,
     transfers: { ...files, allowOffer: offerRule({ self, getCfg, log, stranger: fileStranger }) },
+    buddyIcon,
   });
   const presence = startPresence({
     accountId,
@@ -231,6 +233,14 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     }),
   });
   rt.media = media;
+  const icon = createBuddyIcon({
+    accountId, getCfg, now, timers, log,
+    enabled: buddyIcon,
+    owner: `${account.host}:${account.port}:${account.screenName}`,
+    online: () => !rt.halted && session.getState().phase === 'online',
+    setOwnIcon: (bytes) => session.setOwnIcon(bytes),
+  });
+  rt.icon = icon;
   const tellEveryOwner = async (text: string): Promise<void> => {
     for (const owner of readPolicy(getCfg()).owners) {
       if (owner === self()) continue;
@@ -316,6 +326,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
       publish(state);
       if (state.phase === 'online') {
         guard.onOnline();
+        icon.onOnline();
         maybeWarnOwners({ cfg: getCfg(), accountId, bot: self(), send: tellOwner });
       }
     }),
@@ -327,6 +338,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     for (const off of offs) off();
     guard.stop();
     media.stop();
+    icon.stop();
     for (const intake of intakes) intake.stop();
     im.stop();
     notices.stop();

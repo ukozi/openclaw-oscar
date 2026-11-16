@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import { z } from 'zod';
+import { sniffImage } from 'open-oscar-client-kit/model';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/channel-core';
 import type { AnyAgentTool, OpenClawPluginToolContext } from 'openclaw/plugin-sdk/core';
 import type { AgentToolResult } from 'openclaw/plugin-sdk/tool-results';
@@ -78,6 +79,10 @@ export const sdk = {
   loadFail: undefined as unknown,
   loadResult: undefined as Rec | undefined,
   loadHangs: undefined as 'until-aborted' | 'for-ever' | undefined,
+  avatar: { kind: 'none', reason: 'missing' } as Rec,
+  avatarAsks: [] as string[],
+  resizes: [] as { maxSide: number; quality: number }[],
+  resize: undefined as ((p: { buffer: Buffer; quality: number }) => Buffer) | undefined,
   agent: (() => []) as (ctx: Rec) => Promise<FakeReply[]> | FakeReply[],
   plugin: undefined as Rec | undefined,
   usePlugin(plugin: unknown): void {
@@ -109,6 +114,10 @@ export const sdk = {
     sdk.loadFail = undefined;
     sdk.loadResult = undefined;
     sdk.loadHangs = undefined;
+    sdk.avatar = { kind: 'none', reason: 'missing' };
+    sdk.avatarAsks.length = 0;
+    sdk.resizes.length = 0;
+    sdk.resize = undefined;
     sdk.agent = () => [];
     sdk.plugin = undefined;
   },
@@ -414,12 +423,37 @@ function buildOutboundMediaLoadOptions(params: Rec = {}): Rec {
 
 const MIME_EXTENSIONS: Record<string, string> = { 'image/png': '.png', 'image/jpeg': '.jpg', 'application/pdf': '.pdf', 'text/plain': '.txt' };
 
+// A real 48 by 48 JPEG.
+export const ICON_JPEG = Buffer.from(
+  '/9j/wAARCAAwADADAREAAhEBAxEB/9sAQwAoHB4jHhkoIyEjLSsoMDxkQTw3Nzx7WF1JZJGAmZaPgIyKoLTmw6Cq2q2KjMj/y9ru9f///5vB////+v/m/f/4/9sAQwErLS08NTx2QUF2+KWMpfj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDFoAKACgCxHZ3Eqb0jJXtzjNZyqxi7NjUWyAgqSCCCOoNabiEoAKACgAoA6OCRJIFZCNuB+FebNNSszdPQxdQdJLt2TBHAyO9dtFNQSZlLcrVqSFABQBa0+3FxcAMMooyfesq0+WOhUVdmjPpsUpLITGT129PyrmjXkt9S3FFZ9K2Rs3nZwCfu4rVYi7tYnkM2ukgKAHKrOwVQST0ApNpasDbsbb7LCd5G9uW9vauGrU53obRVhNQtpJkDxMwdf4QetFKai7MUlfYxWZjwzE/U13JLoZDaYBQBrx3tnBGNi/MQMhV7/WuN0qknqaKSRSu72S5+X7qf3R3+tb06Sh6kuVyxp98VYQynKnhSe1Z1qV1zRHGXRkeqwCOcSKMLJ1+tVQneNn0CasyjW5AUAFABQAUAOeR5Gy7Fj6k0kktguNpgf//Z',
+  'base64',
+);
+
+// The size in the header of a PNG, GIF or JPEG; null for anything else.
+async function getImageMetadata(buffer: Buffer): Promise<{ width: number; height: number } | null> {
+  const found = sniffImage(buffer);
+  return found ? { width: found.width, height: found.height } : null;
+}
+
+async function resizeToJpeg(p: { buffer: Buffer; maxSide: number; quality: number }): Promise<Buffer> {
+  sdk.resizes.push({ maxSide: p.maxSide, quality: p.quality });
+  return sdk.resize ? sdk.resize(p) : ICON_JPEG;
+}
+
+export const agentRuntime: Rec = {
+  resolveAgentAvatar: (_cfg: unknown, agentId: string) => {
+    sdk.avatarAsks.push(agentId);
+    return sdk.avatar;
+  },
+};
 export const webMedia: Rec = { loadWebMedia };
 export const mediaRuntime: Rec = {
   buildOutboundMediaLoadOptions,
   getAgentScopedMediaLocalRoots: (_cfg: unknown, agentId?: string) => (agentId ? [...DEFAULT_ROOTS, `/fake/agents/${agentId}`] : [...DEFAULT_ROOTS]),
   getMediaDir: () => FAKE_MEDIA_DIR,
   extensionForMime: (mime?: string | null) => (mime ? MIME_EXTENSIONS[mime] : undefined),
+  getImageMetadata,
+  resizeToJpeg,
 };
 export const mediaStore: Rec = { saveMediaBuffer };
 export const replyPayload: Rec = { resolveOutboundMediaUrls };

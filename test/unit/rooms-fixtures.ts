@@ -30,6 +30,7 @@ export function policyFixture(over: Partial<RootPolicy> = {}): RootPolicy {
     rooms: {},
     awareness: { lines: 5 },
     files: { directIm: false, sendFile: false, maxBytes: 10 * 1024 * 1024 },
+    buddyIcon: true,
     chain: {
       roster: [],
       floorSeconds: 120,
