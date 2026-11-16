@@ -424,6 +424,47 @@ describe('pictures and files', () => {
     expect(t.turns).toEqual([{ from: 'alice', fromDisplay: 'alice', text: 'typed in a Direct IM', cookie: 0n, at: T0 + 2000 }]);
   });
 
+  it('ends a turn when the next files would take it past the limit', async () => {
+    const t = setup();
+    for (let i = 0; i < 4; i += 1) {
+      t.handler.onMedia(files('alice', `set ${i}`, [picture(`a${i}.png`), picture(`b${i}.png`)]));
+      await t.settle(1000);
+    }
+    await t.settle(2000);
+    expect(t.turns.map((turn) => turn.media?.map((m) => m.name))).toEqual([
+      ['a0.png', 'b0.png'], ['a1.png', 'b1.png'], ['a2.png', 'b2.png'], ['a3.png', 'b3.png'],
+    ]);
+    expect(t.turns.map((turn) => turn.text)).toEqual(['set 0', 'set 1', 'set 2', 'set 3']);
+  });
+
+  it('gives no turn more files than the limit however fast they come', async () => {
+    const t = setup();
+    t.handler.onIm(t.im('alice', 'here they are'));
+    for (let i = 0; i < 10; i += 1) t.handler.onMedia(files('alice', '', [picture(`p${i}.png`)]));
+    await t.settle(2000);
+    expect(t.turns.map((turn) => turn.media?.length)).toEqual([3, 3, 3, 1]);
+    expect(t.turns.flatMap((turn) => turn.media ?? []).map((m) => m.name)).toEqual(Array.from({ length: 10 }, (_, i) => `p${i}.png`));
+    expect(t.turns.map((turn) => turn.text)).toEqual(['here they are', '', '', '']);
+  });
+
+  it('splits one event that holds more files than the limit', async () => {
+    const t = setup();
+    t.handler.onMedia(files('alice', 'all of them', Array.from({ length: 7 }, (_, i) => picture(`p${i}.png`))));
+    await t.settle(2000);
+    expect(t.turns.map((turn) => turn.media?.length)).toEqual([3, 3, 1]);
+    expect(t.turns[0]?.text).toBe('all of them');
+  });
+
+  it('lets text join a turn that is full of files', async () => {
+    const t = setup();
+    t.handler.onMedia(files('alice', '', [picture('a.png'), picture('b.png'), picture('c.png')]));
+    t.handler.onIm(t.im('alice', 'what are these'));
+    await t.settle(2000);
+    expect(t.turns).toHaveLength(1);
+    expect(t.turns[0]).toMatchObject({ text: 'what are these' });
+    expect(t.turns[0]?.media).toHaveLength(3);
+  });
+
   it('drops files that arrive after the stop', async () => {
     const t = setup();
     t.handler.onMedia(files('alice', '', [picture('cat.png')]));

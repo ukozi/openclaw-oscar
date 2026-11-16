@@ -7,7 +7,7 @@ import type { ContactAttempt } from '../notice.js';
 import type { ImEvent, Logger } from '../oscar/index.js';
 import { roleOf } from '../policy.js';
 import type { Timers } from '../runtime.js';
-import type { MediaEvent, TurnMedia } from './media-gate.js';
+import { FILES_LIMITS, type MediaEvent, type TurnMedia } from './media-gate.js';
 import type { ImTurn } from './turn.js';
 
 export const IM_TIMING = { debounceMs: 2000, replyCooldownMs: 2000, replaySettleMs: 3000, dedupeMs: 60_000, replayMaxAgeMs: 4 * 3600_000 };
@@ -114,10 +114,22 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; onMedi
   };
 
   const addToBurst = (ev: { from: string; fromDisplay: string; text: string; cookie: bigint; media?: TurnMedia[] }, delay: number): void => {
-    const burst = bursts.get(ev.from) ?? { display: ev.fromDisplay, texts: [], media: [], cookie: ev.cookie };
+    const fresh = (): Burst => ({ display: ev.fromDisplay, texts: [], media: [], cookie: ev.cookie });
+    const files = ev.media ?? [];
+    let burst = bursts.get(ev.from) ?? fresh();
     if (burst.timer) deps.timers.clearTimeout(burst.timer);
+    // A turn holds no more files than one offer.
+    const startNew = (): void => {
+      bursts.set(ev.from, burst);
+      flush(ev.from);
+      burst = fresh();
+    };
+    if (burst.media.length > 0 && burst.media.length + files.length > FILES_LIMITS.perOffer) startNew();
     if (ev.media === undefined || ev.text.trim() !== '') burst.texts.push(ev.text);
-    if (ev.media) burst.media.push(...ev.media);
+    for (const file of files) {
+      if (burst.media.length >= FILES_LIMITS.perOffer) startNew();
+      burst.media.push(file);
+    }
     burst.timer = deps.timers.setTimeout(() => flush(ev.from), delay);
     bursts.set(ev.from, burst);
   };
