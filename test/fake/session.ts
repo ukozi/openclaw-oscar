@@ -1,4 +1,16 @@
-import type { FileSink, InviteEvent, OscarEvents, OscarSession, Presence, RoomRef, SendPriority, SendReceipt, SessionState } from '../../src/oscar/index.js';
+import type {
+  FileSink,
+  InviteEvent,
+  OscarEvents,
+  OscarSession,
+  OutgoingFile,
+  OutgoingPicture,
+  Presence,
+  RoomRef,
+  SendPriority,
+  SendReceipt,
+  SessionState,
+} from '../../src/oscar/index.js';
 
 type Listener = (payload: never) => void;
 
@@ -11,6 +23,11 @@ export class FakeSession {
   directIm: { call: 'accept' | 'decline' | 'close'; id: string }[] = [];
   files: { call: 'accept' | 'decline' | 'cancel'; id: string; sink?: FileSink }[] = [];
   typing: { to: string; state: 'typing' | 'typed' | 'none' }[] = [];
+  outgoing: (
+    | { call: 'sendFiles'; to: string; files: readonly OutgoingFile[] }
+    | { call: 'openDirectIm'; to: string }
+    | { call: 'sendDirectMessage'; id: string; pictures: readonly OutgoingPicture[] }
+  )[] = [];
   away: (string | null)[] = [];
   buddyUpdates = 0;
   started = false;
@@ -88,6 +105,17 @@ export class FakeSession {
       async acceptFileOffer(id: string, sink: FileSink): Promise<void> { self.files.push({ call: 'accept', id, sink }); },
       async declineFileOffer(id: string): Promise<void> { self.files.push({ call: 'decline', id }); },
       async cancelTransfer(id: string): Promise<void> { self.files.push({ call: 'cancel', id }); },
+      async sendFiles(to: string, files: readonly OutgoingFile[]): Promise<string> {
+        self.outgoing.push({ call: 'sendFiles', to, files });
+        return `${to}:out-${self.nextId++}`;
+      },
+      async openDirectIm(to: string): Promise<string> {
+        self.outgoing.push({ call: 'openDirectIm', to });
+        return `${to}:dim-${self.nextId++}`;
+      },
+      async sendDirectMessage(id: string, message: { pictures: readonly OutgoingPicture[] }): Promise<void> {
+        self.outgoing.push({ call: 'sendDirectMessage', id, pictures: message.pictures });
+      },
     };
     return api as unknown as OscarSession;
   }

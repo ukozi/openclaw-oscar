@@ -362,7 +362,7 @@ describe('pictures and files', () => {
   async function sendPicture(s: FakeSession, from: string, text: string): Promise<void> {
     s.emit('directImOffer', { id: 'd1', from, fromDisplay: from });
     await vi.waitFor(() => expect(s.directIm).toEqual([{ call: 'accept', id: 'd1' }]));
-    s.emit('directIm', { id: 'd1', peer: from, state: 'open' });
+    s.emit('directIm', { id: 'd1', peer: from, role: 'receiving', state: 'open' });
     s.emit('directMessage', { id: 'd1', from, fromDisplay: from, text, autoResponse: false, damaged: false, pictures: [{ name: 'cat.png', bytes: PNG }] });
   }
 
@@ -372,7 +372,7 @@ describe('pictures and files', () => {
     const writer = await s.files[0]?.sink?.begin({ name, bytes: bytes.byteLength, index: 0, count: 1 } as never);
     await writer?.write(bytes);
     await writer?.finish();
-    s.emit('transfer', { id: 'f1', peer: from, state: 'done', index: 0, bytesDone: bytes.byteLength });
+    s.emit('transfer', { id: 'f1', peer: from, direction: 'in', state: 'done', index: 0, bytesDone: bytes.byteLength });
   }
 
   it('declares media in the channel capabilities', () => {

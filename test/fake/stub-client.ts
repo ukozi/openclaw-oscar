@@ -9,13 +9,35 @@ import type {
   TypingEvent,
 } from 'open-oscar-client-kit/client';
 import { roomConversationId } from 'open-oscar-client-kit/model';
-import type { BuddyPresence, FileSink, ImBody, RichText, RoomId, RoomStatus, SelfInfo, SessionState } from 'open-oscar-client-kit/model';
+import type {
+  BuddyPresence,
+  FileSink,
+  ImBody,
+  OutgoingDirectMessage,
+  OutgoingFile,
+  RichText,
+  RoomId,
+  RoomStatus,
+  SelfInfo,
+  SessionState,
+} from 'open-oscar-client-kit/model';
 import type { KitClient } from '../../src/oscar/kit-client.js';
 
 export type Outcome<T> = { resolve: T } | { reject: unknown } | 'hold';
 export type Held<T> = { resolve: (value: T) => void; reject: (error: unknown) => void };
 export type StubCall = { method: string; args: unknown[] };
-type Scripted = 'signOnWith' | 'sendIm' | 'sendTyping' | 'setAway' | 'joinRoom' | 'leaveRoom' | 'sendRoomMessage' | 'refreshSessionBuddies';
+type Scripted =
+  | 'signOnWith'
+  | 'sendIm'
+  | 'sendTyping'
+  | 'setAway'
+  | 'joinRoom'
+  | 'leaveRoom'
+  | 'sendRoomMessage'
+  | 'refreshSessionBuddies'
+  | 'sendFiles'
+  | 'openDirectIm'
+  | 'sendDirectMessage';
 type Listeners = { [E in keyof OscarClientEvents]?: Set<(payload: OscarClientEvents[E]) => void> };
 
 export class StubClient implements KitClient {
@@ -29,6 +51,7 @@ export class StubClient implements KitClient {
   private readonly scripts = new Map<Scripted, Outcome<unknown>[]>();
   private readonly listeners: Listeners = {};
   private sends = 0;
+  private offers = 0;
 
   script(method: Scripted, ...outcomes: Outcome<unknown>[]): void {
     this.scripts.set(method, [...(this.scripts.get(method) ?? []), ...outcomes]);
@@ -185,5 +208,22 @@ export class StubClient implements KitClient {
 
   async cancelTransfer(id: string): Promise<void> {
     this.calls.push({ method: 'cancelTransfer', args: [id] });
+  }
+
+  private offerId(to: string): string {
+    this.offers += 1;
+    return `${to}:${this.offers.toString(16).padStart(16, '0')}`;
+  }
+
+  sendFiles(to: string, files: readonly OutgoingFile[]): Promise<string> {
+    return this.next('sendFiles', [to, files], () => this.offerId(to));
+  }
+
+  openDirectIm(to: string): Promise<string> {
+    return this.next('openDirectIm', [to], () => this.offerId(to));
+  }
+
+  sendDirectMessage(id: string, message: OutgoingDirectMessage): Promise<void> {
+    return this.next('sendDirectMessage', [id, message], () => undefined);
   }
 }

@@ -1,10 +1,19 @@
 import type { LoginBudget } from 'open-oscar-client-kit/client';
-import type { DirectImEnd, FileSink, TransferFailure, TransferState } from 'open-oscar-client-kit/model';
+import type { DirectImEnd, FileSink, OutgoingFile, OutgoingPicture, TransferFailure, TransferState } from 'open-oscar-client-kit/model';
 import type { Logger, RoomRef, SendPriority, SendReceipt, StateReason, TimerApi } from 'open-oscar-client-kit/wire';
 import type { HostLookup } from './dial.js';
 
 export type { LoginBudget } from 'open-oscar-client-kit/client';
-export type { DirectImEnd, FileSink, FileWriter, IncomingFile, TransferFailure, TransferState } from 'open-oscar-client-kit/model';
+export type {
+  DirectImEnd,
+  FileSink,
+  FileWriter,
+  IncomingFile,
+  OutgoingFile,
+  OutgoingPicture,
+  TransferFailure,
+  TransferState,
+} from 'open-oscar-client-kit/model';
 export { OscarRoomError, OscarSendError } from 'open-oscar-client-kit/wire';
 export type {
   LinkClose,
@@ -52,7 +61,14 @@ export type RoomRosterEvent = { room: RoomRef; name: string; display: string };
 export type RoomClosedEvent = { room: RoomRef; willRejoin: boolean };
 export type RateEvent = { scope: 'bos' | RoomRef; status: 'clear' | 'alert' | 'limited' };
 export type DirectImOfferEvent = { id: string; from: string; fromDisplay: string };
-export type DirectImStateEvent = { id: string; peer: string; state: 'open' | 'closed'; end?: DirectImEnd; by?: 'self' | 'peer' };
+export type DirectImStateEvent = {
+  id: string;
+  peer: string;
+  role: 'offering' | 'receiving';
+  state: 'open' | 'closed';
+  end?: DirectImEnd;
+  by?: 'self' | 'peer';
+};
 export type DirectMessageEvent = {
   id: string;
   from: string;
@@ -66,6 +82,7 @@ export type FileOfferEvent = { id: string; from: string; fromDisplay: string; co
 export type TransferEvent = {
   id: string;
   peer: string;
+  direction: 'in' | 'out';
   state: TransferState;
   failure?: TransferFailure;
   by?: 'self' | 'peer';
@@ -134,4 +151,8 @@ export interface OscarSession {
   acceptFileOffer(id: string, sink: FileSink): Promise<void>;
   declineFileOffer(id: string): Promise<void>;
   cancelTransfer(id: string): Promise<void>;
+  sendFiles(to: string, files: readonly OutgoingFile[]): Promise<string>;
+  // The id of the live session with that person when there is one.
+  openDirectIm(to: string): Promise<string>;
+  sendDirectMessage(id: string, message: { pictures: readonly OutgoingPicture[] }): Promise<void>;
 }

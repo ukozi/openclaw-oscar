@@ -28,6 +28,9 @@ export type KitClient = Pick<
   | 'acceptFileOffer'
   | 'declineFileOffer'
   | 'cancelTransfer'
+  | 'sendFiles'
+  | 'openDirectIm'
+  | 'sendDirectMessage'
 >;
 
 // Room for the text and the frame around the pictures of one message.

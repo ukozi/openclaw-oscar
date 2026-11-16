@@ -1,6 +1,6 @@
 import { OscarError, SignOnError, backoffDelay } from 'open-oscar-client-kit/client';
 import type { DropEvidence, IssuedTicket, TicketSource } from 'open-oscar-client-kit/client';
-import type { BuddyPresence, DirectImStatus, FileSink, IncomingIm, Invite, SelfInfo, TransferStatus } from 'open-oscar-client-kit/model';
+import type { BuddyPresence, DirectImStatus, FileSink, IncomingIm, Invite, OutgoingFile, SelfInfo, TransferStatus } from 'open-oscar-client-kit/model';
 import { ManualTimers } from 'open-oscar-client-kit/testing';
 import { PASSWORD_CHECK_CACHE_MS } from 'open-oscar-client-kit/wire';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -661,8 +661,8 @@ describe('Direct IM on the session', () => {
     w.client.emit('directIm', status({ verified: true }));
     w.client.emit('directIm', status({ state: 'closed', end: 'peer-closed', by: 'peer', verified: true }));
     expect(w.states).toEqual([
-      { id: ID, peer: 'alicesmith', state: 'open' },
-      { id: ID, peer: 'alicesmith', state: 'closed', end: 'peer-closed', by: 'peer' },
+      { id: ID, peer: 'alicesmith', role: 'receiving', state: 'open' },
+      { id: ID, peer: 'alicesmith', role: 'receiving', state: 'closed', end: 'peer-closed', by: 'peer' },
     ]);
   });
 
@@ -676,13 +676,28 @@ describe('Direct IM on the session', () => {
     expect(w.messages).toHaveLength(1);
   });
 
-  it('passes on nothing of a session the bot offered', () => {
+  it('reports a session the bot offered, once when it opens, and passes on its messages', () => {
     const w = listen();
-    w.client.emit('directIm', status({ role: 'offering' }));
     w.client.emit('directMessage', text);
-    w.client.emit('directIm', status({ role: 'offering', state: 'closed', end: 'closed', by: 'peer' }));
-    expect(w.states).toEqual([]);
-    expect(w.messages).toEqual([]);
+    w.client.emit('directIm', status({ role: 'offering', state: 'waiting' }));
+    w.client.emit('directIm', status({ role: 'offering', state: 'connecting' }));
+    w.client.emit('directIm', status({ role: 'offering' }));
+    w.client.emit('directIm', status({ role: 'offering', verified: true }));
+    w.client.emit('directMessage', text);
+    w.client.emit('directIm', status({ role: 'offering', state: 'closed', end: 'closed', by: 'peer', verified: true }));
+    w.client.emit('directMessage', text);
+    expect(w.states).toEqual([
+      { id: ID, peer: 'alicesmith', role: 'offering', state: 'open' },
+      { id: ID, peer: 'alicesmith', role: 'offering', state: 'closed', end: 'closed', by: 'peer' },
+    ]);
+    expect(w.messages).toHaveLength(1);
+  });
+
+  it('reports a session the bot offered that ended before it opened', () => {
+    const w = listen();
+    w.client.emit('directIm', status({ role: 'offering', state: 'waiting' }));
+    w.client.emit('directIm', status({ role: 'offering', state: 'closed', end: 'timed-out' }));
+    expect(w.states).toEqual([{ id: ID, peer: 'alicesmith', role: 'offering', state: 'closed', end: 'timed-out' }]);
   });
 
   it('hands accept, decline and close to the client', async () => {
@@ -728,17 +743,19 @@ describe('Send File on the session', () => {
     expect(w.offers).toEqual([{ id: ID, from: 'alicesmith', fromDisplay: 'Alice Smith', count: 1, totalBytes: 10, name: 'notes.md', folder: false }]);
   });
 
-  it('passes on each step of a transfer that comes in and nothing of one that goes out', () => {
+  it('passes on each step of a transfer, in and out, with its direction', () => {
     const w = listen();
-    w.client.emit('transfer', status({ direction: 'out' }));
+    w.client.emit('transfer', status({ direction: 'out', state: 'waiting' }));
     w.client.emit('transfer', status({ direction: 'out', state: 'done', bytesDone: 10 }));
     w.client.emit('transfer', status({}));
     w.client.emit('transfer', status({ bytesDone: 4 }));
     w.client.emit('transfer', status({ state: 'failed', failure: 'file-problem', bytesDone: 4 }));
     expect(w.transfers).toEqual([
-      { id: ID, peer: 'alicesmith', state: 'transferring', index: 0, bytesDone: 0 },
-      { id: ID, peer: 'alicesmith', state: 'transferring', index: 0, bytesDone: 4 },
-      { id: ID, peer: 'alicesmith', state: 'failed', failure: 'file-problem', index: 0, bytesDone: 4 },
+      { id: ID, peer: 'alicesmith', direction: 'out', state: 'waiting', index: 0, bytesDone: 0 },
+      { id: ID, peer: 'alicesmith', direction: 'out', state: 'done', index: 0, bytesDone: 10 },
+      { id: ID, peer: 'alicesmith', direction: 'in', state: 'transferring', index: 0, bytesDone: 0 },
+      { id: ID, peer: 'alicesmith', direction: 'in', state: 'transferring', index: 0, bytesDone: 4 },
+      { id: ID, peer: 'alicesmith', direction: 'in', state: 'failed', failure: 'file-problem', index: 0, bytesDone: 4 },
     ]);
   });
 
@@ -753,5 +770,47 @@ describe('Send File on the session', () => {
       ['declineFileOffer', ID],
       ['cancelTransfer', ID],
     ]);
+  });
+});
+
+describe('sending from the session', () => {
+  const file: OutgoingFile = { name: 'notes.md', bytes: 3, modifiedAt: 0, read: async function* () { yield Uint8Array.of(1, 2, 3); } };
+  const picture = { name: 'dot.gif', bytes: Uint8Array.of(1), width: 1, height: 1 };
+
+  it('hands sendFiles, openDirectIm and sendDirectMessage to the client', async () => {
+    const w = world();
+    await w.up();
+    expect(await w.session.sendFiles('alice', [file])).toBe('alice:0000000000000001');
+    expect(await w.session.openDirectIm('alice')).toBe('alice:0000000000000002');
+    await w.session.sendDirectMessage('alice:0000000000000002', { pictures: [picture] });
+    expect(w.client.calls.filter((c) => c.method !== 'signOnWith').map((c) => [c.method, ...c.args])).toEqual([
+      ['sendFiles', 'alice', [file]],
+      ['openDirectIm', 'alice'],
+      ['sendDirectMessage', 'alice:0000000000000002', { pictures: [picture] }],
+    ]);
+  });
+
+  it('rejects each of the three when the session is not online, without the client', async () => {
+    const w = world();
+    for (const call of [
+      () => w.session.sendFiles('alice', [file]),
+      () => w.session.openDirectIm('alice'),
+      () => w.session.sendDirectMessage('alice:0000000000000002', { pictures: [picture] }),
+    ]) {
+      await expect(call()).rejects.toMatchObject({ code: 'not-online' });
+    }
+    expect(w.client.calls).toEqual([]);
+  });
+
+  it('passes on what the client rejects with', async () => {
+    const w = world();
+    await w.up();
+    const refused = new OscarError({ kind: 'local', code: 'invalid-argument' });
+    w.client.script('sendFiles', { reject: refused });
+    w.client.script('openDirectIm', { reject: refused });
+    w.client.script('sendDirectMessage', { reject: refused });
+    await expect(w.session.sendFiles('alice', [file])).rejects.toBe(refused);
+    await expect(w.session.openDirectIm('alice')).rejects.toBe(refused);
+    await expect(w.session.sendDirectMessage('alice:0000000000000002', { pictures: [picture] })).rejects.toBe(refused);
   });
 });

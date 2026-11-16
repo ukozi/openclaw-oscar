@@ -125,7 +125,7 @@ export function createDirectImIntake(
   };
 
   const onState = async (ev: DirectImStateEvent): Promise<void> => {
-    if (ev.state !== 'closed') return;
+    if (ev.state !== 'closed' || ev.role !== 'receiving') return;
     ignored.drop(ev.id);
     const s = end(ev.id);
     if (!s || ev.end !== 'too-large') return;

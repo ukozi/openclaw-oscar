@@ -68,7 +68,7 @@ describe('Send File on the session', () => {
     expect(files).toEqual([{ name: 'notes.md', bytes: Buffer.from(NOTES) }]);
     expect(server.relayed()).toHaveLength(1);
     expect(h.transfers.every((t) => t.id === id && t.peer === 'alice')).toBe(true);
-    expect(h.transfers.at(-1)).toEqual({ id, peer: 'alice', state: 'done', index: 0, bytesDone: NOTES.length });
+    expect(h.transfers.at(-1)).toEqual({ id, peer: 'alice', direction: 'in', state: 'done', index: 0, bytesDone: NOTES.length });
   });
 
   it('declines an offer without any connection', async () => {
@@ -79,7 +79,7 @@ describe('Send File on the session', () => {
     expect((await sending).outcome).toBe('declined');
     await settle(server.port);
     expect(server.relayed()).toEqual([]);
-    expect(h.transfers).toEqual([{ id, peer: 'mallory', state: 'declined', by: 'self', index: 0, bytesDone: 0 }]);
+    expect(h.transfers).toEqual([{ id, peer: 'mallory', direction: 'in', state: 'declined', by: 'self', index: 0, bytesDone: 0 }]);
   });
 
   it('reports a folder offer as a folder', async () => {
@@ -104,7 +104,7 @@ describe('Send File on the session', () => {
     const { sink, files } = memorySink();
     await h.session.acceptFileOffer(id, sink);
     await waitFor(() => h.transfers.some((t) => t.state === 'failed'), 'the end of the transfer');
-    expect(h.transfers.at(-1)).toEqual({ id, peer: 'alice', state: 'failed', failure: 'refused-address', index: 0, bytesDone: 0 });
+    expect(h.transfers.at(-1)).toEqual({ id, peer: 'alice', direction: 'in', state: 'failed', failure: 'refused-address', index: 0, bytesDone: 0 });
     expect(server.relayed()).toEqual([]);
     expect(files).toEqual([]);
     expect(h.logs.text()).toContain("refused to dial an address that is not the server's");
@@ -120,7 +120,7 @@ describe('Send File on the session', () => {
     await h.session.acceptFileOffer(id, sink);
     await waitFor(() => h.transfers.some((t) => t.state === 'transferring'), 'the transfer under way');
     await h.session.cancelTransfer(id);
-    expect(h.transfers.at(-1)).toMatchObject({ id, peer: 'alice', state: 'cancelled', by: 'self' });
+    expect(h.transfers.at(-1)).toMatchObject({ id, peer: 'alice', direction: 'in', state: 'cancelled', by: 'self' });
     release();
     expect((await sending).outcome).not.toBe('done');
     await settle(server.port);

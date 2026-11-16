@@ -129,6 +129,7 @@ export function toTransferEvent(status: TransferStatus): TransferEvent {
   return {
     id: status.id,
     peer: normalizeScreenName(status.peer),
+    direction: status.direction,
     state: status.state,
     ...(status.failure === undefined ? {} : { failure: status.failure }),
     ...(status.by === undefined ? {} : { by: status.by }),

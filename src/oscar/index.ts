@@ -22,6 +22,8 @@ export type {
   OscarEvents,
   OscarSession,
   OscarSessionOptions,
+  OutgoingFile,
+  OutgoingPicture,
   PasswordCheck,
   Presence,
   RateEvent,

@@ -26,6 +26,8 @@ import type {
   OscarEvents,
   OscarSession,
   OscarSessionOptions,
+  OutgoingFile,
+  OutgoingPicture,
   PasswordCheck,
   Presence,
   RoomRef,
@@ -79,7 +81,7 @@ export class KitSession implements OscarSession {
   private readonly typing: Typing;
   private readonly roomList: RoomList;
   private readonly seenAt = new Map<string, number>();
-  // Direct IM sessions another person offered and that have not ended, and whether each one opened.
+  // Direct IM sessions that have not ended, and whether each one opened.
   private readonly directIms = new Map<string, boolean>();
   private state: SessionState;
   private generation = 0;
@@ -135,7 +137,6 @@ export class KitSession implements OscarSession {
     });
     this.client.on('directImOffer', (offer) => this.emit('directImOffer', toDirectImOfferEvent(offer)));
     this.client.on('directIm', (s) => {
-      if (s.role !== 'receiving') return;
       // The client reports an open session again when the peer shows the cookie.
       const repeat = s.state === 'open' && this.directIms.get(s.id) === true;
       if (s.state === 'closed') this.directIms.delete(s.id);
@@ -144,6 +145,7 @@ export class KitSession implements OscarSession {
       this.emit('directIm', {
         id: s.id,
         peer: normalizeScreenName(s.peer),
+        role: s.role,
         state: s.state,
         ...(s.end === undefined ? {} : { end: s.end }),
         ...(s.by === undefined ? {} : { by: s.by }),
@@ -153,9 +155,7 @@ export class KitSession implements OscarSession {
       if (this.directIms.has(message.id)) this.emit('directMessage', toDirectMessageEvent(message));
     });
     this.client.on('fileOffer', (offer) => this.emit('fileOffer', toFileOfferEvent(offer)));
-    this.client.on('transfer', (t) => {
-      if (t.direction === 'in') this.emit('transfer', toTransferEvent(t));
-    });
+    this.client.on('transfer', (t) => this.emit('transfer', toTransferEvent(t)));
   }
 
   on<E extends keyof OscarEvents>(event: E, fn: (payload: OscarEvents[E]) => void): () => void {
@@ -398,6 +398,21 @@ export class KitSession implements OscarSession {
 
   cancelTransfer(id: string): Promise<void> {
     return this.client.cancelTransfer(id);
+  }
+
+  async sendFiles(to: string, files: readonly OutgoingFile[]): Promise<string> {
+    if (!this.isOnline()) throw new OscarSendError('not-online');
+    return this.client.sendFiles(to, files);
+  }
+
+  async openDirectIm(to: string): Promise<string> {
+    if (!this.isOnline()) throw new OscarSendError('not-online');
+    return this.client.openDirectIm(to);
+  }
+
+  async sendDirectMessage(id: string, message: { pictures: readonly OutgoingPicture[] }): Promise<void> {
+    if (!this.isOnline()) throw new OscarSendError('not-online');
+    await this.client.sendDirectMessage(id, { pictures: message.pictures });
   }
 }
 

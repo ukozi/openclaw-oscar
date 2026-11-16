@@ -107,7 +107,7 @@ function setup(sec: Record<string, unknown> = {}) {
     return 'ok';
   };
   const transfer = async (id: string, peer: string, over: Partial<TransferEvent> = {}): Promise<void> => {
-    emit('transfer', { id, peer, state: 'done', index: 0, bytesDone: 0, ...over });
+    emit('transfer', { id, peer, direction: 'in', state: 'done', index: 0, bytesDone: 0, ...over });
     await intake.idle();
   };
   const receive = async (from: string, files: Sent[], over: Partial<FileOfferEvent> = {}): Promise<string> => {
@@ -436,7 +436,7 @@ describe('Send File intake', () => {
   it('frees the slot of an offer that ended while the sender was checked', async () => {
     const s = setup();
     s.emit('fileOffer', { id: 'a-1', from: 'alice', fromDisplay: 'Alice', count: 1, totalBytes: 100, name: 'a.txt', folder: false });
-    s.emit('transfer', { id: 'a-1', peer: 'alice', state: 'cancelled', by: 'peer', index: 0, bytesDone: 0 });
+    s.emit('transfer', { id: 'a-1', peer: 'alice', direction: 'in', state: 'cancelled', by: 'peer', index: 0, bytesDone: 0 });
     await s.intake.idle();
     expect(s.calls).toEqual(['accept a-1']);
     expect(s.slots.active()).toBe(0);
@@ -479,6 +479,18 @@ describe('Send File intake', () => {
     expect(s.delivered[0]?.media[0]?.contentType).toBe('text/markdown');
   });
 
+  it('leaves alone a transfer that goes out', async () => {
+    const s = setup();
+    const id = await s.offer('Alice');
+    await s.feed(id, [{ name: 'a.txt', bytes: NOTES }]);
+    await s.transfer(id, 'alice', { direction: 'out' });
+    expect(s.delivered).toEqual([]);
+    expect(s.slots.active()).toBe(1);
+    await s.transfer(id, 'alice');
+    expect(s.delivered).toHaveLength(1);
+    expect(s.slots.active()).toBe(0);
+  });
+
   it('frees the slot on every ending and clears its timers on stop', async () => {
     const endings: Partial<TransferEvent>[] = [
       { state: 'done' },
@@ -509,7 +521,7 @@ describe('Send File intake', () => {
     expect(s.clock.pending()).toBe(0);
     expect(s.slots.active()).toBe(0);
     expect(await s.feed(a, [{ name: 'b.txt', bytes: NOTES }])).toBeInstanceOf(Error);
-    s.emit('transfer', { id: a, peer: 'alice', state: 'done', index: 0, bytesDone: 0 });
+    s.emit('transfer', { id: a, peer: 'alice', direction: 'in', state: 'done', index: 0, bytesDone: 0 });
     await s.intake.idle();
     await flush();
     expect(s.delivered).toEqual([]);

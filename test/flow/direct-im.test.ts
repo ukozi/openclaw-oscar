@@ -44,7 +44,7 @@ describe('Direct IM on the session', () => {
     await h.session.acceptDirectIm(id);
     expect((await opening).outcome).toBe('open');
     await waitFor(() => h.directIms.length === 1, 'the open session');
-    expect(h.directIms).toEqual([{ id, peer: 'alice', state: 'open' }]);
+    expect(h.directIms).toEqual([{ id, peer: 'alice', role: 'receiving', state: 'open' }]);
     await waitFor(() => server.relayed().length === 1, 'the pair on the relay');
     const direct = await opening;
     await direct.sendText('hello');
@@ -52,8 +52,8 @@ describe('Direct IM on the session', () => {
     await h.session.closeDirectIm(id);
     await waitFor(() => h.directIms.at(-1)?.state === 'closed', 'the closed session');
     expect(h.directIms).toEqual([
-      { id, peer: 'alice', state: 'open' },
-      { id, peer: 'alice', state: 'closed', end: 'closed', by: 'self' },
+      { id, peer: 'alice', role: 'receiving', state: 'open' },
+      { id, peer: 'alice', role: 'receiving', state: 'closed', end: 'closed', by: 'self' },
     ]);
   });
 
@@ -87,7 +87,7 @@ describe('Direct IM on the session', () => {
     const id = await offerOf(h);
     await h.session.acceptDirectIm(id);
     await waitFor(() => h.directIms.length === 1, 'the end of the session');
-    expect(h.directIms).toEqual([{ id, peer: 'alice', state: 'closed', end: 'refused-address' }]);
+    expect(h.directIms).toEqual([{ id, peer: 'alice', role: 'receiving', state: 'closed', end: 'refused-address' }]);
     expect(server.relayed()).toEqual([]);
     expect(h.logs.text()).toContain("refused to dial an address that is not the server's");
     expect((await opening).outcome).not.toBe('open');
@@ -103,7 +103,7 @@ describe('Direct IM on the session', () => {
     await waitFor(() => h.directMessages.length === 1, 'the small picture');
     await direct.sendPicture('big.png', new Uint8Array(300 * 1024)).catch(() => undefined);
     await waitFor(() => h.directIms.at(-1)?.state === 'closed', 'the end of the session');
-    expect(h.directIms.at(-1)).toMatchObject({ id, peer: 'alice', state: 'closed', end: 'too-large' });
+    expect(h.directIms.at(-1)).toMatchObject({ id, peer: 'alice', role: 'receiving', state: 'closed', end: 'too-large' });
     expect(h.directMessages).toHaveLength(1);
   });
 

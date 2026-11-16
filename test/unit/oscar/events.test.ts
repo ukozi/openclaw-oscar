@@ -270,7 +270,8 @@ describe('Send File events', () => {
   });
 
   it('maps a transfer and keeps its failure and who ended it', () => {
-    expect(toTransferEvent(status())).toEqual({ id: 'alicesmith:00000000000000bb', peer: 'alicesmith', state: 'transferring', index: 0, bytesDone: 512 });
+    expect(toTransferEvent(status())).toEqual({ id: 'alicesmith:00000000000000bb', peer: 'alicesmith', direction: 'in', state: 'transferring', index: 0, bytesDone: 512 });
+    expect(toTransferEvent(status({ direction: 'out' })).direction).toBe('out');
     expect(toTransferEvent(status({ state: 'failed', failure: 'file-problem' }))).toMatchObject({ state: 'failed', failure: 'file-problem' });
     expect(toTransferEvent(status({ state: 'cancelled', by: 'peer' }))).toMatchObject({ state: 'cancelled', by: 'peer' });
     expect('failure' in toTransferEvent(status({ state: 'done' }))).toBe(false);

@@ -85,7 +85,7 @@ function setup(sec: Record<string, unknown> = {}) {
     await intake.idle();
   };
   const closed = async (id: string, peer: string, end: DirectImEnd = 'peer-closed', by?: 'self' | 'peer'): Promise<void> => {
-    emit('directIm', { id, peer, state: 'closed', end, ...(by ? { by } : {}) });
+    emit('directIm', { id, peer, role: 'receiving', state: 'closed', end, ...(by ? { by } : {}) });
     await intake.idle();
   };
   return { session, emit, calls, fail, clock, slots, delivered, refused, strangers, saved, warnings, state, intake, offer, message, closed };
@@ -97,7 +97,7 @@ describe('Direct IM intake', () => {
     const id = await s.offer('Alice');
     expect(s.calls).toEqual([`accept ${id}`]);
     expect(s.slots.active()).toBe(1);
-    s.emit('directIm', { id, peer: 'alice', state: 'open' });
+    s.emit('directIm', { id, peer: 'alice', role: 'receiving', state: 'open' });
     await s.message(id, { text: 'look at this', pictures: [{ name: 'C:\\pics\\cat.png', bytes: PNG }] });
     expect(s.saved).toEqual([{ contentType: 'image/png', name: 'cat.png', maxBytes: 10 * MB, size: PNG.byteLength }]);
     expect(s.delivered).toEqual([
@@ -213,7 +213,7 @@ describe('Direct IM intake', () => {
   it('frees the slot of an offer that ended while the sender was checked', async () => {
     const s = setup();
     s.emit('directImOffer', { id: 'a-1', from: 'alice', fromDisplay: 'Alice' });
-    s.emit('directIm', { id: 'a-1', peer: 'alice', state: 'closed', end: 'cancelled', by: 'peer' });
+    s.emit('directIm', { id: 'a-1', peer: 'alice', role: 'receiving', state: 'closed', end: 'cancelled', by: 'peer' });
     await s.intake.idle();
     expect(s.calls).toEqual(['accept a-1']);
     expect(s.slots.active()).toBe(0);
@@ -404,6 +404,16 @@ describe('Direct IM intake', () => {
       expect(s.slots.active()).toBe(0);
       expect(s.clock.pending()).toBe(0);
     }
+  });
+
+  it('leaves alone a session the bot offered', async () => {
+    const s = setup();
+    const id = await s.offer('Alice');
+    s.emit('directIm', { id, peer: 'alice', role: 'offering', state: 'closed', end: 'timed-out' });
+    await s.intake.idle();
+    expect(s.slots.active()).toBe(1);
+    expect(s.refused).toEqual([]);
+    expect(s.calls).toEqual([`accept ${id}`]);
   });
 
   it('clears its timers on stop', async () => {

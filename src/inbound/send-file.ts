@@ -197,6 +197,7 @@ export function createSendFileIntake(
   };
 
   const onTransfer = async (ev: TransferEvent): Promise<void> => {
+    if (ev.direction === 'out') return;
     const t = live.get(ev.id);
     if (!t) {
       if (ENDINGS.has(ev.state)) ignored.drop(ev.id);
