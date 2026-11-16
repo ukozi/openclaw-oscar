@@ -84,7 +84,7 @@ describe('rate drop and recovery', () => {
     expect(h.rates.map((r) => r.status)).toEqual(['limited', 'clear']);
   });
 
-  it('treats a missing acknowledgement as a silent drop: waits for the clear notice, then sends once more with a new cookie', async () => {
+  it('treats a missing acknowledgement as a silent drop: holds until the level is back, then sends once more with a new cookie', async () => {
     await boot(false, true);
     const { send, droppedAt } = await dropOne('dropped once');
     let beforeClear = 0;
@@ -149,7 +149,7 @@ describe('rate drop and recovery', () => {
     expect(imTexts(alice).map((m) => m.text)).toEqual(['one', 'one', 'two']);
   });
 
-  it('sends the second copy within 60 s of the level coming back when the server sends no clear notice', async () => {
+  it('sends the second copy within a second of the level coming back when the server sends no clear notice', async () => {
     await boot(false, false);
     const { send, droppedAt } = await dropOne('no clear');
     // Class 3 has window 20 and clear level 5100; the dropped copy lowered the notice's level once more.
@@ -158,11 +158,11 @@ describe('rate drop and recovery', () => {
     await h.timers.advance(backAt - h.timers.now());
     await settle(server.port);
     expect(imSends(server, 'botone')).toHaveLength(1);
-    const at = await stepUntil(() => imSends(server, 'botone').length === 2, 70);
+    const at = await stepUntil(() => imSends(server, 'botone').length === 2, 5);
     await send;
-    expect(at - backAt).toBeLessThanOrEqual(60_000);
+    expect(at - backAt).toBeLessThanOrEqual(1000);
     expect(notices().slice(0, -1)).not.toContain(RATE_CODE_CLEAR);
-    expect(h.logs.text()).toContain('a rate hold stopped with no clear notice');
+    expect(h.logs.text()).toMatch(/rate hold stopped/);
     expect(imTexts(alice).map((m) => m.text)).toEqual(['no clear']);
   });
 
@@ -197,18 +197,18 @@ describe('rate drop and recovery', () => {
     expect(h.rates).toEqual([]);
   });
 
-  it('paces an ordinary account: three at once, then it keeps the server average at the alert line', async () => {
+  it('paces an ordinary account: three at once, then it keeps the server average above the alert line', async () => {
     await boot(false);
     muteRateNotices(server);
     const sends = Array.from({ length: 5 }, (_, i) => h.session.sendIm('alice', `m${i}`));
     await waitFor(() => imTexts(alice).length === 3, 'three delivered');
-    await h.timers.advance(2000);
+    await h.timers.advance(2800);
     expect(imTexts(alice)).toHaveLength(3);
-    await h.timers.advance(300);
+    await h.timers.advance(200);
     await waitFor(() => imTexts(alice).length === 4, 'fourth delivered');
-    await h.timers.advance(4000);
+    await h.timers.advance(4800);
     expect(imTexts(alice)).toHaveLength(4);
-    await h.timers.advance(1000);
+    await h.timers.advance(200);
     await Promise.all(sends);
     expect(imTexts(alice).map((m) => m.text)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4']);
     expect(h.rates).toEqual([]);
