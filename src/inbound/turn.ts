@@ -37,6 +37,10 @@ function mediaPlaceholder(media: TurnMedia[]): string {
   return image ? `<media:image> (${media.length} images)` : `<media:document> (${media.length} attachments)`;
 }
 
+export function imMessageId(turn: Pick<ImTurn, 'from' | 'cookie' | 'at'>): string {
+  return turn.cookie !== 0n ? `${turn.from}:${turn.cookie}` : `${turn.from}:t${turn.at}`;
+}
+
 export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void> {
   const rawCfg = deps.getCfg();
   const cfg = rawCfg as OpenClawConfig;
@@ -58,7 +62,7 @@ export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void
     { sessionKey: route.sessionKey, accountId: deps.accountId, origin: originOf(role), text: body },
     runtimeWiring,
   );
-  const messageId = turn.cookie !== 0n ? `${turn.from}:${turn.cookie}` : `${turn.from}:t${turn.at}`;
+  const messageId = imMessageId(turn);
 
   const untrusted: Untrusted[] = [
     { label: 'Sender', source: CHANNEL_ID, type: 'oscar_sender', payload: { role: owner ? 'owner' : role === 'approved' ? 'approved' : 'unlisted' } },

@@ -4,6 +4,7 @@ vi.mock('openclaw/plugin-sdk/channel-ingress-runtime', async () => (await import
 
 import { readPolicy } from '../../src/config.js';
 import { IM_TIMING, admitSender, createImHandler, ingressParams, addImControlHandler } from '../../src/inbound/im.js';
+import { imMessageId } from '../../src/inbound/turn.js';
 import type { ImTurn } from '../../src/inbound/turn.js';
 import type { ContactAttempt } from '../../src/notice.js';
 import type { MediaEvent, TurnMedia } from '../../src/inbound/media-gate.js';
@@ -453,6 +454,32 @@ describe('pictures and files', () => {
     await t.settle(2000);
     expect(t.turns.map((turn) => turn.media?.length)).toEqual([3, 3, 1]);
     expect(t.turns[0]?.text).toBe('all of them');
+  });
+
+  it('gives each turn of one split event its own message id', async () => {
+    const t = setup();
+    t.handler.onMedia(files('alice', 'all of them', Array.from({ length: 7 }, (_, i) => picture(`p${i}.png`))));
+    await t.settle(2000);
+    expect(new Set(t.turns.map(imMessageId)).size).toBe(3);
+  });
+
+  it('gives turns that leave back to back their own message ids', async () => {
+    const t = setup();
+    for (let i = 0; i < 10; i += 1) t.handler.onMedia(files('alice', '', [picture(`p${i}.png`)]));
+    t.handler.onIm(t.im('alice', '/status'));
+    await t.settle(2000);
+    expect(t.turns).toHaveLength(5);
+    expect(new Set(t.turns.map(imMessageId)).size).toBe(5);
+  });
+
+  it('keeps the time of a turn that leaves alone', async () => {
+    const t = setup();
+    t.handler.onMedia(files('alice', '', [picture('a.png')]));
+    await t.settle(2000);
+    t.handler.onMedia(files('bob', '', [picture('b.png')]));
+    t.handler.onMedia(files('alice', '', [picture('c.png')]));
+    await t.settle(2000);
+    expect(t.turns.map((turn) => turn.at)).toEqual([T0 + 2000, T0 + 4000, T0 + 4000]);
   });
 
   it('lets text join a turn that is full of files', async () => {

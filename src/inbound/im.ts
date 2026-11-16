@@ -74,6 +74,7 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; onMedi
   const bursts = new Map<string, Burst>();
   const held = new Set<ReturnType<typeof setTimeout>>();
   const dispatchTails = new Map<string, Promise<void>>();
+  const lastAt = new Map<string, number>();
   const replay = new Map<string, Replay>();
   let replayStrangers: ContactAttempt[] = [];
   let replayTimer: ReturnType<typeof setTimeout> | undefined;
@@ -81,7 +82,15 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; onMedi
   let tail: Promise<void> = Promise.resolve();
   let stopped = false;
 
-  const dispatch = (turn: ImTurn): void => {
+  // A turn with no cookie is named by its time, and the host drops a name it has seen.
+  const stamp = (peer: string): number => {
+    const at = Math.max(deps.now(), (lastAt.get(peer) ?? 0) + 1);
+    lastAt.set(peer, at);
+    return at;
+  };
+
+  const dispatch = (unstamped: Omit<ImTurn, 'at'>): void => {
+    const turn: ImTurn = { ...unstamped, at: stamp(unstamped.from) };
     const previous = dispatchTails.get(turn.from) ?? Promise.resolve();
     const next = previous.then(() => (stopped ? undefined : deps.dispatch(turn))).catch((err: unknown) => {
       deps.log.error('turn failed', { from: turn.from, error: err instanceof Error ? err.message : String(err) });
@@ -100,7 +109,7 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; onMedi
     if (burst.timer) deps.timers.clearTimeout(burst.timer);
     bursts.delete(peer);
     dispatch({
-      from: peer, fromDisplay: burst.display, text: burst.texts.join('\n'), cookie: burst.cookie, at: deps.now(),
+      from: peer, fromDisplay: burst.display, text: burst.texts.join('\n'), cookie: burst.cookie,
       ...(burst.media.length > 0 ? { media: burst.media } : {}),
     });
   };
@@ -108,7 +117,7 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; onMedi
   const holdAlone = (ev: ImEvent, delay: number): void => {
     const timer = deps.timers.setTimeout(() => {
       held.delete(timer);
-      dispatch({ from: ev.from, fromDisplay: ev.fromDisplay, text: ev.text, cookie: ev.cookie, at: deps.now() });
+      dispatch({ from: ev.from, fromDisplay: ev.fromDisplay, text: ev.text, cookie: ev.cookie });
     }, delay);
     held.add(timer);
   };
@@ -137,7 +146,7 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; onMedi
   const settleReplay = (): void => {
     replayTimer = undefined;
     for (const [peer, r] of replay) {
-      dispatch({ from: peer, fromDisplay: r.display, text: r.items.map((i) => i.text).join('\n'), cookie: 0n, at: deps.now(), replayed: r.items });
+      dispatch({ from: peer, fromDisplay: r.display, text: r.items.map((i) => i.text).join('\n'), cookie: 0n, replayed: r.items });
     }
     replay.clear();
     if (replayStrangers.length > 0) deps.replayed(replayStrangers);
@@ -219,7 +228,7 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; onMedi
     if (ev.text.trimStart().startsWith('/')) {
       flush(from);
       const wait = cooldownLeft(from);
-      if (wait === 0) dispatch({ from, fromDisplay: ev.fromDisplay, text: ev.text, cookie: ev.cookie, at: deps.now() });
+      if (wait === 0) dispatch({ from, fromDisplay: ev.fromDisplay, text: ev.text, cookie: ev.cookie });
       else holdAlone(event, wait);
       return;
     }
