@@ -46,7 +46,7 @@ describe('README says what operators must know', () => {
     ['leave without the agent', /`leave <room>` at any time.*type `\/leave` in the room.*Neither reaches the agent/],
     ['teammates are every account', /The teammates are every account on this gateway plus the roster/],
     ['fix owners', /the reply `fix owners` adds them/],
-    ['announce replies go to owners', /OpenClaw would deliver the answer nowhere, the bot IMs it to the owners/],
+    ['sessions_send answers are not sent to owners', /does not IM owners the answer to a `sessions_send` task.*2026\.11\.3.*back to the session that asked/],
     ['non-ASCII names', /non-ASCII letters cannot be owners, approved people or team members/],
     ['room rate limit silence', /silent in that room for up to two minutes/],
     ['an invited room that closed is created again', /invited room that closed before the bot joined it is created again/],

@@ -71,7 +71,7 @@ describe('tools and host runtime', () => {
     expect(t.tools).toEqual(TOOL_NAMES.map((n) => [n]));
     expect(liveConfig({ live: false })).toEqual({ live: true });
     expect(t.info).toHaveLength(1);
-    expect(t.hooks).toContain('agent_end');
+    expect(t.hooks).not.toContain('agent_end');
   });
 
   it('registers only tools in tool-discovery and touches nothing else', () => {
