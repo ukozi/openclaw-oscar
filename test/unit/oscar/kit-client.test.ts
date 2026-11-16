@@ -3,7 +3,7 @@ import { SignOnError, adapterTicketSource } from 'open-oscar-client-kit/client';
 import { ByteReader, CAP_CHAT, strongHash } from 'open-oscar-client-kit/wire';
 import { captureLog, settle, waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
-import { kitOptions, makeKitClient } from '../../../src/oscar/kit-client.js';
+import { directImLimits, kitOptions, makeKitClient } from '../../../src/oscar/kit-client.js';
 import type { KitClient } from '../../../src/oscar/kit-client.js';
 import { login } from '../../../src/oscar/login.js';
 import type { OscarSessionOptions } from '../../../src/oscar/types.js';
@@ -108,7 +108,8 @@ describe('kitOptions', () => {
     const built = kitOptions(base({ transfers: { directIm: true, sendFile: false, maxBytes: 1000, relayHost: '198.51.100.7', lookup } }), hooks);
     expect(built.capabilities).toEqual([CAP_CHAT]);
     expect('fileTransfer' in built).toBe(false);
-    expect(built.directIm).toMatchObject({ maxMessageBytes: 1000 + 262_144, maxSessionBytes: 5 * (1000 + 262_144) });
+    expect(built.directIm).toMatchObject({ maxMessageBytes: 1000 + 262_144, maxSessionBytes: 100 * (1000 + 262_144) });
+    expect(directImLimits(1000)).toEqual({ maxMessageBytes: 1000 + 262_144, maxSessionBytes: 100 * (1000 + 262_144) });
     const allowDial = built.directIm?.allowDial;
     if (!allowDial) throw new Error('no dial rule');
     const context = { server: { host: 'chat.example', port: 5190 }, bos: { host: 'chat.example', port: 5190 } };

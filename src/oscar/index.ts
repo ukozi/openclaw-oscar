@@ -2,6 +2,7 @@ export { createLoginBudget } from 'open-oscar-client-kit/client';
 export { fromWireText, guardRoll, htmlToText, isAscii, normalizeScreenName, toAsciiEntities, toWireHtml } from 'open-oscar-client-kit/wire';
 export type { LoginResult, RedirectDecision } from 'open-oscar-client-kit/wire';
 export { createOscarSession } from './adapter.js';
+export { directImLimits } from './kit-client.js';
 export { checkLogin, checkPasswordEnforced } from './login.js';
 export type { LoginCheckOptions, LoginCheckResult } from './login.js';
 export { OscarRoomError, OscarSendError } from './types.js';

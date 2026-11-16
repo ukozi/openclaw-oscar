@@ -30,6 +30,14 @@ export type KitClient = Pick<
 // Room for the text and the frame around the pictures of one message.
 const DIRECT_IM_SPARE_BYTES = 256 * 1024;
 
+// The idle close bounds a session; the total only stops one that never pauses.
+const DIRECT_IM_SESSION_MESSAGES = 100;
+
+export function directImLimits(maxBytes: number): { maxMessageBytes: number; maxSessionBytes: number } {
+  const maxMessageBytes = maxBytes + DIRECT_IM_SPARE_BYTES;
+  return { maxMessageBytes, maxSessionBytes: DIRECT_IM_SESSION_MESSAGES * maxMessageBytes };
+}
+
 export function kitOptions(opts: OscarSessionOptions, hooks: { reconnect: ReconnectPolicy }): OscarClientOptions {
   const t = opts.transfers;
   const dial = (): OscarClientOptions => {
@@ -40,8 +48,7 @@ export function kitOptions(opts: OscarSessionOptions, hooks: { reconnect: Reconn
       ...(t.relayHost === undefined ? {} : { relayHost: t.relayHost }),
       ...(t.lookup === undefined ? {} : { lookup: t.lookup }),
     });
-    const maxMessageBytes = t.maxBytes + DIRECT_IM_SPARE_BYTES;
-    return { directIm: { allowDial, maxMessageBytes, maxSessionBytes: 5 * maxMessageBytes } };
+    return { directIm: { allowDial, ...directImLimits(t.maxBytes) } };
   };
   return {
     log: opts.log,

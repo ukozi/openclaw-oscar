@@ -1,6 +1,7 @@
 import { readPolicy } from '../config.js';
 import type { RootPolicy } from '../config.js';
 import { normalizeName } from '../names.js';
+import { directImLimits } from '../oscar/index.js';
 import type { DirectImOfferEvent, DirectImStateEvent, DirectMessageEvent, Logger, OscarSession } from '../oscar/index.js';
 import type { Timers } from '../runtime.js';
 import { FILES_LIMITS, senderGate } from './media-gate.js';
@@ -17,7 +18,7 @@ export type IntakeDeps = {
   stranger: (name: string, display: string) => void;
 };
 
-type Live = { peer: string; timer?: ReturnType<typeof setTimeout> };
+type Live = { peer: string; bytes: number; timer?: ReturnType<typeof setTimeout> };
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -109,7 +110,7 @@ export function createDirectImIntake(
       if (slot === 'busy-others') deps.refuse(from, 'busy-others');
       return;
     }
-    const s: Live = { peer: from };
+    const s: Live = { peer: from, bytes: 0 };
     live.set(ev.id, s);
     arm(ev.id, s);
     try {
@@ -123,13 +124,22 @@ export function createDirectImIntake(
   const onState = async (ev: DirectImStateEvent): Promise<void> => {
     if (ev.state !== 'closed') return;
     const s = end(ev.id);
-    if (s && ev.end === 'too-large') deps.refuse(s.peer, 'too-large');
+    if (!s || ev.end !== 'too-large') return;
+    // The session's total ends it the same way, after a message that was taken.
+    const limits = directImLimits(readPolicy(deps.getCfg()).files.maxBytes);
+    if (s.bytes + limits.maxMessageBytes > limits.maxSessionBytes) deps.log.info('a Direct IM session reached its total', { peer: s.peer });
+    else deps.refuse(s.peer, 'too-large');
   };
 
   const onMessage = async (ev: DirectMessageEvent): Promise<void> => {
     const s = live.get(ev.id);
     if (!s) return;
+    s.bytes += ev.pictures.reduce((sum, picture) => sum + picture.bytes.byteLength, ev.text.length);
     const policy = readPolicy(deps.getCfg());
+    if (!policy.files.directIm) {
+      close(ev.id, 'the setting is off');
+      return;
+    }
     const verdict = await gate(s.peer, policy);
     // The idle close does not wait in the queue.
     if (stopped || live.get(ev.id) !== s) return;

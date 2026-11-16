@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createDirectImIntake } from '../../../src/inbound/direct-im.js';
 import { FILES_LIMITS, Slots } from '../../../src/inbound/media-gate.js';
 import type { MediaEvent, Refusal } from '../../../src/inbound/media-gate.js';
+import { directImLimits } from '../../../src/oscar/index.js';
 import type { DirectImEnd, DirectMessageEvent, OscarEvents } from '../../../src/oscar/index.js';
 import { flush, manualTimers } from '../rooms-fixtures.js';
 
@@ -340,6 +341,42 @@ describe('Direct IM intake', () => {
     expect(s.refused).toEqual([{ to: 'alice', why: 'too-large' }]);
     expect(s.slots.active()).toBe(0);
     expect(s.clock.pending()).toBe(0);
+  });
+
+  it('still tells the sender when a message was too large after one that arrived', async () => {
+    const s = setup();
+    const id = await s.offer('Alice');
+    await s.message(id, { pictures: [{ name: 'a.png', bytes: PNG }] });
+    await s.closed(id, 'alice', 'too-large', 'peer');
+    expect(s.delivered).toHaveLength(1);
+    expect(s.refused).toEqual([{ to: 'alice', why: 'too-large' }]);
+  });
+
+  it('says nothing when the session ended at its total after a picture that arrived', async () => {
+    const s = setup({ files: { directIm: true, maxMb: 1 } });
+    const id = await s.offer('Alice');
+    const big = new Uint8Array(MB);
+    big.set(PNG);
+    const { maxSessionBytes } = directImLimits(MB);
+    const count = Math.ceil(maxSessionBytes / MB);
+    for (let n = 0; n < count; n += 1) await s.message(id, { pictures: [{ name: 'a.png', bytes: big }] });
+    await s.closed(id, 'alice', 'too-large', 'peer');
+    expect(s.delivered).toHaveLength(count);
+    expect(s.refused).toEqual([]);
+    expect(s.slots.active()).toBe(0);
+    expect(s.clock.pending()).toBe(0);
+  });
+
+  it('closes a session that brings a message after the setting went off', async () => {
+    const s = setup();
+    const id = await s.offer('Alice');
+    s.state.cfg = { channels: { oscar: { owners: ['alice'], files: { directIm: false } } } };
+    await s.message(id, { text: 'hello', pictures: [{ name: 'a.png', bytes: PNG }] });
+    expect(s.calls).toEqual([`accept ${id}`, `close ${id}`]);
+    expect(s.delivered).toEqual([]);
+    expect(s.saved).toEqual([]);
+    expect(s.refused).toEqual([]);
+    expect(s.slots.active()).toBe(0);
   });
 
   it('frees the slot on every other ending without a message', async () => {
