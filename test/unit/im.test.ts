@@ -6,6 +6,7 @@ import { readPolicy } from '../../src/config.js';
 import { IM_TIMING, admitSender, createImHandler, ingressParams, addImControlHandler } from '../../src/inbound/im.js';
 import type { ImTurn } from '../../src/inbound/turn.js';
 import type { ContactAttempt } from '../../src/notice.js';
+import type { MediaEvent, TurnMedia } from '../../src/inbound/media-gate.js';
 import type { ImEvent } from '../../src/oscar/index.js';
 import { sdk } from '../fake/openclaw.js';
 
@@ -355,5 +356,81 @@ describe('ingress call', () => {
     const normalize = ingressParams('botone', 'x', policy).identity?.normalize;
     expect(normalize?.('oscar:Alice B')).toBe('aliceb');
     expect(normalize?.('   ')).toBeNull();
+  });
+});
+
+describe('pictures and files', () => {
+  const picture = (name: string, patch: Partial<TurnMedia> = {}): TurnMedia => ({
+    path: `/media/inbound/${name}`, contentType: 'image/png', kind: 'image', name, bytes: 12, via: 'direct-im', ...patch,
+  });
+  const files = (from: string, text: string, media: TurnMedia[]): MediaEvent => ({ from, fromDisplay: from, text, media });
+
+  it('folds a picture into the burst of the IMs around it', async () => {
+    const t = setup();
+    t.handler.onIm(t.im('alice', 'look at this', { cookie: 5n }));
+    t.handler.onMedia(files('alice', '', [picture('cat.png')]));
+    t.handler.onIm(t.im('alice', 'and tell me what it is', { cookie: 6n }));
+    await t.settle(2000);
+    expect(t.turns).toHaveLength(1);
+    expect(t.turns[0]).toMatchObject({ from: 'alice', text: 'look at this\nand tell me what it is', cookie: 5n, media: [picture('cat.png')] });
+  });
+
+  it('keeps the text that came with a picture and the order of the files', async () => {
+    const t = setup();
+    t.handler.onMedia(files('Alice', 'first', [picture('one.png')]));
+    t.handler.onMedia(files('alice', '', [picture('two.png'), picture('notes.md', { contentType: 'text/markdown', kind: 'document', via: 'send-file' })]));
+    await t.settle(2000);
+    expect(t.turns).toHaveLength(1);
+    expect(t.turns[0]?.text).toBe('first');
+    expect(t.turns[0]?.media?.map((m) => m.name)).toEqual(['one.png', 'two.png', 'notes.md']);
+  });
+
+  it('runs a turn for files with no text', async () => {
+    const t = setup();
+    t.handler.onMedia(files('bob', '', [picture('cat.png')]));
+    await t.settle(1999);
+    expect(t.turns).toEqual([]);
+    await t.settle(1);
+    expect(t.turns).toEqual([{ from: 'bob', fromDisplay: 'bob', text: '', cookie: 0n, at: T0 + 2000, media: [picture('cat.png')] }]);
+    expect(t.reached).toEqual(['bob']);
+  });
+
+  it('keeps a file out of the repeat guard', async () => {
+    const t = setup();
+    for (let i = 0; i < 5; i += 1) {
+      t.handler.onMedia(files('alice', 'same words', [picture(`p${i}.png`)]));
+      await t.settle(2000);
+    }
+    expect(t.turns).toHaveLength(5);
+    t.handler.onIm(t.im('alice', 'same words'));
+    await t.settle(2000);
+    expect(t.turns).toHaveLength(6);
+  });
+
+  it('holds a file turn until the reply cooldown is over', async () => {
+    const t = setup();
+    t.lastReply.set('alice', T0 + 3000);
+    t.handler.onMedia(files('alice', '', [picture('cat.png')]));
+    await t.settle(4999);
+    expect(t.turns).toEqual([]);
+    await t.settle(1);
+    expect(t.turns).toHaveLength(1);
+  });
+
+  it('leaves the media field off a turn that has no file', async () => {
+    const t = setup();
+    t.handler.onMedia(files('alice', 'typed in a Direct IM', []));
+    await t.settle(2000);
+    expect(t.turns).toEqual([{ from: 'alice', fromDisplay: 'alice', text: 'typed in a Direct IM', cookie: 0n, at: T0 + 2000 }]);
+  });
+
+  it('drops files that arrive after the stop', async () => {
+    const t = setup();
+    t.handler.onMedia(files('alice', '', [picture('cat.png')]));
+    await t.handler.idle();
+    t.handler.stop();
+    t.handler.onMedia(files('alice', '', [picture('dog.png')]));
+    await t.settle(5000);
+    expect(t.turns).toEqual([]);
   });
 });

@@ -8,6 +8,7 @@ vi.mock('openclaw/plugin-sdk/reply-dispatch-runtime', async () => (await import(
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
 
 import { dispatchImTurn } from '../../src/inbound/turn.js';
+import type { TurnMedia } from '../../src/inbound/media-gate.js';
 import type { ImTurn, TurnDeps } from '../../src/inbound/turn.js';
 import type { ContactRingEntry } from '../../src/notice.js';
 import { toWireHtml } from 'open-oscar-client-kit/wire';
@@ -156,5 +157,59 @@ describe('delivery', () => {
     await dispatchImTurn(turn(), { ...deps(), log: { ...log, warn: (msg: string, f?: Record<string, unknown>) => warned.push([msg, f]) } });
     expect(JSON.stringify(warned)).toContain('rate-limited');
     expect(JSON.stringify(warned)).not.toContain('secret words');
+  });
+});
+
+describe('pictures and files', () => {
+  const cat: TurnMedia = { path: '/media/inbound/cat.png', contentType: 'image/png', kind: 'image', name: 'cat.png', bytes: 12, via: 'direct-im' };
+  const notes: TurnMedia = { path: '/media/inbound/notes.md', contentType: 'text/markdown', kind: 'document', name: 'notes.md', bytes: 25, via: 'send-file' };
+  const built = () => sdk.built[0] as { media?: unknown };
+
+  it('passes each file to the agent as a media fact with path, url, contentType, kind and messageId', async () => {
+    await dispatchImTurn(turn({ text: 'look', media: [cat, notes] }), deps());
+    expect(built().media).toEqual([
+      { path: '/media/inbound/cat.png', url: '/media/inbound/cat.png', contentType: 'image/png', kind: 'image', messageId: 'alice:7' },
+      { path: '/media/inbound/notes.md', url: '/media/inbound/notes.md', contentType: 'text/markdown', kind: 'document', messageId: 'alice:7' },
+    ]);
+    expect(sdk.inbound[0]?.ctx).toMatchObject({
+      Body: 'look', MediaPath: '/media/inbound/cat.png', MediaType: 'image/png',
+      MediaPaths: ['/media/inbound/cat.png', '/media/inbound/notes.md'], MediaTypes: ['image/png', 'text/markdown'],
+    });
+  });
+
+  it('lists the files in the untrusted context', async () => {
+    await dispatchImTurn(turn({ from: 'bob', fromDisplay: 'Bob', text: '', media: [cat, notes] }), deps());
+    expect(entries().find((e) => e.type === 'oscar_files')).toEqual({
+      label: 'Files from the sender', source: 'oscar', type: 'oscar_files',
+      payload: { files: [
+        { name: 'cat.png', contentType: 'image/png', bytes: 12, via: 'direct-im' },
+        { name: 'notes.md', contentType: 'text/markdown', bytes: 25, via: 'send-file' },
+      ] },
+    });
+  });
+
+  it.each([
+    ['one picture', [cat], '<media:image>'],
+    ['two pictures', [cat, cat], '<media:image> (2 images)'],
+    ['one document', [notes], '<media:document>'],
+    ['a picture and a document', [cat, notes], '<media:document> (2 attachments)'],
+  ])('names the files in the body of a turn with no text: %s', async (_label, media, body) => {
+    await dispatchImTurn(turn({ text: ' ', media }), deps());
+    const ctx = sdk.inbound[0]?.ctx as Record<string, unknown>;
+    for (const field of ['Body', 'RawBody', 'BodyForAgent', 'CommandBody']) expect(ctx[field], field).toBe(body);
+    expect(sdk.inbound[0]?.input).toMatchObject({ rawText: body });
+  });
+
+  it('keeps an approved sender without command authority and with directives neutralised', async () => {
+    await dispatchImTurn(turn({ from: 'bob', fromDisplay: 'Bob', text: 'please /exec ls', media: [cat] }), deps());
+    expect(sdk.inbound[0]?.ctx).toMatchObject({ CommandAuthorized: false, Body: 'please ∕exec ls' });
+    expect(entries().find((e) => e.type === 'oscar_sender')?.payload).toEqual({ role: 'approved' });
+  });
+
+  it('adds no media and no file list to a turn without files', async () => {
+    await dispatchImTurn(turn(), deps());
+    expect(built().media).toBeUndefined();
+    expect(sdk.inbound[0]?.ctx.MediaPaths).toBeUndefined();
+    expect(entries().some((e) => e.type === 'oscar_files')).toBe(false);
   });
 });

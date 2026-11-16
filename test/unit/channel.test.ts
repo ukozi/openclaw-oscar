@@ -9,8 +9,10 @@ vi.mock('openclaw/plugin-sdk/conversation-runtime', async () => (await import('.
 vi.mock('openclaw/plugin-sdk/reply-dispatch-runtime', async () => (await import('../fake/openclaw.js')).replyDispatchRuntime);
 vi.mock('openclaw/plugin-sdk/channel-ingress-runtime', async () => (await import('../fake/openclaw.js')).channelIngressRuntime);
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
+vi.mock('openclaw/plugin-sdk/media-store', async () => (await import('../fake/openclaw.js')).mediaStore);
 vi.mock('openclaw/plugin-sdk/status-helpers', async () => (await import('../fake/openclaw.js')).statusHelpers);
 
+import { toWireHtml } from 'open-oscar-client-kit/wire';
 import { gatewayDeps, oscarPlugin, startAccount, stopAccount } from '../../src/channel.js';
 import { RELOAD_NOOP_PREFIXES, resolveAccount } from '../../src/config.js';
 import { IM_TIMING } from '../../src/inbound/im.js';
@@ -51,7 +53,7 @@ afterEach(() => Object.assign(IM_TIMING, { debounceMs: 2000, replyCooldownMs: 20
 describe('plugin object', () => {
   it('declares what the spec says', () => {
     expect(plugin.id).toBe('oscar');
-    expect(plugin.capabilities).toEqual({ chatTypes: ['direct', 'group'], media: false, reactions: false, reply: false, threads: false, polls: false, edit: false, unsend: false });
+    expect(plugin.capabilities).toEqual({ chatTypes: ['direct', 'group'], media: true, reactions: false, reply: false, threads: false, polls: false, edit: false, unsend: false });
     expect(plugin.reload).toEqual({ configPrefixes: ['channels.oscar'], noopPrefixes: RELOAD_NOOP_PREFIXES });
     expect(plugin.threading.resolveReplyToMode()).toBe('off');
     expect(plugin.outbound.deliveryMode).toBe('gateway');
@@ -338,5 +340,105 @@ describe('gateway', () => {
     expect(s.stopped).toBe(false);
     t.ac.abort();
     await parked;
+  });
+});
+
+describe('pictures and files', () => {
+  const PNG = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4);
+  const NOTES = new TextEncoder().encode('# Notes\n\nBring the cake.\n');
+
+  async function boot(files?: Obj) {
+    let options: Obj | undefined;
+    gatewayDeps.createSession = ((o: Obj) => { options = o; const s = new FakeSession(); sessions.push(s); return s.asSession(); }) as never;
+    const t = makeCtx(cfg(files ? { files } : {}));
+    const nth = sessions.length;
+    const parked = startAccount(t.ctx);
+    await vi.waitFor(() => expect(sessions[nth]?.started).toBe(true));
+    const s = sessions[nth] as FakeSession;
+    s.setState({ phase: 'online' });
+    return { s, options: options as Obj, stop: async () => { t.ac.abort(); await parked; } };
+  }
+
+  async function sendPicture(s: FakeSession, from: string, text: string): Promise<void> {
+    s.emit('directImOffer', { id: 'd1', from, fromDisplay: from });
+    await vi.waitFor(() => expect(s.directIm).toEqual([{ call: 'accept', id: 'd1' }]));
+    s.emit('directIm', { id: 'd1', peer: from, state: 'open' });
+    s.emit('directMessage', { id: 'd1', from, fromDisplay: from, text, autoResponse: false, damaged: false, pictures: [{ name: 'cat.png', bytes: PNG }] });
+  }
+
+  async function sendFile(s: FakeSession, from: string, name: string, bytes: Uint8Array): Promise<void> {
+    s.emit('fileOffer', { id: 'f1', from, fromDisplay: from, count: 1, totalBytes: bytes.byteLength, name, folder: false });
+    await vi.waitFor(() => expect(s.files.map((f) => f.call)).toEqual(['accept']));
+    const writer = await s.files[0]?.sink?.begin({ name, bytes: bytes.byteLength, index: 0, count: 1 } as never);
+    await writer?.write(bytes);
+    await writer?.finish();
+    s.emit('transfer', { id: 'f1', peer: from, state: 'done', index: 0, bytesDone: bytes.byteLength });
+  }
+
+  it('declares media in the channel capabilities', () => {
+    expect(plugin.capabilities.media).toBe(true);
+  });
+
+  it('gives the session the files settings', async () => {
+    const off = await boot();
+    expect(off.options.transfers).toEqual({ directIm: false, sendFile: false, maxBytes: 10 * 1024 * 1024 });
+    await off.stop();
+    const on = await boot({ directIm: true, sendFile: true, maxMb: 2, relayHost: 'relay.example.net' });
+    expect(on.options.transfers).toEqual({ directIm: true, sendFile: true, maxBytes: 2 * 1024 * 1024, relayHost: 'relay.example.net' });
+    await on.stop();
+  });
+
+  it('sends a reply as text when the channel declares media', async () => {
+    const t = await boot({ directIm: true });
+    sdk.agent = () => [{ text: 'a fine **cat**', mediaUrl: '/tmp/reply.png' } as never, { text: '', mediaUrl: '/tmp/only.png' } as never];
+    await sendPicture(t.s, 'alice', 'look at this');
+    await vi.waitFor(() => expect(t.s.sent.filter((m) => m.to === 'alice')).toHaveLength(1));
+    expect(t.s.sent).toEqual([{ to: 'alice', html: toWireHtml('a fine **cat**'), priority: 'reply' }]);
+    expect(sdk.media).toHaveLength(1);
+    expect(sdk.media[0]).toMatchObject({ contentType: 'image/png', subdir: 'inbound', originalFilename: 'cat.png' });
+    expect(sdk.inbound[0]?.ctx).toMatchObject({ Body: 'look at this', SenderId: 'alice', MediaPaths: [sdk.media[0]?.path], MediaTypes: ['image/png'] });
+    await t.stop();
+  });
+
+  it("keeps the tool deny list for an approved sender's files", async () => {
+    const t = await boot({ sendFile: true });
+    sdk.agent = () => [{ text: 'read it' }];
+    await sendFile(t.s, 'bob', 'notes.md', NOTES);
+    await vi.waitFor(() => expect(t.s.sent.filter((m) => m.to === 'bob')).toHaveLength(1));
+    const ctx = sdk.inbound[0]?.ctx as Obj;
+    expect(ctx).toMatchObject({ SenderId: 'bob', CommandAuthorized: false, Body: '<media:document>', MediaTypes: ['text/markdown'] });
+    expect(plugin.groups.resolveToolPolicy({ cfg: cfg(), groupId: ctx.ChatId, accountId: 'default', senderId: 'bob' })).toEqual({ deny });
+    expect(plugin.groups.resolveToolPolicy({ cfg: cfg(), groupId: ctx.ChatId, accountId: 'default' })).toEqual({ deny });
+    await t.stop();
+  });
+
+  it('starts no intake while both settings are off', async () => {
+    const t = await boot();
+    t.s.emit('directImOffer', { id: 'd1', from: 'alice', fromDisplay: 'alice' });
+    t.s.emit('fileOffer', { id: 'f1', from: 'alice', fromDisplay: 'alice', count: 1, totalBytes: 4, name: 'a.txt', folder: false });
+    t.s.emit('im', { from: 'alice', fromDisplay: 'alice', text: 'hi', cookie: 1n, autoResponse: false, offline: false, system: false });
+    await vi.waitFor(() => expect(sdk.inbound).toHaveLength(1));
+    expect(t.s.directIm).toEqual([]);
+    expect(t.s.files).toEqual([]);
+    await t.stop();
+  });
+
+  it('starts only the intake whose setting is on', async () => {
+    const t = await boot({ directIm: true });
+    t.s.emit('fileOffer', { id: 'f1', from: 'alice', fromDisplay: 'alice', count: 1, totalBytes: 4, name: 'a.txt', folder: false });
+    t.s.emit('directImOffer', { id: 'd1', from: 'alice', fromDisplay: 'alice' });
+    await vi.waitFor(() => expect(t.s.directIm).toEqual([{ call: 'accept', id: 'd1' }]));
+    expect(t.s.files).toEqual([]);
+    await t.stop();
+  });
+
+  it('stops the intakes with the account', async () => {
+    const t = await boot({ directIm: true, sendFile: true });
+    await t.stop();
+    t.s.emit('directImOffer', { id: 'd1', from: 'alice', fromDisplay: 'alice' });
+    t.s.emit('fileOffer', { id: 'f1', from: 'alice', fromDisplay: 'alice', count: 1, totalBytes: 4, name: 'a.txt', folder: false });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(t.s.directIm).toEqual([]);
+    expect(t.s.files).toEqual([]);
   });
 });

@@ -14,11 +14,13 @@ import { sendMarkdown, typingFor } from '../outbound.js';
 import { neutralizeDirectives, roleOf } from '../policy.js';
 import { originOf, presenceDispatch, runtimeWiring } from '../presence/register.js';
 import { getRuntime, touchActivity } from '../runtime.js';
+import type { TurnMedia } from './media-gate.js';
 import type { TurnRequest } from './room.js';
 
 export type ImTurn = {
   from: string; fromDisplay: string; text: string; cookie: bigint; at: number;
   replayed?: { text: string; ageSeconds: number | null }[];
+  media?: TurnMedia[];
 };
 export type TurnDeps = {
   accountId: string; self: () => string; getCfg: () => unknown; now: () => number; log: Logger;
@@ -27,6 +29,13 @@ export type TurnDeps = {
 };
 
 type Untrusted = { label: string; source: string; type: string; payload: unknown };
+
+// What the host's own channels put in the body of a message that is only files.
+function mediaPlaceholder(media: TurnMedia[]): string {
+  const image = media.every((m) => m.kind === 'image');
+  if (media.length === 1) return image ? '<media:image>' : '<media:document>';
+  return image ? `<media:image> (${media.length} images)` : `<media:document> (${media.length} attachments)`;
+}
 
 export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void> {
   const rawCfg = deps.getCfg();
@@ -42,7 +51,9 @@ export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void
   const route = resolveAgentRoute({ cfg, channel: CHANNEL_ID, accountId: deps.accountId, peer: { kind: 'group', id: peerId } });
   getRuntime(deps.accountId)?.sessionKeys.set(route.sessionKey, { accountId: deps.accountId, peer });
 
-  const body = owner ? turn.text : neutralizeDirectives(turn.text);
+  const files = turn.media ?? [];
+  const text = files.length > 0 && turn.text.trim() === '' ? mediaPlaceholder(files) : turn.text;
+  const body = owner ? text : neutralizeDirectives(text);
   const presence = presenceDispatch(
     { sessionKey: route.sessionKey, accountId: deps.accountId, origin: originOf(role), text: body },
     runtimeWiring,
@@ -56,6 +67,12 @@ export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void
     untrusted.push({
       label: 'Messages received while signed off', source: CHANNEL_ID, type: 'oscar_offline_replay',
       payload: { messages: turn.replayed.map((m, i) => ({ line: i + 1, ageSeconds: m.ageSeconds })) },
+    });
+  }
+  if (files.length > 0) {
+    untrusted.push({
+      label: 'Files from the sender', source: CHANNEL_ID, type: 'oscar_files',
+      payload: { files: files.map((m) => ({ name: m.name, contentType: m.contentType, bytes: m.bytes, via: m.via })) },
     });
   }
   const ring = owner ? deps.ring() : [];
@@ -85,6 +102,7 @@ export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void
     route: { agentId: route.agentId, accountId: deps.accountId, routeSessionKey: route.sessionKey },
     reply: { to, originatingTo: to },
     message: { rawBody: body, body, bodyForAgent: body, commandBody: body },
+    ...(files.length > 0 ? { media: files.map((m) => ({ path: m.path, url: m.path, contentType: m.contentType, kind: m.kind, messageId })) } : {}),
     access: { commands: { authorized: owner && !turn.replayed } },
     supplemental: { untrustedContext: untrusted },
     channelContext: { sender: { id: turn.from }, chat: { id: peerId, accountId: deps.accountId, kind: 'im' } },

@@ -6,6 +6,7 @@ import { getRuntime, resetRuntimeForTests, setHost } from '../../src/runtime.js'
 import { sdk } from '../fake/openclaw.js';
 import type { FakeOscarServer, FakePeer } from 'open-oscar-client-kit/testing';
 import { startServer } from '../fake/kit.js';
+import type { ServerOptions } from '../fake/kit.js';
 
 const ICBM = 0x04;
 const ICBM_SEND = 0x06;
@@ -58,7 +59,7 @@ export function imsNaming(server: FakeOscarServer, bot: string, name: string): {
   return [...byCookie.values()];
 }
 
-export async function startFlow(opts: { sec?: Record<string, unknown>; host?: Record<string, unknown>; server?: { disableAuth?: boolean }; expectOnline?: boolean } = {}): Promise<Flow> {
+export async function startFlow(opts: { sec?: Record<string, unknown>; host?: Record<string, unknown>; server?: ServerOptions; expectOnline?: boolean } = {}): Promise<Flow> {
   sdk.reset();
   resetRuntimeForTests();
   Object.assign(IM_TIMING, { debounceMs: 30, replyCooldownMs: 0, replaySettleMs: 200 });

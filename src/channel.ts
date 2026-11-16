@@ -8,9 +8,14 @@ import {
   CHANNEL_ID, RELOAD_NOOP_PREFIXES, buddyList, defaultAccountId, listAccountIds, oscarChannelConfigSchema, readPolicy, resolveAccount,
 } from './config.js';
 import type { ResolvedAccount } from './config.js';
+import { createDirectImIntake } from './inbound/direct-im.js';
+import type { IntakeDeps } from './inbound/direct-im.js';
 import { attachRooms } from './inbound/home.js';
 import { addImControlHandler, admitSender, createImHandler } from './inbound/im.js';
+import { Slots } from './inbound/media-gate.js';
+import { saveInbound } from './inbound/media-store.js';
 import { recordRoomLine, roomSink } from './inbound/room.js';
+import { createSendFileIntake } from './inbound/send-file.js';
 import { dispatchImTurn, dispatchRoomTurn } from './inbound/turn.js';
 import { decodePeerId, encodePeerId, formatTarget, isAsciiName, normalizeName, parseTarget } from './names.js';
 import type { PeerRef } from './names.js';
@@ -133,6 +138,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
   }
 
   const self = (): string => botName(getCfg(), accountId);
+  const files = readPolicy(getCfg()).files;
   const session = gatewayDeps.createSession({
     host: account.host, port: account.port, tls: account.tls, ...(account.caFile ? { caFile: account.caFile } : {}), redirect: account.redirect,
     screenName: account.display,
@@ -140,6 +146,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     buddies: () => buddyList(readPolicy(getCfg()), account.screenName),
     log, loginBudget: sharedLoginBudget(),
     now, timers,
+    transfers: { ...files },
   });
   const presence = startPresence({
     accountId,
@@ -190,6 +197,18 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     contacted: (peer) => presence.contacted(peer),
     updateBuddies: () => session.updateBuddies(),
   });
+  const intakeDeps: IntakeDeps = {
+    self, getCfg, now, timers, log, slots: new Slots(),
+    admit: (from, policy) => admitSender(accountId, from, policy),
+    save: saveInbound,
+    deliver: (ev) => im.onMedia(ev),
+    refuse: (to, why) => log.info('refused a file', { to, why }),
+    stranger: () => undefined,
+  };
+  const intakes = [
+    ...(files.directIm ? [createDirectImIntake(session, intakeDeps)] : []),
+    ...(files.sendFile ? [createSendFileIntake(session, intakeDeps)] : []),
+  ];
   const tellEveryOwner = async (text: string): Promise<void> => {
     for (const owner of readPolicy(getCfg()).owners) {
       if (owner === self()) continue;
@@ -285,6 +304,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     detachRooms();
     for (const off of offs) off();
     guard.stop();
+    for (const intake of intakes) intake.stop();
     im.stop();
     notices.stop();
     await session.stop();
@@ -318,7 +338,7 @@ export const oscarPlugin: ChannelPlugin<ResolvedAccount, { passwordCheck: ProbeR
       blurb: 'Screen names, IMs and chat rooms on an Open OSCAR Server, over the native protocol.',
       markdownCapable: false,
     },
-    capabilities: { chatTypes: ['direct', 'group'], media: false, reactions: false, reply: false, threads: false, polls: false, edit: false, unsend: false },
+    capabilities: { chatTypes: ['direct', 'group'], media: true, reactions: false, reply: false, threads: false, polls: false, edit: false, unsend: false },
     actions: presenceActions,
     agentPrompt: { messageToolHints: presenceToolHints },
     reload: { configPrefixes: [`channels.${CHANNEL_ID}`], noopPrefixes: RELOAD_NOOP_PREFIXES },

@@ -51,6 +51,7 @@ export const sdk = {
   foreign: [] as { channel: string; to: string; accountId?: string; text: string }[],
   foreignParams: [] as Rec[],
   foreignFail: 'none' as 'none' | 'failed' | 'throw' | 'partial' | 'suppressed' | 'failed-after-send',
+  built: [] as Rec[],
   sessions: new Set<string>(),
   media: [] as { buffer: Buffer; contentType?: string; subdir?: string; maxBytes?: number; originalFilename?: string; path: string }[],
   secretFiles: new Map<string, string>(),
@@ -74,6 +75,7 @@ export const sdk = {
     sdk.foreign.length = 0;
     sdk.foreignParams.length = 0;
     sdk.foreignFail = 'none';
+    sdk.built.length = 0;
     sdk.sessions.clear();
     sdk.media.length = 0;
     sdk.secretFiles.clear();
@@ -126,6 +128,9 @@ function buildChannelInboundEventContext(params: Rec): Rec {
   const conversation = params.conversation as Rec;
   const access = (params.access ?? {}) as { commands?: { authorized?: boolean }; mentions?: Rec };
   const supplemental = (params.supplemental ?? {}) as { untrustedContext?: unknown[]; groupSystemPrompt?: string };
+  const media = (params.media ?? []) as { path?: string; url?: string; contentType?: string; kind?: string }[];
+  const aligned = (values: (string | undefined)[]): string[] | undefined => (values.some(Boolean) ? values.map((v) => v ?? '') : undefined);
+  sdk.built.push(params);
   return {
     Body: message.body ?? message.rawBody,
     InboundEventKind: message.inboundEventKind ?? 'user_request',
@@ -158,6 +163,12 @@ function buildChannelInboundEventContext(params: Rec): Rec {
     UntrustedStructuredContext: supplemental.untrustedContext,
     GroupSystemPrompt: supplemental.groupSystemPrompt,
     ...((params.extra ?? {}) as Rec),
+    MediaPath: media[0]?.path,
+    MediaUrl: media[0]?.url ?? media[0]?.path,
+    MediaType: media[0] ? media[0].contentType ?? media[0].kind : undefined,
+    MediaPaths: aligned(media.map((m) => m.path)),
+    MediaUrls: aligned(media.map((m) => m.url ?? m.path)),
+    MediaTypes: aligned(media.map((m) => m.contentType ?? m.kind)),
   };
 }
 

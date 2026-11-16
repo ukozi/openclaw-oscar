@@ -7,6 +7,7 @@ import type { ContactAttempt } from '../notice.js';
 import type { ImEvent, Logger } from '../oscar/index.js';
 import { roleOf } from '../policy.js';
 import type { Timers } from '../runtime.js';
+import type { MediaEvent, TurnMedia } from './media-gate.js';
 import type { ImTurn } from './turn.js';
 
 export const IM_TIMING = { debounceMs: 2000, replyCooldownMs: 2000, replaySettleMs: 3000, dedupeMs: 60_000, replayMaxAgeMs: 4 * 3600_000 };
@@ -64,10 +65,10 @@ export type ImDeps = {
   updateBuddies: () => void;
 };
 
-type Burst = { display: string; texts: string[]; cookie: bigint; timer?: ReturnType<typeof setTimeout> };
+type Burst = { display: string; texts: string[]; media: TurnMedia[]; cookie: bigint; timer?: ReturnType<typeof setTimeout> };
 type Replay = { display: string; items: { text: string; ageSeconds: number | null }[] };
 
-export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; stop(): void; idle(): Promise<void> } {
+export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; onMedia(ev: MediaEvent): void; stop(): void; idle(): Promise<void> } {
   const seen = new Map<string, number>();
   const bodies = new Map<string, string[]>();
   const bursts = new Map<string, Burst>();
@@ -98,7 +99,10 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; stop()
     if (!burst) return;
     if (burst.timer) deps.timers.clearTimeout(burst.timer);
     bursts.delete(peer);
-    dispatch({ from: peer, fromDisplay: burst.display, text: burst.texts.join('\n'), cookie: burst.cookie, at: deps.now() });
+    dispatch({
+      from: peer, fromDisplay: burst.display, text: burst.texts.join('\n'), cookie: burst.cookie, at: deps.now(),
+      ...(burst.media.length > 0 ? { media: burst.media } : {}),
+    });
   };
 
   const holdAlone = (ev: ImEvent, delay: number): void => {
@@ -109,10 +113,11 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; stop()
     held.add(timer);
   };
 
-  const addToBurst = (ev: ImEvent, delay: number): void => {
-    const burst = bursts.get(ev.from) ?? { display: ev.fromDisplay, texts: [], cookie: ev.cookie };
+  const addToBurst = (ev: { from: string; fromDisplay: string; text: string; cookie: bigint; media?: TurnMedia[] }, delay: number): void => {
+    const burst = bursts.get(ev.from) ?? { display: ev.fromDisplay, texts: [], media: [], cookie: ev.cookie };
     if (burst.timer) deps.timers.clearTimeout(burst.timer);
-    burst.texts.push(ev.text);
+    if (ev.media === undefined || ev.text.trim() !== '') burst.texts.push(ev.text);
+    if (ev.media) burst.media.push(...ev.media);
     burst.timer = deps.timers.setTimeout(() => flush(ev.from), delay);
     bursts.set(ev.from, burst);
   };
@@ -213,12 +218,23 @@ export function createImHandler(deps: ImDeps): { onIm(ev: ImEvent): void; stop()
     addToBurst(event, Math.max(IM_TIMING.debounceMs, cooldownLeft(from)));
   };
 
+  // The intake checked the sender before it took the file.
+  const handleMedia = (ev: MediaEvent): void => {
+    if (stopped) return;
+    const from = normalizeName(ev.from);
+    deps.contacted?.(from);
+    addToBurst({ from, fromDisplay: ev.fromDisplay, text: ev.text, cookie: 0n, media: ev.media }, Math.max(IM_TIMING.debounceMs, cooldownLeft(from)));
+  };
+
+  const queue = (step: () => void | Promise<void>): void => {
+    tail = tail.then(step).catch((err: unknown) => {
+      deps.log.error('inbound handling failed', { error: err instanceof Error ? err.message : String(err) });
+    });
+  };
+
   return {
-    onIm(ev: ImEvent): void {
-      tail = tail.then(() => handle(ev)).catch((err: unknown) => {
-        deps.log.error('inbound handling failed', { error: err instanceof Error ? err.message : String(err) });
-      });
-    },
+    onIm: (ev) => queue(() => handle(ev)),
+    onMedia: (ev) => queue(() => handleMedia(ev)),
     stop(): void {
       stopped = true;
       for (const burst of bursts.values()) if (burst.timer) deps.timers.clearTimeout(burst.timer);
