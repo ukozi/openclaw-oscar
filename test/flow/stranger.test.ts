@@ -9,8 +9,10 @@ vi.mock('openclaw/plugin-sdk/conversation-runtime', async () => (await import('.
 vi.mock('openclaw/plugin-sdk/reply-dispatch-runtime', async () => (await import('../fake/openclaw.js')).replyDispatchRuntime);
 vi.mock('openclaw/plugin-sdk/channel-ingress-runtime', async () => (await import('../fake/openclaw.js')).channelIngressRuntime);
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
+vi.mock('openclaw/plugin-sdk/media-store', async () => (await import('../fake/openclaw.js')).mediaStore);
 vi.mock('openclaw/plugin-sdk/status-helpers', async () => (await import('../fake/openclaw.js')).statusHelpers);
 
+import { copy } from '../../src/copy.js';
 import { NOTICE_TIMING } from '../../src/notice.js';
 import { imTexts } from '../fake/kit.js';
 import { sdk } from '../fake/openclaw.js';
@@ -19,6 +21,43 @@ import type { Flow } from './helpers.js';
 
 let flow: Flow | undefined;
 afterEach(async () => { await flow?.stop(); flow = undefined; });
+
+const NOTES = new TextEncoder().encode('# Notes\n\nBring the cake.\n');
+const fileNotice = `${copy.noticeFile('mallory')}\nTo let them in, reply: /allowlist add dm mallory`;
+
+describe('a stranger trying to send a file', () => {
+  it("a stranger's file offer is declined with no connection, and the owner gets the notice", async () => {
+    flow = await startFlow({ server: { relay: true }, sec: { files: { sendFile: true } } });
+    const alice = flow.peer('alice');
+    const mallory = flow.peer('mallory');
+    expect((await mallory.offerFile('botone', 'notes.md', NOTES)).outcome).toBe('declined');
+    await waitFor(() => imTexts(alice).length === 1, 8000, 'the notice');
+    expect(imTexts(alice)[0]?.text).toBe(fileNotice);
+    expect((await mallory.offerFile('botone', 'notes.md', NOTES)).outcome).toBe('declined');
+    sdk.agent = () => [{ text: 'noted' }];
+    alice.sendIm('botone', 'anything new?');
+    await waitFor(() => imTexts(alice).some((m) => m.text === 'noted'), 8000, 'the owner turn');
+    const entries = sdk.inbound[0]?.ctx.UntrustedStructuredContext as { type: string; payload: { attempts: { name: string; kind: string; count: number }[] } }[];
+    expect(entries.find((e) => e.type === 'oscar_contact_attempts')?.payload.attempts).toMatchObject([{ name: 'mallory', kind: 'file', count: 2 }]);
+    expect(imTexts(alice).filter((m) => m.text === fileNotice)).toHaveLength(1);
+    expect(flow.server.relayed()).toEqual([]);
+    expect(sdk.media).toEqual([]);
+    expect(imTexts(mallory)).toEqual([]);
+  });
+
+  it("a stranger's Direct IM offer is declined with no connection, and the owner gets the notice", async () => {
+    flow = await startFlow({ server: { relay: true }, sec: { files: { directIm: true } } });
+    const alice = flow.peer('alice');
+    const mallory = flow.peer('mallory');
+    expect((await mallory.openDirectIm('botone')).outcome).toBe('declined');
+    await waitFor(() => imTexts(alice).length === 1, 8000, 'the notice');
+    expect(imTexts(alice)[0]?.text).toBe(fileNotice);
+    expect(flow.server.relayed()).toEqual([]);
+    expect(sdk.media).toEqual([]);
+    expect(sdk.inbound).toEqual([]);
+    expect(imTexts(mallory)).toEqual([]);
+  });
+});
 
 describe('strangers', () => {
   it('stranger silence: nothing goes back, the owner gets exactly one notice, a second attempt gets none', async () => {

@@ -1,6 +1,7 @@
 import type { RootPolicy } from './config.js';
 import { formatTarget, senderLabel } from './names.js';
 import type { PeerRef } from './names.js';
+import type { ContactKind } from './notice.js';
 import type { OriginClass } from './policy.js';
 import { roomKey, roomsExt } from './runtime.js';
 import type { AccountRuntime, RoomLine } from './runtime.js';
@@ -9,7 +10,7 @@ const LINE_MAX = 300;
 const ROOM_PREFIX = 'room:';
 
 export type UntrustedEntry = { label: string; source?: string; type?: string; payload: unknown };
-export type ContactAttemptView = { name: string; kind: 'im' | 'invite'; at: number };
+export type ContactAttemptView = { name: string; kind: ContactKind; at: number };
 export type AwarenessSource = (accountId: string) => string[];
 
 export type AwarenessInput = {

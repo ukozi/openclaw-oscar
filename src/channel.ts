@@ -206,7 +206,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
       getCfg, now, log,
       send: (to, text) => sendNotice({ cfg: getCfg(), accountId, bot: self(), owner: to, text }),
     }),
-    stranger: () => undefined,
+    stranger: (name, display) => notices.contact({ name, display, kind: 'file', at: now() }),
   };
   const intakes = [
     ...(files.directIm ? [createDirectImIntake(session, intakeDeps)] : []),

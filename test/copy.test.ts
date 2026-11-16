@@ -10,7 +10,7 @@ const ALLOWED_PATH = /channels\.oscar\.[A-Za-z]+/g;
 
 function samples(): string[] {
   return [
-    copy.noticeIm('mallory'), copy.noticeInvite('mallory'),
+    copy.noticeIm('mallory'), copy.noticeInvite('mallory'), copy.noticeFile('mallory'),
     copy.noticeApprove('mallory', true), copy.noticeApprove('mallory', false),
     copy.noticeOddName(), copy.noticeRollup(1), copy.noticeRollup(4),
     copy.unlistedJoin('mallory', 'testroom'), copy.trustExposed('mallory', 'testroom'), copy.inviteFull(),
@@ -64,6 +64,12 @@ describe('copy', () => {
 
   it('uses the singular for one', () => {
     expect(copy.noticeRollup(1)).toBe('1 more person tried to reach me this hour. I did not reply to them.');
+  });
+
+  it('names the stranger in the file notice and words it apart from the others', () => {
+    expect(copy.noticeFile('mallory')).toContain('mallory');
+    expect(copy.noticeFile('mallory')).not.toBe(copy.noticeIm('mallory'));
+    expect(copy.noticeFile('mallory')).not.toBe(copy.noticeInvite('mallory'));
   });
 
   it('says the limit from the setting in the too-large message', () => {

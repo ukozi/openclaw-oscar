@@ -66,6 +66,7 @@ function setupOptions(teammates: string[]): string[] {
 export const copy = {
   noticeIm: (name: string): string => `${name} tried to message me. I did not reply.`,
   noticeInvite: (name: string): string => `${name} invited me to a chat. I did not join.`,
+  noticeFile: (name: string): string => `${name} tried to send me a file. I did not accept it.`,
   noticeApprove: (name: string, viaChat: boolean): string =>
     viaChat
       ? `To let them in, reply: /allowlist add dm ${name}`

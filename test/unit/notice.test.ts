@@ -4,6 +4,7 @@ vi.mock('openclaw/plugin-sdk/channel-outbound', async () => (await import('../fa
 vi.mock('openclaw/plugin-sdk/routing', async () => (await import('../fake/openclaw.js')).routing);
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
 
+import { copy } from '../../src/copy.js';
 import { NOTICE_TIMING, createNotices, sendNotice } from '../../src/notice.js';
 import type { ContactAttempt } from '../../src/notice.js';
 import { sendAdapterText } from '../../src/outbound.js';
@@ -58,6 +59,16 @@ describe('notice text', () => {
     expect(t.sent[0]?.text.split('\n')[0]).toBe('mallory invited me to a chat. I did not join.');
   });
 
+  it('tells the owners that a stranger tried to send a file', async () => {
+    const t = setup({ owners: ['alice', 'carol'] });
+    t.online.add('carol');
+    t.notices.contact(t.attempt('mallory', 'file'));
+    await t.notices.idle();
+    const text = `${copy.noticeFile('mallory')}\nTo let them in, add mallory to channels.oscar.allowFrom.`;
+    expect(t.sent).toEqual([{ owner: 'alice', text }, { owner: 'carol', text }]);
+    expect(copy.noticeFile('mallory')).not.toBe(copy.noticeIm('mallory'));
+  });
+
   it('flags an odd name and offers no way to approve it', async () => {
     const t = setup();
     t.notices.contact(t.attempt('аlice'));
@@ -79,6 +90,24 @@ describe('throttle', () => {
     t.notices.contact(t.attempt('mallory'));
     await t.notices.idle();
     expect(t.sent).toHaveLength(2);
+  });
+
+  it('keeps the cooldown and the hourly cap for file attempts', async () => {
+    const t = setup({ contactNotice: { cooldownHours: 6, maxPerHour: 2 } });
+    t.notices.contact(t.attempt('mallory', 'file'));
+    t.notices.contact(t.attempt('mallory', 'file'));
+    t.notices.contact(t.attempt('mallory'));
+    t.notices.contact(t.attempt('trudy', 'file'));
+    t.notices.contact(t.attempt('victor', 'file'));
+    await t.notices.idle();
+    expect(t.sent.map((s) => s.text.split('\n')[0])).toEqual([copy.noticeFile('mallory'), copy.noticeFile('trudy')]);
+    await vi.advanceTimersByTimeAsync(HOUR);
+    await t.notices.idle();
+    expect(t.sent[2]?.text).toBe(copy.noticeRollup(1));
+    vi.setSystemTime(10 * HOUR + 6 * HOUR);
+    t.notices.contact(t.attempt('mallory', 'file'));
+    await t.notices.idle();
+    expect(t.sent[3]?.text.split('\n')[0]).toBe(copy.noticeFile('mallory'));
   });
 
   it('rolls the sixth stranger of an hour into one line at the end of the hour', async () => {
@@ -195,6 +224,17 @@ describe('ring', () => {
     expect(ring).toHaveLength(20);
     expect(ring[0]?.name).toBe('s5');
     expect(ring[19]).toMatchObject({ name: 's24', count: 2, oddName: false, kind: 'im' });
+  });
+
+  it('lists a file attempt among the recent contact attempts', () => {
+    const t = setup();
+    t.notices.contact(t.attempt('mallory'));
+    t.notices.contact(t.attempt('mallory', 'file'));
+    t.notices.contact(t.attempt('mallory', 'file'));
+    expect(t.notices.ring()).toMatchObject([
+      { name: 'mallory', kind: 'im', count: 1 },
+      { name: 'mallory', kind: 'file', count: 2 },
+    ]);
   });
 });
 

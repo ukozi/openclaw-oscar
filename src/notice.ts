@@ -11,7 +11,7 @@ import type { Timers } from './runtime.js';
 export const NOTICE_TIMING = { windowMs: 3600_000 };
 const RING_SIZE = 20;
 
-export type ContactKind = 'im' | 'invite';
+export type ContactKind = 'im' | 'invite' | 'file';
 export type ContactAttempt = { name: string; display: string; kind: ContactKind; at: number };
 export type ContactRingEntry = { name: string; kind: ContactKind; firstAt: number; lastAt: number; count: number; oddName: boolean };
 export type NoticeDeps = {
@@ -99,7 +99,7 @@ export function createNotices(deps: NoticeDeps): Notices {
 
     const odd = !isAsciiName(a.display) || !isAsciiName(name);
     const viaChat = (deps.getCfg() as { commands?: { config?: unknown } } | undefined)?.commands?.config === true;
-    const lines = [a.kind === 'invite' ? copy.noticeInvite(name) : copy.noticeIm(name)];
+    const lines = [{ im: copy.noticeIm, invite: copy.noticeInvite, file: copy.noticeFile }[a.kind](name)];
     lines.push(odd ? copy.noticeOddName() : copy.noticeApprove(name, viaChat));
     if (others > 0) lines.push(copy.noticeRollup(others));
     const text = lines.join('\n');
