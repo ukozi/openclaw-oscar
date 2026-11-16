@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseAimHtml } from 'open-oscar-client-kit/client';
 import { htmlToText } from 'open-oscar-client-kit/wire';
 import type { DirectMessage, IncomingIm, Invite, RoomMessage } from 'open-oscar-client-kit/model';
 import { toDirectImOfferEvent, toDirectMessageEvent, toImEvent, toInviteEvent, toRoomMessageEvent } from '../../../src/oscar/events.js';
@@ -193,6 +194,28 @@ describe('Direct IM events', () => {
   it('writes a link once when its text is the address', () => {
     const body = [{ text: 'https://example.com', link: 'https://example.com' }];
     expect(toDirectMessageEvent(message({ parts: [{ kind: 'text', body }] })).text).toBe('https://example.com');
+  });
+
+  it('reads the text as an IM with the same HTML reads', () => {
+    for (const html of [
+      '<A HREF="https://x.example/a">click <B>here</B></A> now',
+      '<A HREF="http://example.com/">example.com</A>',
+      'see <A HREF="https://example.com/a"><I>this</I> and <FONT COLOR="#ff0000">that</FONT></A>, then <A HREF="https://example.com/b">b</A>',
+      'a &lt; b<BR>c &amp; d',
+    ]) {
+      const event = toDirectMessageEvent(message({ parts: [{ kind: 'text', body: parseAimHtml(html) }] }));
+      expect(event.text).toBe(htmlToText(html));
+    }
+  });
+
+  it('writes the address of a link with formatted text once', () => {
+    const body = parseAimHtml('<A HREF="https://x.example/a">click <B>here</B></A> now');
+    expect(toDirectMessageEvent(message({ parts: [{ kind: 'text', body }] })).text).toBe('click here (https://x.example/a) now');
+  });
+
+  it('leaves the address out when the text of a link is its address without the scheme', () => {
+    const body = [{ text: 'example.com', link: 'http://example.com/' }];
+    expect(toDirectMessageEvent(message({ parts: [{ kind: 'text', body }] })).text).toBe('example.com');
   });
 
   it('keeps the auto-response and damaged marks', () => {

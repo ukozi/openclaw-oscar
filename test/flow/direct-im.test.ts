@@ -116,6 +116,7 @@ describe('Direct IM on the session', () => {
       alice.sendIm('botone', 'hello');
       await waitFor(() => h.ims.length === 1, 'the IM after the offer');
       await settle(server.port);
+      expect(h.ims.map((i) => i.text)).toEqual(['hello']);
       expect(h.directImOffers).toEqual([]);
       expect(h.directIms).toEqual([]);
       expect(server.relayed()).toEqual([]);

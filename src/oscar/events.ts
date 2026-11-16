@@ -1,3 +1,4 @@
+import { richTextToAimHtml } from 'open-oscar-client-kit/client';
 import { ROOM_SERVER_SENDER, htmlToText, normalizeScreenName } from 'open-oscar-client-kit/wire';
 import type { DirectImOffer, DirectMessage, IncomingIm, Invite, MessageWire, RichText, RoomMessage } from 'open-oscar-client-kit/model';
 import type { DirectImOfferEvent, DirectMessageEvent, ImEvent, InviteEvent, RoomMessageEvent, RoomRef } from './types.js';
@@ -70,9 +71,16 @@ export function toDirectImOfferEvent(offer: DirectImOffer): DirectImOfferEvent {
   return { id: offer.id, from: normalizeScreenName(offer.from), fromDisplay: offer.from };
 }
 
-// A link reads as it does in an IM.
-const plain = (body: RichText): string =>
-  body.map((run) => (run.link === undefined || run.link === run.text ? run.text : `${run.text} (${run.link})`)).join('');
+// A link reads as it does in an IM: the runs of one link count as one link.
+function plain(body: RichText): string {
+  const runs: RichText = [];
+  for (const { text, link } of body) {
+    const last = runs.at(-1);
+    if (last !== undefined && last.link === link) last.text += text;
+    else runs.push(link === undefined ? { text } : { text, link });
+  }
+  return htmlToText(richTextToAimHtml(runs));
+}
 
 export function toDirectMessageEvent(message: DirectMessage): DirectMessageEvent {
   return {
