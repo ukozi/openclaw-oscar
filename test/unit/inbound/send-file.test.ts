@@ -228,19 +228,14 @@ describe('Send File intake', () => {
     expect(s.refused).toEqual([]);
   });
 
-  it('declines the oldest unanswered offer once more than the limit wait', async () => {
+  it('answers no offer of a sender who is not allowed, however many wait', async () => {
     const s = setup();
-    const max = FILES_LIMITS.ignoredOffers;
-    for (let i = 0; i < max; i++) await s.offer('Mallory', { id: `m-${i}` });
+    for (let i = 0; i < 40; i++) await s.offer('Mallory', { id: `m-${i}` });
+    s.state.admit = false;
+    for (let i = 0; i < 40; i++) await s.offer('Bob', { id: `b-${i}` });
     expect(s.calls).toEqual([]);
-    await s.transfer('m-0', 'mallory', { state: 'failed', failure: 'timed-out' });
-    await s.transfer('m-1', 'mallory', { state: 'cancelled', by: 'peer' });
-    await s.offer('Mallory', { id: 'm-a' });
-    await s.offer('Mallory', { id: 'm-b' });
-    expect(s.calls).toEqual([]);
-    await s.offer('Mallory', { id: 'm-c' });
-    expect(s.calls).toEqual(['decline m-2']);
-    expect(s.strangers).toHaveLength(max + 3);
+    expect(s.strangers).toHaveLength(40);
+    expect(s.slots.active()).toBe(0);
   });
 
   it('declines a folder with the too-many refusal', async () => {

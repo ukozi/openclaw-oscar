@@ -12,7 +12,7 @@ import { createDirectImIntake } from './inbound/direct-im.js';
 import type { IntakeDeps } from './inbound/direct-im.js';
 import { attachRooms } from './inbound/home.js';
 import { addImControlHandler, admitSender, createImHandler } from './inbound/im.js';
-import { Slots, createRefusals } from './inbound/media-gate.js';
+import { Slots, createRefusals, offerRule } from './inbound/media-gate.js';
 import { saveInbound } from './inbound/media-store.js';
 import { recordRoomLine, roomSink } from './inbound/room.js';
 import { createSendFileIntake } from './inbound/send-file.js';
@@ -142,6 +142,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
 
   const self = (): string => botName(getCfg(), accountId);
   const files = readPolicy(getCfg()).files;
+  const fileStranger = (name: string, display: string): void => notices.contact({ name, display, kind: 'file', at: now() });
   const session = gatewayDeps.createSession({
     host: account.host, port: account.port, tls: account.tls, ...(account.caFile ? { caFile: account.caFile } : {}), redirect: account.redirect,
     screenName: account.display,
@@ -149,7 +150,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     buddies: () => buddyList(readPolicy(getCfg()), account.screenName),
     log, loginBudget: sharedLoginBudget(),
     now, timers,
-    transfers: { ...files },
+    transfers: { ...files, allowOffer: offerRule({ self, getCfg, log, stranger: fileStranger }) },
   });
   const presence = startPresence({
     accountId,
@@ -209,7 +210,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
       getCfg, now, log,
       send: (to, text) => sendNotice({ cfg: getCfg(), accountId, bot: self(), owner: to, text }),
     }),
-    stranger: (name, display) => notices.contact({ name, display, kind: 'file', at: now() }),
+    stranger: fileStranger,
   };
   const directIm = files.directIm ? createDirectImIntake(session, intakeDeps) : undefined;
   const intakes = [...(directIm ? [directIm] : []), ...(files.sendFile ? [createSendFileIntake(session, intakeDeps)] : [])];

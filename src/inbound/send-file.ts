@@ -3,7 +3,7 @@ import type { RootPolicy } from '../config.js';
 import { normalizeName } from '../names.js';
 import type { FileOfferEvent, FileSink, FileWriter, IncomingFile, OscarSession, TransferEvent, TransferFailure } from '../oscar/index.js';
 import type { IntakeDeps } from './direct-im.js';
-import { FILES_LIMITS, Ignored, senderGate } from './media-gate.js';
+import { FILES_LIMITS, senderGate } from './media-gate.js';
 import type { GateResult, Refusal, TurnMedia } from './media-gate.js';
 import { baseName, sniff } from './sniff.js';
 
@@ -33,7 +33,6 @@ export function createSendFileIntake(
   deps: IntakeDeps,
 ): { stop(): void; idle(): Promise<void> } {
   const live = new Map<string, Live>();
-  const ignored = new Ignored();
   let stopped = false;
   let tail: Promise<void> = Promise.resolve();
 
@@ -159,11 +158,9 @@ export function createSendFileIntake(
     const policy = readPolicy(deps.getCfg());
     const verdict = await gate(from, policy);
     if (stopped) return;
-    // An offer from anyone not allowed waits unanswered; past the limit the oldest is declined.
+    // Anyone not allowed gets no answer: an answer costs a send.
     if (verdict !== 'allow') {
       if (verdict === 'stranger' && policy.files.sendFile) deps.stranger(from, ev.fromDisplay);
-      const oldest = ignored.add(ev.id);
-      if (oldest !== undefined) await decline(oldest);
       return;
     }
     if (!policy.files.sendFile) {
@@ -199,10 +196,7 @@ export function createSendFileIntake(
   const onTransfer = async (ev: TransferEvent): Promise<void> => {
     if (ev.direction === 'out') return;
     const t = live.get(ev.id);
-    if (!t) {
-      if (ENDINGS.has(ev.state)) ignored.drop(ev.id);
-      return;
-    }
+    if (!t) return;
     if (!ENDINGS.has(ev.state)) {
       moved(t);
       return;

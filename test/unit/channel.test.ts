@@ -389,11 +389,21 @@ describe('pictures and files', () => {
 
   it('gives the session the files settings', async () => {
     const off = await boot();
-    expect(off.options.transfers).toEqual({ directIm: false, sendFile: false, maxBytes: 10 * 1024 * 1024 });
+    expect(off.options.transfers).toEqual({ directIm: false, sendFile: false, maxBytes: 10 * 1024 * 1024, allowOffer: expect.any(Function) });
     await off.stop();
     const on = await boot({ directIm: true, sendFile: true, maxMb: 2, relayHost: 'relay.example.net' });
-    expect(on.options.transfers).toEqual({ directIm: true, sendFile: true, maxBytes: 2 * 1024 * 1024, relayHost: 'relay.example.net' });
+    expect(on.options.transfers).toEqual({ directIm: true, sendFile: true, maxBytes: 2 * 1024 * 1024, relayHost: 'relay.example.net', allowOffer: expect.any(Function) });
     await on.stop();
+  });
+
+  it('gives the session an offer rule that drops a stranger and reports the attempt', async () => {
+    const t = await boot({ directIm: true, sendFile: true });
+    const rule = (t.options.transfers as { allowOffer?: (kind: string, from: string) => boolean }).allowOffer;
+    if (!rule) throw new Error('no offer rule');
+    expect(rule('send-file', 'Alice')).toBe(true);
+    expect(rule('direct-im', 'Mallory')).toBe(false);
+    await vi.waitFor(() => expect(t.s.sent.filter((m) => m.to === 'alice')).toHaveLength(1));
+    await t.stop();
   });
 
   it('a reply that is only a file starts a send', async () => {

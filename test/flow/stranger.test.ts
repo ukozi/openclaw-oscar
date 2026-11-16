@@ -62,57 +62,40 @@ describe('a stranger trying to send a file', () => {
     expect(sdk.inbound).toEqual([]);
   });
 
-  it('ten waiting offers of each kind, each Direct IM offer from another name, get no answer, and an owner is answered at once', async () => {
-    // One notice an hour, so ten names do not make a burst of notices.
-    flow = await startFlow({ server: { relay: true }, sec: { files: { directIm: true, sendFile: true }, contactNotice: { maxPerHour: 1 } } });
+  it("ten quick offers of each kind from one stranger cost the bot no send, and an owner's offer right after is accepted", async () => {
+    flow = await startFlow({ server: { relay: true }, sec: { files: { directIm: true, sendFile: true } } });
+    const { server } = flow;
     const alice = flow.peer('alice');
     const mallory = flow.peer('mallory');
-    // The client answers a second Direct IM offer of one name itself, so each comes from another name.
-    const others = Array.from({ length: 9 }, (_, i) => `stranger${i}`);
-    for (const name of others) flow.server.addUser(name, `pw-${name}`);
     for (let i = 0; i < 10; i++) void mallory.offerFile('botone', `notes-${i}.md`, NOTES);
-    void mallory.openDirectIm('botone');
-    for (const name of others) void flow.server.peer(name).openDirectIm('botone');
+    for (let i = 0; i < 10; i++) void mallory.openDirectIm('botone');
     await waitFor(() => imTexts(alice).length === 1, 8000, 'the notice');
-    sdk.agent = () => [{ text: 'here' }];
-    alice.sendIm('botone', 'are you there?');
-    await waitFor(() => imTexts(alice).some((m) => m.text === 'here'), 3000, 'the prompt reply to the owner');
-    for (const name of ['mallory', ...others]) expect(icbmsSentTo(flow.server, 'botone', name), name).toEqual([]);
-    expect(imTexts(alice).map((m) => m.text)).toEqual([fileNotice, 'here']);
-    expect(flow.server.relayed()).toEqual([]);
-    expect(sdk.inbound.map((r) => r.ctx.SenderId)).toEqual(['alice']);
-  });
-});
-
-describe('a stranger offer the bot still declines', () => {
-  it('past twelve waiting file offers, each new one makes the bot decline the oldest', async () => {
-    flow = await startFlow({ server: { relay: true }, sec: { files: { sendFile: true } } });
-    const { server } = flow;
-    const alice = flow.peer('alice');
-    const mallory = flow.peer('mallory');
-    for (let i = 0; i < 14; i++) void mallory.offerFile('botone', `notes-${i}.md`, NOTES);
-    await waitFor(() => icbmsSentTo(server, 'botone', 'mallory').length === 2, 8000, 'the two declines');
-    sdk.agent = () => [{ text: 'here' }];
-    alice.sendIm('botone', 'are you there?');
-    await waitFor(() => imTexts(alice).some((m) => m.text === 'here'), 8000, 'the owner turn');
-    expect(icbmsSentTo(server, 'botone', 'mallory')).toEqual([{ subtype: 0x06 }, { subtype: 0x06 }]);
-    expect(mallory.fileTransfers().map((t) => t.outcome)).toEqual(['declined', 'declined']);
-    expect(server.relayed()).toEqual([]);
+    expect((await alice.offerFile('botone', 'notes.md', NOTES)).outcome).toBe('done');
+    expect((await alice.openDirectIm('botone')).outcome).toBe('open');
+    expect(snacsReferencing(server, 'botone', 'mallory')).toEqual([]);
+    expect(icbmsSentTo(server, 'botone', 'mallory')).toEqual([]);
+    expect(imTexts(alice).map((m) => m.text)).toEqual([fileNotice]);
+    expect(mallory.fileTransfers()).toEqual([]);
   });
 
-  it('a second and a third Direct IM offer of one name each make the client cancel the one before', async () => {
-    flow = await startFlow({ server: { relay: true }, sec: { files: { directIm: true } } });
+  it("ten quick offers of each kind from a teammate bot cost the bot no send and no notice, and an owner's offer right after is accepted", async () => {
+    flow = await startFlow({
+      server: { relay: true },
+      sec: { files: { directIm: true, sendFile: true }, chain: { roster: [{ screenName: 'botone' }, { screenName: 'bottwo' }] } },
+    });
     const { server } = flow;
+    server.addUser('bottwo', 'pw-bottwo');
     const alice = flow.peer('alice');
-    const mallory = flow.peer('mallory');
-    for (let i = 0; i < 3; i++) void mallory.openDirectIm('botone');
-    await waitFor(() => icbmsSentTo(server, 'botone', 'mallory').length === 2, 8000, 'the two cancels');
-    sdk.agent = () => [{ text: 'here' }];
-    alice.sendIm('botone', 'are you there?');
-    await waitFor(() => imTexts(alice).some((m) => m.text === 'here'), 8000, 'the owner turn');
-    expect(icbmsSentTo(server, 'botone', 'mallory')).toEqual([{ subtype: 0x06 }, { subtype: 0x06 }]);
-    expect(server.relayed()).toEqual([]);
-    expect(sdk.media).toEqual([]);
+    const bottwo = flow.peer('bottwo');
+    for (let i = 0; i < 10; i++) void bottwo.offerFile('botone', `notes-${i}.md`, NOTES);
+    for (let i = 0; i < 10; i++) void bottwo.openDirectIm('botone');
+    expect((await alice.offerFile('botone', 'notes.md', NOTES)).outcome).toBe('done');
+    expect((await alice.openDirectIm('botone')).outcome).toBe('open');
+    // The team greeting is the only message the bot sends a teammate here.
+    const toTeammate = server.snacsFrom('botone').filter((snac) => snac.family === 0x04).map((snac) => Buffer.from(snac.body).toString('latin1')).filter((body) => body.includes('bottwo'));
+    expect(toTeammate.filter((body) => !body.includes('#oc hello'))).toEqual([]);
+    expect(bottwo.fileTransfers()).toEqual([]);
+    expect(imTexts(alice)).toEqual([]);
   });
 });
 

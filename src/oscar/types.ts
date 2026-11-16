@@ -110,7 +110,11 @@ export type OscarEvents = {
 
 export type PasswordCheck = 'checks' | 'does-not-check' | 'unknown';
 
-export type TransferOptions = { directIm: boolean; sendFile: boolean; maxBytes: number; relayHost?: string; lookup?: HostLookup };
+export type TransferOptions = {
+  directIm: boolean; sendFile: boolean; maxBytes: number; relayHost?: string; lookup?: HostLookup;
+  // False drops the offer before the client keeps or answers it.
+  allowOffer?: (kind: 'direct-im' | 'send-file', from: string) => boolean;
+};
 
 export type OscarSessionOptions = {
   host: string;

@@ -205,19 +205,14 @@ describe('Direct IM intake', () => {
     expect(s.slots.active()).toBe(0);
   });
 
-  it('declines the oldest unanswered offer once more than the limit wait', async () => {
+  it('answers no offer of a sender who is not allowed, however many wait', async () => {
     const s = setup();
-    const max = FILES_LIMITS.ignoredOffers;
-    for (let i = 0; i < max; i++) await s.offer('Mallory', `m-${i}`);
+    for (let i = 0; i < 40; i++) await s.offer('Mallory', `m-${i}`);
+    s.state.admit = false;
+    for (let i = 0; i < 40; i++) await s.offer('Bob', `b-${i}`);
     expect(s.calls).toEqual([]);
-    await s.closed('m-0', 'mallory', 'timed-out');
-    await s.closed('m-1', 'mallory', 'cancelled', 'peer');
-    await s.offer('Mallory', 'm-a');
-    await s.offer('Mallory', 'm-b');
-    expect(s.calls).toEqual([]);
-    await s.offer('Mallory', 'm-c');
-    expect(s.calls).toEqual(['decline m-2']);
-    expect(s.strangers).toHaveLength(max + 3);
+    expect(s.strangers).toHaveLength(40);
+    expect(s.slots.active()).toBe(0);
   });
 
   it('declines a fifth session and tells the sender that others are sending', async () => {

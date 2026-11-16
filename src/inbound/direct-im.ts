@@ -6,7 +6,7 @@ import type { DirectImOfferEvent, DirectImStateEvent, DirectMessageEvent, Logger
 import type { Timers } from '../runtime.js';
 import type { Picture } from '../sending/plan.js';
 import type { SendOutcome } from '../sending/send-file.js';
-import { FILES_LIMITS, Ignored, senderGate } from './media-gate.js';
+import { FILES_LIMITS, senderGate } from './media-gate.js';
 import type { GateResult, MediaEvent, Refusal, Slots, TurnMedia } from './media-gate.js';
 import type { saveInbound } from './media-store.js';
 import { baseName, sniff } from './sniff.js';
@@ -47,7 +47,8 @@ export function createDirectImIntake(
   idle(): Promise<void>;
 } {
   const live = new Map<string, Live>();
-  const ignored = new Ignored();
+  // Offers of a listed person the host does not admit, left with no answer.
+  const unanswered = new Set<string>();
   // Pictures handed over and not yet sent, by person.
   const held = new Map<string, number>();
   const pending = new Set<Promise<void>>();
@@ -214,7 +215,7 @@ export function createDirectImIntake(
     // The wait for an answer ends here too, should the session never report its end.
     arm(id, s);
     // The id of an offer the person made and the bot left unanswered: that offer is taken.
-    if (!ignored.drop(id)) return;
+    if (!unanswered.delete(id)) return;
     try {
       await session.acceptDirectIm(id);
     } catch (err) {
@@ -234,11 +235,10 @@ export function createDirectImIntake(
     const policy = readPolicy(deps.getCfg());
     const verdict = await gate(from, policy);
     if (stopped) return;
-    // An offer from anyone not allowed waits unanswered; past the limit the oldest is declined.
+    // Anyone not allowed gets no answer: an answer costs a send.
     if (verdict !== 'allow') {
       if (verdict === 'stranger' && policy.files.directIm) deps.stranger(from, ev.fromDisplay);
-      const oldest = ignored.add(ev.id);
-      if (oldest !== undefined) await decline(oldest);
+      else unanswered.add(ev.id);
       return;
     }
     if (!policy.files.directIm) {
@@ -272,7 +272,7 @@ export function createDirectImIntake(
       if (s) await opened(ev.id, s);
       return;
     }
-    ignored.drop(ev.id);
+    unanswered.delete(ev.id);
     const s = end(ev.id);
     if (!s || ev.end !== 'too-large') return;
     // The session's total ends it the same way, after a message that was taken.

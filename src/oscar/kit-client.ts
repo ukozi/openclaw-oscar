@@ -54,9 +54,12 @@ export function kitOptions(opts: OscarSessionOptions, hooks: { reconnect: Reconn
       ...(t.relayHost === undefined ? {} : { relayHost: t.relayHost }),
       ...(t.lookup === undefined ? {} : { lookup: t.lookup }),
     });
+    const rule = t.allowOffer;
+    const offers = (kind: 'direct-im' | 'send-file'): { allowOffer?: (from: string) => boolean } =>
+      rule ? { allowOffer: (from) => rule(kind, from) } : {};
     return {
-      ...(t.directIm ? { directIm: { allowDial, ...directImLimits(t.maxBytes) } } : {}),
-      ...(t.sendFile ? { fileTransfer: { allowDial } } : {}),
+      ...(t.directIm ? { directIm: { allowDial, ...directImLimits(t.maxBytes), ...offers('direct-im') } } : {}),
+      ...(t.sendFile ? { fileTransfer: { allowDial, ...offers('send-file') } } : {}),
     };
   };
   return {

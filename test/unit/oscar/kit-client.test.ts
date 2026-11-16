@@ -138,6 +138,21 @@ describe('kitOptions', () => {
     expect(await allowDial({ ip: '203.0.113.9', port: 4443 }, context)).toBe(false);
   });
 
+  it('hands the offer rule to each kind that is on, with the kind', () => {
+    const asked: string[] = [];
+    const allowOffer = (kind: string, from: string): boolean => {
+      asked.push(`${kind} ${from}`);
+      return from === 'Alice';
+    };
+    const built = kitOptions(base({ transfers: { directIm: true, sendFile: true, maxBytes: 1000, allowOffer } }), hooks);
+    expect(built.directIm?.allowOffer?.('Alice')).toBe(true);
+    expect(built.fileTransfer?.allowOffer?.('Mallory')).toBe(false);
+    expect(asked).toEqual(['direct-im Alice', 'send-file Mallory']);
+    const plain = kitOptions(base({ transfers: { directIm: true, sendFile: true, maxBytes: 1000 } }), hooks);
+    expect(plain.directIm?.allowOffer).toBeUndefined();
+    expect(plain.fileTransfer?.allowOffer).toBeUndefined();
+  });
+
   it('gives Direct IM and file transfer the same dial rule when both are on', () => {
     const built = kitOptions(base({ transfers: { directIm: true, sendFile: true, maxBytes: 1000 } }), hooks);
     expect(built.fileTransfer?.allowDial).toBeTypeOf('function');

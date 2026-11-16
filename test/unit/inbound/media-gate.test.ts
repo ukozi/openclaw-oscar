@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { copy } from '../../../src/copy.js';
-import { FILES_LIMITS, Slots, createRefusals, senderGate } from '../../../src/inbound/media-gate.js';
+import { FILES_LIMITS, Slots, createRefusals, offerRule, senderGate } from '../../../src/inbound/media-gate.js';
 import { policyFixture } from '../rooms-fixtures.js';
 
 const yes = async (): Promise<boolean> => true;
@@ -134,5 +134,69 @@ describe('createRefusals', () => {
     h.refuse('bob', 'damaged');
     await settle();
     expect(h.warnings).toEqual([{ msg: 'refusal was not delivered', fields: { to: 'bob', why: 'damaged', error: 'rate limited' } }]);
+  });
+});
+
+describe('offerRule', () => {
+  function setup(sec: Record<string, unknown> = {}) {
+    const strangers: { name: string; display: string }[] = [];
+    const warnings: string[] = [];
+    const state: { cfg: unknown } = { cfg: { channels: { oscar: { owners: ['alice'], allowFrom: ['bob'], chain: { roster: [{ screenName: 'botone' }, { screenName: 'bottwo' }] }, files: { directIm: true, sendFile: true }, ...sec } } } };
+    const rule = offerRule({
+      self: () => 'BotOne',
+      getCfg: () => state.cfg,
+      log: { debug() {}, info() {}, warn: (msg: string) => void warnings.push(msg), error() {} },
+      stranger: (name, display) => void strangers.push({ name, display }),
+    });
+    return { rule, strangers, warnings, state };
+  }
+
+  it('lets the offer of an owner or an approved person through, with no notice', () => {
+    const s = setup();
+    expect(s.rule('send-file', 'Alice')).toBe(true);
+    expect(s.rule('direct-im', 'B ob')).toBe(true);
+    expect(s.strangers).toEqual([]);
+  });
+
+  it('drops the offer of a stranger and reports each attempt, also under dmPolicy open', () => {
+    const s = setup({ dmPolicy: 'open', dangerouslyAllowOpenDm: true });
+    expect(s.rule('send-file', 'Mallory')).toBe(false);
+    expect(s.rule('direct-im', 'Mal lory')).toBe(false);
+    expect(s.strangers).toEqual([{ name: 'mallory', display: 'Mallory' }, { name: 'mallory', display: 'Mal lory' }]);
+  });
+
+  it('drops the offer of a teammate bot, of the bot itself and of no name, with no notice', () => {
+    const s = setup();
+    expect(s.rule('send-file', 'Bot Two')).toBe(false);
+    expect(s.rule('direct-im', 'botone')).toBe(false);
+    expect(s.rule('send-file', '')).toBe(false);
+    expect(s.strangers).toEqual([]);
+  });
+
+  it('reports a stranger only for the kind that is on', () => {
+    const s = setup({ files: { directIm: true, sendFile: false } });
+    expect(s.rule('send-file', 'Mallory')).toBe(false);
+    expect(s.strangers).toEqual([]);
+    expect(s.rule('direct-im', 'Mallory')).toBe(false);
+    expect(s.strangers).toHaveLength(1);
+  });
+
+  it('reads the lists again for each offer', () => {
+    const s = setup();
+    expect(s.rule('send-file', 'Mallory')).toBe(false);
+    s.state.cfg = { channels: { oscar: { owners: ['alice'], allowFrom: ['mallory'], files: { sendFile: true } } } };
+    expect(s.rule('send-file', 'Mallory')).toBe(true);
+  });
+
+  it('drops the offer when the notice throws', () => {
+    const rule = offerRule({
+      self: () => 'BotOne',
+      getCfg: () => ({ channels: { oscar: { owners: ['alice'], files: { sendFile: true } } } }),
+      log: { debug() {}, info() {}, warn() {}, error() {} },
+      stranger: () => {
+        throw new Error('no notice');
+      },
+    });
+    expect(rule('send-file', 'Mallory')).toBe(false);
   });
 });

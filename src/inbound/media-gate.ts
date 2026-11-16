@@ -5,7 +5,7 @@ import { normalizeName } from '../names.js';
 import type { Logger } from '../oscar/index.js';
 import { roleOf } from '../policy.js';
 
-export const FILES_LIMITS = { perOffer: 3, perSend: 3, active: 4, idleMs: 300_000, stallMs: 180_000, transferMs: 900_000, refusalCooldownMs: 60_000, textChars: 8000, ignoredOffers: 12 };
+export const FILES_LIMITS = { perOffer: 3, perSend: 3, active: 4, idleMs: 300_000, stallMs: 180_000, transferMs: 900_000, refusalCooldownMs: 60_000, textChars: 8000 };
 
 export type Refusal = 'too-large' | 'wrong-type' | 'too-many' | 'busy' | 'busy-others' | 'damaged';
 // silent: the bot itself, a teammate bot, or a listed person the host does not admit.
@@ -26,6 +26,28 @@ export async function senderGate(p: {
   return (await p.admit(from, p.policy)) ? 'allow' : 'silent';
 }
 
+// Asked by the client before it keeps an offer. False leaves the offer with no answer.
+export function offerRule(p: {
+  self: () => string;
+  getCfg: () => unknown;
+  log: Logger;
+  stranger: (name: string, display: string) => void;
+}): (kind: Exclude<TransferKind, 'send-file-out'>, from: string) => boolean {
+  return (kind, display) => {
+    try {
+      const from = normalizeName(display);
+      if (!from || from === normalizeName(p.self())) return false;
+      const policy = readPolicy(p.getCfg());
+      const role = roleOf(from, policy);
+      if (role !== 'unlisted') return role !== 'bot';
+      if (kind === 'direct-im' ? policy.files.directIm : policy.files.sendFile) p.stranger(from, display);
+    } catch (err) {
+      p.log.warn('an offer could not be checked', { error: err instanceof Error ? err.message : String(err) });
+    }
+    return false;
+  };
+}
+
 export class Slots {
   private readonly held = new Set<string>();
 
@@ -43,25 +65,6 @@ export class Slots {
 
   active(): number {
     return this.held.size;
-  }
-}
-
-// Offers left with no answer. The client drops each after five minutes and holds 16 of a kind.
-export class Ignored {
-  private readonly ids = new Set<string>();
-
-  // Returns the oldest id when more than the limit wait, for the caller to decline.
-  add(id: string): string | undefined {
-    this.ids.add(id);
-    if (this.ids.size <= FILES_LIMITS.ignoredOffers) return undefined;
-    const [oldest] = this.ids;
-    if (oldest !== undefined) this.ids.delete(oldest);
-    return oldest;
-  }
-
-  // True when the id was held.
-  drop(id: string): boolean {
-    return this.ids.delete(id);
   }
 }
 
