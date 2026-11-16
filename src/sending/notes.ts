@@ -17,7 +17,7 @@ export function createSendNotes(p: {
     const name = normalizeName(to);
     const at = p.now();
     for (const [key, sent] of lastAt) if (at - sent >= FILES_LIMITS.refusalCooldownMs) lastAt.delete(key);
-    const key = `${why}${link ? '+link' : ''}:${name}`;
+    const key = `${why}:${link ?? ''}:${name}`;
     if (!name || lastAt.has(key)) return;
     lastAt.set(key, at);
     const maxMb = Math.round(readPolicy(p.getCfg()).files.maxBytes / (1024 * 1024));

@@ -64,10 +64,20 @@ describe('createSendNotes', () => {
     const h = harness();
     h.note('bob', 'failed');
     h.note('bob', 'failed', 'https://example.com/a.pdf');
-    h.note('bob', 'failed', 'https://example.com/b.pdf');
     await settle();
     expect(h.sent).toHaveLength(2);
     expect(h.sent[1]?.text).toContain('https://example.com/a.pdf');
+  });
+
+  it('gives each different link once a minute', async () => {
+    const h = harness();
+    h.note('bob', 'failed', 'https://example.com/a.pdf');
+    h.note('bob', 'failed', 'https://example.com/b.pdf');
+    h.note('bob', 'failed', 'https://example.com/a.pdf');
+    await settle();
+    expect(h.sent).toHaveLength(2);
+    expect(h.sent[0]?.text).toContain('a.pdf');
+    expect(h.sent[1]?.text).toContain('b.pdf');
   });
 
   it('does not send for an empty name', async () => {
