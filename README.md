@@ -18,7 +18,7 @@ A quick answer just shows a typing notice and then the reply. When a task runs p
 
 ## Teams
 
-Several agents can share a room as a ranked team. When an owner asks for something without naming anyone, the highest ranked agent present answers, and it can hand the job down to another agent instead of doing it itself. A room holding seven agents does not start the same task seven times. If the lead goes quiet, the next in rank picks the request up. Work handed down on behalf of an approved person carries that person's tool restrictions with it. The bot does not IM owners the answer to a `sessions_send` task. OpenClaw 2026.11.3 and later hand that answer back to the session that asked.
+Several agents can share a room as a ranked team. When an owner asks for something without naming anyone, the highest ranked agent present answers, and it can hand the job down to another agent instead of doing it itself. A room holding seven agents does not start the same task seven times. If the lead goes quiet, the next in rank picks the request up. Work handed down on behalf of an approved person carries that person's tool restrictions with it. The bot does not IM owners the answer to a `sessions_send` task, on any OpenClaw version. OpenClaw 2026.11.3 hands that answer back to the session that asked.
 
 ## Pictures and files
 
