@@ -119,9 +119,11 @@ describe('real media loader', () => {
 
   it('ends a remote load that sends nothing for too long', async () => {
     const options = { ...buildOutboundMediaLoadOptions({ maxBytes: MB, optimizeImages: false, fetchImpl: stalled }), readIdleTimeoutMs: 200 };
+    const asked = seen.length;
     const started = Date.now();
     await expect(loadWebMedia(REMOTE, options)).rejects.toThrow();
     expect(Date.now() - started).toBeLessThan(5_000);
+    expect(seen.length).toBe(asked + 1);
   });
 
   it('gives a file of the media folder whole, with its name and type', async () => {
