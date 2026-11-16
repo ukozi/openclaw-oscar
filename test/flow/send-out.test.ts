@@ -177,6 +177,43 @@ describe('sending from the session', () => {
     await intake.idle();
   });
 
+  it('pictures near the limit, given while the session opens, go out one to a message', async () => {
+    const h = await signOn({ maxBytes: MB });
+    const slots = new Slots();
+    const intake = createDirectImIntake(h.session, {
+      self: () => 'botone',
+      getCfg: () => ({ channels: { oscar: { owners: ['alice'], files: { directIm: true, maxMb: 1 } } } }),
+      now: h.timers.now,
+      timers: h.timers.api,
+      log: h.logs.log,
+      slots,
+      admit: async () => true,
+      save: async (p) => ({ path: `/media/inbound/${p.name}` }) as never,
+      deliver: () => {},
+      refuse: () => {},
+      stranger: () => {},
+    });
+    const big = (fill: number): Uint8Array => {
+      const bytes = new Uint8Array(900 * 1024).fill(fill);
+      bytes.set(GIF);
+      return bytes;
+    };
+    const ends: SendOutcome[] = [];
+    intake.send('alice', [{ name: 'one.gif', bytes: big(1), width: 1, height: 1 }], (outcome) => void ends.push(outcome));
+    intake.send('alice', [{ name: 'two.gif', bytes: big(2), width: 1, height: 1 }], (outcome) => void ends.push(outcome));
+    server.peer('alice').acceptDirectIm();
+    await waitFor(() => ends.length === 2, 'the end of both sends');
+    expect(ends).toEqual(['done', 'done']);
+    const peerSide = server.peer('alice').directIms()[0];
+    await waitFor(() => (peerSide?.received().length ?? 0) === 2, 'both pictures');
+    expect(peerSide?.received().map((m) => m.attachments.map((a) => `${a.name} ${a.bytes.byteLength}`))).toEqual([
+      [`one.gif ${900 * 1024}`],
+      [`two.gif ${900 * 1024}`],
+    ]);
+    intake.stop();
+    await intake.idle();
+  });
+
   it('a picture is not sent to a peer that does not answer, and the session is cancelled', async () => {
     const h = await signOn();
     const slots = new Slots();

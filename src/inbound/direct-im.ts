@@ -106,17 +106,29 @@ export function createDirectImIntake(
     s.timer = deps.timers.setTimeout(() => close(id, 'idle'), FILES_LIMITS.idleMs);
   };
 
-  // The pictures go out in the order given, at most three to a message.
+  // The pictures go out in the order given; a message holds at most three, and no more bytes than one file may have.
   const post = (id: string, s: Live, batches: Batch[]): void => {
+    const maxBytes = readPolicy(deps.getCfg()).files.maxBytes;
     const items = batches.flatMap((batch) => batch.pictures.map((picture) => ({ batch, picture })));
     const lastOf = new Map(items.map((item, at) => [item.batch, at]));
     const failed = new Set<Batch>();
-    for (let from = 0; from < items.length; from += FILES_LIMITS.perOffer) {
-      const part = items.slice(from, from + FILES_LIMITS.perOffer);
+    let from = 0;
+    while (from < items.length) {
+      let to = from + 1;
+      let bytes = items[from]?.picture.bytes.byteLength ?? 0;
+      while (to < items.length && to - from < FILES_LIMITS.perOffer) {
+        const next = items[to]?.picture.bytes.byteLength ?? 0;
+        if (bytes + next > maxBytes) break;
+        bytes += next;
+        to += 1;
+      }
+      const part = items.slice(from, to);
+      const [first, end] = [from, to];
       const over = batches.filter((batch) => {
         const at = lastOf.get(batch) ?? 0;
-        return at >= from && at < from + FILES_LIMITS.perOffer;
+        return at >= first && at < end;
       });
+      from = to;
       s.sending = s.sending.then(async () => {
         let sent = false;
         if (live.get(id) === s) {

@@ -560,6 +560,23 @@ describe('Direct IM intake, sending', () => {
     expect(s.ends).toEqual(['done']);
   });
 
+  it('keeps the pictures of one message within the size limit', async () => {
+    const s = setup({ files: { directIm: true, maxMb: 1 } });
+    const big = (name: string, size: number): Picture => {
+      const bytes = new Uint8Array(size);
+      bytes.set(GIF);
+      return { name, bytes, width: 1, height: 1 };
+    };
+    const end = (outcome: SendOutcome): void => void s.ends.push(outcome);
+    s.intake.send('alice', [big('a.gif', 600 * 1024), big('b.gif', 600 * 1024), big('c.gif', 100 * 1024)], end);
+    s.intake.send('alice', [big('d.gif', 300 * 1024)], end);
+    s.intake.send('alice', [big('e.gif', MB)], end);
+    await s.intake.idle();
+    await s.opens(OUT, 'alice');
+    expect(s.sent.map((m) => m.names)).toEqual([['a.gif'], ['b.gif', 'c.gif', 'd.gif'], ['e.gif']]);
+    expect(s.ends).toEqual(['done', 'done', 'done']);
+  });
+
   it('reports failed when the person declines, and when nobody answers', async () => {
     for (const [end, by] of [['declined', 'peer'], ['timed-out', undefined], ['refused-address', undefined], ['signed-off', undefined]] as const) {
       const s = setup();
