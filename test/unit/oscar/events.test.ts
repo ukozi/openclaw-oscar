@@ -159,7 +159,7 @@ describe('Direct IM events', () => {
     ...over,
   });
 
-  it('normalises the sender of an offer and keeps the name as it came', () => {
+  it('normalizes the sender of an offer and keeps the name as it came', () => {
     expect(toDirectImOfferEvent({ id: 'alicesmith:00000000000000aa', from: 'Alice Smith', at: 3_000 })).toEqual({
       id: 'alicesmith:00000000000000aa',
       from: 'alicesmith',

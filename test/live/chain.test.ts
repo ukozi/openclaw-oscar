@@ -142,7 +142,7 @@ describe.skipIf(env.mode !== 'local')('must 3: chain of command', () => {
     expect(worker[0]?.toolDeny).not.toContain('group:runtime');
     expect(worker[0]?.commandAuthorized).toBe(false);
 
-    // the ledger is closed: an owner turn no longer lists the hand-off as open
+    // the ledger is closed, so an owner turn does not list the hand-off as open
     const id = /\[d:([^ \]]+) h:1/.exec(room.find((l) => l.includes('list the open files')) ?? '')?.[1] ?? 'missing';
     script = async (_turn, agent) => agent.reply('noted');
     const t2 = Date.now();

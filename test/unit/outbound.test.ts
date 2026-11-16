@@ -316,7 +316,7 @@ describe('sendMedia', () => {
     expect(session.sent).toEqual([]);
   });
 
-  it('fails cleanly when the account is not running', async () => {
+  it('rejects when the account is not signed on', async () => {
     await expect(sendAdapterMedia({ cfg: cfg(), to: 'alice', text: '', mediaUrl: '/work/chart.png' })).rejects.toThrow('account default is not signed on');
     resetRuntimeForTests();
     await expect(sendAdapterMedia({ cfg: cfg(), to: 'alice', text: '', mediaUrl: '/work/chart.png' })).rejects.toThrow('account default is not signed on');

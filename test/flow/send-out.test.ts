@@ -214,7 +214,7 @@ describe('sending from the session', () => {
     await intake.idle();
   });
 
-  it('a picture is not sent to a peer that does not answer, and the session is cancelled', async () => {
+  it('a picture is not sent to a peer that does not answer, and the session is canceled', async () => {
     const h = await signOn();
     const slots = new Slots();
     const intake = createDirectImIntake(h.session, {

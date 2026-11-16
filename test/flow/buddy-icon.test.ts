@@ -53,7 +53,7 @@ afterEach(async () => {
   flow = undefined;
 });
 
-describe("the bot wears its agent's avatar", () => {
+describe("the bot shows its agent's avatar as its buddy icon", () => {
   it('another client sees the icon after sign-on, and a second sign-on sends nothing for it', async () => {
     rmSync(iconFileFor('default'), { force: true });
     ICON_TIMING.afterSignOnMs = 30;

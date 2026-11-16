@@ -90,7 +90,7 @@ export function toDirectImOfferEvent(offer: DirectImOffer): DirectImOfferEvent {
   return { id: offer.id, from: normalizeScreenName(offer.from), fromDisplay: offer.from };
 }
 
-// A link reads as it does in an IM: the runs of one link count as one link.
+// As in an IM, the runs of one link count as one link.
 function plain(body: RichText): string {
   const runs: RichText = [];
   for (const { text, link } of body) {

@@ -3,7 +3,7 @@ import { createOscarSession, type OscarEvents, type OscarSession } from '../../s
 import { liveEnabled, startLiveServer, type LiveServer } from './harness.js';
 
 const PASSWORD = 'hunter22';
-// past one 90 s liveness round, which is where every connection used to die
+// longer than one 90 s liveness round
 const HOLD_MS = 100_000;
 const WAIT_MS = 10_000;
 const HOLD_TIMEOUT_MS = 180_000;

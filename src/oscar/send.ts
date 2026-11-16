@@ -97,7 +97,7 @@ export async function sendWithResend(client: KitClient, to: string, html: string
     sent = await once();
   } catch (first) {
     if (!isAckTimeout(first)) throw toSendError(first);
-    // No acknowledgement on a live link: the server's limiter dropped it. The second copy waits in the rate class.
+    // No acknowledgment on a live link means the server's limiter dropped it. The second copy waits in the rate class.
     if (client.state !== 'online') throw new OscarSendError('closed');
     try {
       sent = await once();

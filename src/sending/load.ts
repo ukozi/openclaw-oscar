@@ -87,7 +87,7 @@ async function refusal(path: string): Promise<string | undefined> {
   return dirs.some((dir) => paths.some((p) => within(dir, p))) ? 'received from somebody' : undefined;
 }
 
-// The load is stopped, and given up on even if it does not stop.
+// Stops a load that takes too long, and gives up on one that does not stop.
 async function inTime<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const stop = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;

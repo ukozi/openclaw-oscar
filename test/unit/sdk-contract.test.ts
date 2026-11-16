@@ -65,7 +65,7 @@ describe('real media loader', () => {
   const secret = join(outside, 'secret.png');
   const load = (url: string, role: 'owner' | 'approved', maxBytes = MB) => loadOutgoing({ url, cfg: {}, role, maxBytes, log: silentLog });
 
-  // A public address in numbers: no name is looked up, and the fetch below never reaches it.
+  // A public address in numbers, so no name is looked up. The fetch below never reaches it.
   const REMOTE = 'http://8.8.8.8/slow.bin';
   const seen: boolean[] = [];
   // One part, then silence until the signal fires.

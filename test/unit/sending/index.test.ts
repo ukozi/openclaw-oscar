@@ -91,7 +91,7 @@ describe('sendMediaTo', () => {
     ]);
     expect(t.offers).toEqual([]);
     expect(t.notes).toEqual([]);
-    // The text is the caller's: the sender itself writes no IM.
+    // The caller sends the text, so the sender itself writes no IM.
     expect(t.session.sent).toEqual([]);
   });
 

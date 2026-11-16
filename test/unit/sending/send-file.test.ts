@@ -126,7 +126,7 @@ describe('Send File sender', () => {
     expect(s.cancelled).toEqual([]);
   });
 
-  it('reports a declined offer, a cancelled one and one that timed out as failed', async () => {
+  it('reports a declined offer, a canceled one and one that timed out as failed', async () => {
     const s = setup();
     await s.offer('alice', [file('a.txt')]);
     await s.transfer('alice:1', 'declined', { by: 'peer' });

@@ -94,8 +94,8 @@ export async function bootGateway(opts: GatewayOptions): Promise<LiveGateway> {
     im.IM_TIMING.debounceMs = opts.imDebounceMs;
   }
 
-  // The login budget hangs off the shared globalThis holder, so a fourth gateway in one file would
-  // sit out the server's per-minute login allowance. A real process starts with a fresh one.
+  // The login budget is on the shared globalThis holder, so a fourth gateway in one file would
+  // wait for the server's per-minute login allowance. A real process starts with its own budget.
   const holder = (globalThis as unknown as Record<symbol, { budget?: unknown; host?: unknown } | undefined>)[Symbol.for('openclaw-oscar.runtime')];
   if (holder) delete holder.budget;
 

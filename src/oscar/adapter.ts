@@ -301,7 +301,7 @@ export class KitSession implements OscarSession {
       return;
     }
     let delay = backoffDelay(this.failures, Math.random());
-    // Two gateways on one screen name would evict each other in a tight loop, and a limited login only burns another token.
+    // Two gateways on one screen name would evict each other in a tight loop, and a limited login only uses another token.
     if (reason === 'disconnected-by-server' || reason === 'login-rate-limited') delay = Math.max(delay, SERVER_DISCONNECT_BACKOFF_MS);
     this.setState('backoff', reason, detail);
     this.retryTimer = this.timers.setTimeout(() => {

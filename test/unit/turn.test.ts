@@ -254,7 +254,7 @@ describe('pictures and files', () => {
     expect(sdk.inbound[0]?.input).toMatchObject({ rawText: body });
   });
 
-  it('keeps an approved sender without command authority and with directives neutralised', async () => {
+  it('keeps an approved sender without command authority and with directives neutralized', async () => {
     await dispatchImTurn(turn({ from: 'bob', fromDisplay: 'Bob', text: 'please /exec ls', media: [cat] }), deps());
     expect(sdk.inbound[0]?.ctx).toMatchObject({ CommandAuthorized: false, Body: 'please ∕exec ls' });
     expect(entries().find((e) => e.type === 'oscar_sender')?.payload).toEqual({ role: 'approved' });

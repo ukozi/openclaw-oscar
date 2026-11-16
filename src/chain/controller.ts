@@ -94,9 +94,8 @@ export function resolveBot(raw: string, policy: RootPolicy): string | null {
   return null;
 }
 
-// What sendRoomLine puts on the wire, byte for byte: markup grows on the way out, so a link of
-// thirteen characters leaves as twenty four and a raw count would wave through a line that the
-// room then has to split.
+// The length of what sendRoomLine puts on the wire. Markup adds characters, so a raw count
+// passes a line that the room must then split.
 export function wireLength(markdown: string): number {
   return guardRoll(toAsciiEntities(toWireHtml(markdown))).length;
 }

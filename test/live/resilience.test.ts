@@ -86,7 +86,7 @@ describe.skipIf(env.mode !== 'local')('staying up', () => {
 
     await until(() => bot.session.getState().phase === 'backoff', { timeoutMs: 10_000, what: 'the bot to notice it was displaced' });
     expect(bot.session.getState().reason).toBe('disconnected-by-server');
-    // the first retry is a minute away, so nothing new may be dialled and the newcomer must stay signed on
+    // the first retry is a minute away, so nothing may be dialed and the newcomer must stay signed on
     await holds(() => (stack?.tap?.connections() ?? 0) === connectionsBefore && !intruder.kicked(), { forMs: 20_000, what: 'the bot staying away' });
     intruder.signOff();
   }, 90_000);

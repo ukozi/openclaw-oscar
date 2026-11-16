@@ -614,7 +614,7 @@ describe('Direct IM intake, sending', () => {
     expect(s.intake.send('alice', three, end)).toBe('queued');
     await s.intake.idle();
     expect(s.ends).toEqual(['failed', 'failed']);
-    // A stranger's pictures are refused and counted no longer.
+    // A stranger's pictures are refused and leave the count.
     for (let n = 0; n < 2; n += 1) {
       expect(s.intake.send('mallory', three, end)).toBe('queued');
       await s.intake.idle();
@@ -728,7 +728,7 @@ describe('Direct IM intake, sending', () => {
     await s.opens(OUT, 'alice');
     let release = (): void => {};
     s.state.holdSend = new Promise<void>((resolve) => (release = resolve));
-    // Two messages: the two pictures do not fit in one.
+    // The two pictures do not fit in one message, so two go out.
     const big = (name: string): Picture => {
       const bytes = new Uint8Array(600 * 1024);
       bytes.set(GIF);

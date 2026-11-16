@@ -212,9 +212,9 @@ export function createDirectImIntake(
       close(id, 'stopped');
       return;
     }
-    // The wait for an answer ends here too, should the session never report its end.
+    // The wait for an answer ends here too, if the session never reports its end.
     arm(id, s);
-    // The id of an offer the person made and the bot left unanswered: that offer is taken.
+    // An id the bot left unanswered is an offer the person made, so the bot accepts it.
     if (!unanswered.delete(id)) return;
     try {
       await session.acceptDirectIm(id);
@@ -235,7 +235,7 @@ export function createDirectImIntake(
     const policy = readPolicy(deps.getCfg());
     const verdict = await gate(from, policy);
     if (stopped) return;
-    // Anyone not allowed gets no answer: an answer costs a send.
+    // Anyone not allowed gets no answer, because an answer costs a send.
     if (verdict !== 'allow') {
       if (verdict === 'stranger' && policy.files.directIm) deps.stranger(from, ev.fromDisplay);
       else unanswered.add(ev.id);
@@ -245,7 +245,7 @@ export function createDirectImIntake(
       await decline(ev.id);
       return;
     }
-    // The bot may already hold this offer: it asked to open a session as the offer came.
+    // The bot holds this offer already if it asked to open a session as the offer came.
     let s = live.get(ev.id);
     if (!s) {
       const slot = deps.slots.take(from, 'direct-im');

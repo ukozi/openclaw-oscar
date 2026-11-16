@@ -84,7 +84,7 @@ describe('rate drop and recovery', () => {
     expect(h.rates.map((r) => r.status)).toEqual(['limited', 'clear']);
   });
 
-  it('treats a missing acknowledgement as a silent drop: holds until the level is back, then sends once more with a new cookie', async () => {
+  it('treats a missing acknowledgment as a silent drop, holds until the level is back, then sends once more with a new cookie', async () => {
     await boot(false, true);
     const { send, droppedAt } = await dropOne('dropped once');
     let beforeClear = 0;
@@ -197,7 +197,7 @@ describe('rate drop and recovery', () => {
     expect(h.rates).toEqual([]);
   });
 
-  it('paces an ordinary account: three at once, then it keeps the server average above the alert line', async () => {
+  it('paces an ordinary account with three at once, then keeps the server average above the alert line', async () => {
     await boot(false);
     muteRateNotices(server);
     const sends = Array.from({ length: 5 }, (_, i) => h.session.sendIm('alice', `m${i}`));

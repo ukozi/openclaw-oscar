@@ -93,8 +93,7 @@ function commitMessages(): string {
   } catch {
     return '';
   }
-  // Only the commits that touch this folder: in the chimr monorepo they are what the
-  // public mirror publishes; standing alone, they are every commit.
+  // Only the commits that touch this folder, in case the repository holds other projects.
   return git('log', '--format=%B', '--', '.');
 }
 

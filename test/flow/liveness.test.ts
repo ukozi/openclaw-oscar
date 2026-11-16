@@ -29,7 +29,7 @@ describe('a session that is meant to stay online', () => {
     const atSignOn = userInfoQueries('bos');
     for (let round = 0; round < 5; round++) await h.timers.advance(90_000);
     expect(h.session.getState().phase).toBe('online');
-    // one connecting, one online: a second pair would mean the link died and the session dialled again
+    // one connecting, one online: a second pair would mean the link died and the session dialed again
     expect(h.states.map((s) => s.phase)).toEqual(['connecting', 'online']);
     expect(connections('bos', h.logs)).toBe(1);
     expect(userInfoQueries('bos') - atSignOn).toBe(5);
