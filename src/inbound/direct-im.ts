@@ -23,6 +23,14 @@ function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+// An IM carries about this much; a Direct IM message could carry megabytes.
+function cutText(text: string): string {
+  if (text.length <= FILES_LIMITS.textChars) return text;
+  const cut = text.slice(0, FILES_LIMITS.textChars);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
 export function createDirectImIntake(
   session: Pick<OscarSession, 'on' | 'acceptDirectIm' | 'declineDirectIm' | 'closeDirectIm'>,
   deps: IntakeDeps,
@@ -83,7 +91,12 @@ export function createDirectImIntake(
 
   const onOffer = async (ev: DirectImOfferEvent): Promise<void> => {
     const from = normalizeName(ev.from);
-    const verdict = await gate(from, readPolicy(deps.getCfg()));
+    const policy = readPolicy(deps.getCfg());
+    if (!policy.files.directIm) {
+      await decline(ev.id);
+      return;
+    }
+    const verdict = await gate(from, policy);
     if (stopped) return;
     if (verdict !== 'allow') {
       if (verdict === 'stranger') deps.stranger(from, ev.fromDisplay);
@@ -117,11 +130,13 @@ export function createDirectImIntake(
     const s = live.get(ev.id);
     if (!s) return;
     const policy = readPolicy(deps.getCfg());
-    if ((await gate(s.peer, policy)) !== 'allow') {
+    const verdict = await gate(s.peer, policy);
+    // The idle close does not wait in the queue.
+    if (stopped || live.get(ev.id) !== s) return;
+    if (verdict !== 'allow') {
       close(ev.id, 'the sender is no longer allowed');
       return;
     }
-    if (stopped) return;
     arm(ev.id, s);
     if (ev.autoResponse) return;
     if (ev.damaged) {
@@ -153,7 +168,9 @@ export function createDirectImIntake(
     }
     if (stopped) return;
     for (const why of refusals) deps.refuse(s.peer, why);
-    if (media.length > 0 || ev.text.trim() !== '') deps.deliver({ from: s.peer, fromDisplay: ev.fromDisplay, text: ev.text, media });
+    const text = cutText(ev.text);
+    if (text !== ev.text) deps.log.warn('the text of a Direct IM was cut', { from: s.peer, length: ev.text.length });
+    if (media.length > 0 || text.trim() !== '') deps.deliver({ from: s.peer, fromDisplay: ev.fromDisplay, text, media });
   };
 
   const offs = [

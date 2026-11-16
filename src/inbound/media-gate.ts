@@ -2,7 +2,7 @@ import type { RootPolicy } from '../config.js';
 import { normalizeName } from '../names.js';
 import { roleOf } from '../policy.js';
 
-export const FILES_LIMITS = { perOffer: 3, active: 4, idleMs: 300_000, stallMs: 180_000, transferMs: 900_000, refusalCooldownMs: 60_000 };
+export const FILES_LIMITS = { perOffer: 3, active: 4, idleMs: 300_000, stallMs: 180_000, transferMs: 900_000, refusalCooldownMs: 60_000, textChars: 8000 };
 
 export type Refusal = 'too-large' | 'wrong-type' | 'too-many' | 'busy' | 'busy-others' | 'damaged';
 // silent: the bot itself, a teammate bot, or a listed person the host does not admit.

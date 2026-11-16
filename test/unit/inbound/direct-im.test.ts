@@ -165,6 +165,16 @@ describe('Direct IM intake', () => {
     expect(s.strangers).toEqual([]);
   });
 
+  it('declines every offer while the setting is off', async () => {
+    const s = setup({ files: { directIm: false } });
+    const a = await s.offer('Alice');
+    const m = await s.offer('Mallory');
+    expect(s.calls).toEqual([`decline ${a}`, `decline ${m}`]);
+    expect(s.strangers).toEqual([]);
+    expect(s.refused).toEqual([]);
+    expect(s.slots.active()).toBe(0);
+  });
+
   it('declines a fifth session and tells the sender that others are sending', async () => {
     const s = setup({ allowFrom: ['bob', 'carol', 'dave', 'erin'] });
     for (const name of ['Alice', 'Bob', 'Carol', 'Dave']) await s.offer(name);
@@ -183,11 +193,12 @@ describe('Direct IM intake', () => {
     expect(s.clock.pending()).toBe(0);
   });
 
-  it('accepts no offer that ended while the sender was checked', async () => {
+  it('frees the slot of an offer that ended while the sender was checked', async () => {
     const s = setup();
     s.emit('directImOffer', { id: 'a-1', from: 'alice', fromDisplay: 'Alice' });
     s.emit('directIm', { id: 'a-1', peer: 'alice', state: 'closed', end: 'cancelled', by: 'peer' });
     await s.intake.idle();
+    expect(s.calls).toEqual(['accept a-1']);
     expect(s.slots.active()).toBe(0);
     expect(s.clock.pending()).toBe(0);
   });
@@ -275,6 +286,38 @@ describe('Direct IM intake', () => {
     expect(s.refused).toEqual([]);
     const next = await s.offer('Alice', 'alice-2');
     expect(s.calls.at(-1)).toBe(`accept ${next}`);
+  });
+
+  it('drops a message whose session went idle while the sender was checked', async () => {
+    const s = setup();
+    const id = await s.offer('Alice');
+    let release = (): void => {};
+    s.state.hold = new Promise<void>((resolve) => (release = resolve));
+    s.emit('directMessage', { id, from: 'alice', fromDisplay: 'Alice', text: 'late', autoResponse: false, damaged: false, pictures: [{ name: 'a.png', bytes: PNG }] });
+    await flush();
+    s.clock.advance(FILES_LIMITS.idleMs);
+    await flush();
+    expect(s.calls).toEqual([`accept ${id}`, `close ${id}`]);
+    release();
+    await s.intake.idle();
+    expect(s.delivered).toEqual([]);
+    expect(s.saved).toEqual([]);
+    expect(s.slots.active()).toBe(0);
+    expect(s.clock.pending()).toBe(0);
+  });
+
+  it('cuts text longer than an IM can carry', async () => {
+    const s = setup();
+    const id = await s.offer('Bob');
+    await s.message(id, { from: 'bob', fromDisplay: 'Bob', text: 'a'.repeat(FILES_LIMITS.textChars + 500), pictures: [{ name: 'a.png', bytes: PNG }] });
+    expect(s.delivered[0]?.text).toBe('a'.repeat(FILES_LIMITS.textChars));
+    expect(s.delivered[0]?.media).toHaveLength(1);
+    expect(s.warnings).toContain('the text of a Direct IM was cut');
+    await s.message(id, { from: 'bob', fromDisplay: 'Bob', text: `${'a'.repeat(FILES_LIMITS.textChars - 1)}\u{1f600}` });
+    expect(s.delivered[1]?.text).toBe('a'.repeat(FILES_LIMITS.textChars - 1));
+    await s.message(id, { from: 'bob', fromDisplay: 'Bob', text: 'b'.repeat(FILES_LIMITS.textChars) });
+    expect(s.delivered[2]?.text).toHaveLength(FILES_LIMITS.textChars);
+    expect(s.warnings).toHaveLength(2);
   });
 
   it('closes the session of a sender who is no longer allowed', async () => {
