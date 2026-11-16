@@ -13,7 +13,7 @@ import type { HostAccess } from './load.js';
 import type { SendProblem } from './notes.js';
 import { classify, routeOf } from './plan.js';
 import type { OutFile, Picture } from './plan.js';
-import type { createFileSender } from './send-file.js';
+import type { SendOutcome, createFileSender } from './send-file.js';
 
 export type MediaSender = {
   // Never throws for a file problem. Returns once the sends are started; the endings are told by a line.
@@ -103,15 +103,16 @@ export function createMediaSender(deps: Deps): MediaSender {
     // The lists may have changed while the files loaded.
     if (!allowed(to)) return;
 
+    // No line goes to a person who was taken off the lists while the send waited.
+    const ended = (list: { url: string }[]) => (outcome: SendOutcome): void => {
+      if (outcome !== 'done' && allowed(to)) failed(to, list.map((item) => item.url));
+    };
     if (pictures.length > 0) {
-      deps.directIm?.send(to, pictures.map((item) => item.picture), (outcome) => {
-        if (outcome !== 'done') failed(to, pictures.map((item) => item.url));
-      });
+      const taken = deps.directIm?.send(to, pictures.map((item) => item.picture), ended(pictures));
+      if (taken === 'too-many') note(to, 'too-many');
     }
     if (others.length > 0) {
-      const offered = deps.files?.offer(to, others.map((item) => item.file), (outcome) => {
-        if (outcome !== 'done') failed(to, others.map((item) => item.url));
-      });
+      const offered = deps.files?.offer(to, others.map((item) => item.file), ended(others), () => allowed(to)?.files.sendFile === true);
       if (offered === 'too-many') note(to, 'too-many');
     }
   };

@@ -41,23 +41,30 @@ function setup(files: Record<string, unknown> | undefined = { directIm: true, se
   const notes: { to: string; why: SendProblem; link?: string }[] = [];
   const roomNotes: { room: RoomRef; why: SendProblem }[] = [];
   const pictures: { to: string; pictures: Picture[]; end: End }[] = [];
-  const offers: { to: string; files: OutFile[]; end: End }[] = [];
-  const state = { offer: 'queued' as 'queued' | 'too-many', stopped: 0 };
+  const offers: { to: string; files: OutFile[]; end: End; check?: () => boolean }[] = [];
+  const state = { offer: 'queued' as 'queued' | 'too-many', picture: 'queued' as 'queued' | 'too-many', stopped: 0 };
   const on = (files ?? {}) as { directIm?: boolean; sendFile?: boolean };
   const sender = createMediaSender({
     accountId: 'default', self: () => 'botone', getCfg: () => cfg, now: () => 1, log: silentLog,
     presenceOf: (name) => session.asSession().presenceOf(name),
     files: on.sendFile
       ? {
-          offer: (to, list, end) => {
-            if (state.offer === 'queued') offers.push({ to, files: list, end });
+          offer: (to, list, end, check) => {
+            if (state.offer === 'queued') offers.push({ to, files: list, end, ...(check ? { check } : {}) });
             return state.offer;
           },
           stop: () => void (state.stopped += 1),
           idle: async () => undefined,
         }
       : undefined,
-    directIm: on.directIm ? { send: (to, list, end) => void pictures.push({ to, pictures: list, end }) } : undefined,
+    directIm: on.directIm
+      ? {
+          send: (to, list, end) => {
+            if (state.picture === 'queued') pictures.push({ to, pictures: list, end });
+            return state.picture;
+          },
+        }
+      : undefined,
     note: (to, why, link) => void notes.push({ to, why, ...(link ? { link } : {}) }),
     roomNote: (room, why) => void roomNotes.push({ room, why }),
   });
@@ -214,6 +221,42 @@ describe('sendMediaTo', () => {
     t.state.offer = 'too-many';
     await t.send('alice', [REPORT]);
     expect(t.notes).toEqual([{ to: 'alice', why: 'too-many' }]);
+  });
+
+  it('says so when the person already has three pictures waiting', async () => {
+    const t = setup();
+    t.state.picture = 'too-many';
+    await t.send('alice', [CHART]);
+    expect(t.notes).toEqual([{ to: 'alice', why: 'too-many' }]);
+    expect(t.pictures).toEqual([]);
+  });
+
+  it('gives the file sender a check of the setting and the person for the time the offer goes out', async () => {
+    const t = setup();
+    await t.send('bob', [REPORT]);
+    const check = t.offers[0]?.check;
+    expect(check?.()).toBe(true);
+    t.setCfg({ channels: { oscar: { owners: ['alice'], allowFrom: ['bob'], files: { directIm: true, sendFile: false } } } });
+    expect(check?.()).toBe(false);
+    t.setCfg({ channels: { oscar: { owners: ['alice'], allowFrom: ['bob'], files: { sendFile: true } } } });
+    expect(check?.()).toBe(true);
+    t.setCfg({ channels: { oscar: { owners: ['alice'], files: { sendFile: true } } } });
+    expect(check?.()).toBe(false);
+  });
+
+  it('says nothing about a failed send to a person who was taken off the lists', async () => {
+    const t = setup();
+    await t.send('bob', [REPORT, CHART]);
+    t.setCfg({ channels: { oscar: { owners: ['alice'], files: { directIm: true, sendFile: true } } } });
+    t.offers[0]?.end('failed');
+    t.pictures[0]?.end('failed');
+    expect(t.notes).toEqual([]);
+  });
+
+  it('sends nothing to its own name', async () => {
+    const t = setup({ directIm: true, sendFile: true }, { owners: ['alice', 'botone'] });
+    await t.send('BotOne', [CHART, REPORT]);
+    expect([t.notes, t.pictures, t.offers, sdk.loads]).toEqual([[], [], [], []]);
   });
 
   it('says so when the transfer fails, and gives the link for a url', async () => {
