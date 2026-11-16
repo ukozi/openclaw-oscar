@@ -5,7 +5,7 @@ import type { RoomRef } from '../../../src/names.js';
 import type { ImEvent } from '../../../src/oscar/index.js';
 import { attachProfileStore, effectiveProfile, ProfileStore, storeFileFor } from '../../../src/rooms/profiles.js';
 import { RoomSetup } from '../../../src/rooms/setup.js';
-import { noteUnlistedPresent, onUnlistedJoin, trustNow, unlistedPresent } from '../../../src/rooms/trust.js';
+import { noteUnlistedPresent, onUnlistedJoin, toldCountForTests, trustNow, unlistedPresent } from '../../../src/rooms/trust.js';
 import type { RoomState } from '../../../src/runtime.js';
 import { KEY, policyFixture, ROOM } from '../rooms-fixtures.js';
 
@@ -85,7 +85,7 @@ describe('restoring trust', () => {
       policy: () => h.policy,
       now: () => 7,
       log: silent,
-        rooms: () => rooms,
+      rooms: () => rooms,
       invitedBy: () => undefined,
       ask: async (owner, text) => {
         asks.push({ owner, text });
@@ -206,5 +206,81 @@ describe('trust while someone unlisted is present', () => {
     expect(h.store.get(DEN_KEY)?.profile).toEqual({ mode: 'lounge', trust: 'private' });
     expect(h.store.get(KEY)).toBeUndefined();
     expect(trustNow(h.accountId, h.policy, DEN, ['botone'], 'botone')).toBe('private');
+  });
+
+  it('sends at most contactNotice.maxPerHour notes an hour, even with no cooldown', () => {
+    const h = harness({ contactNotice: { cooldownHours: 0, maxPerHour: 5 } });
+    h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'private' });
+    const crowd = ['botone', ...Array.from({ length: 8 }, (_, i) => `stranger${i}`)];
+    present(h, DEN, crowd, 0);
+    expect(h.notes).toHaveLength(5);
+    present(h, DEN, crowd, HOUR - 1);
+    expect(h.notes).toHaveLength(5);
+    present(h, DEN, crowd, HOUR);
+    expect(h.notes).toHaveLength(10);
+  });
+
+  it('flags a name with unusual letters', () => {
+    const h = harness();
+    h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'private' });
+    present(h, DEN, ['botone', 'аlice']);
+    expect(h.notes).toEqual([`${copy.trustExposed('аlice', 'den')} ${copy.noticeOddName()}`]);
+  });
+
+  describe('memory', () => {
+    const fill = (h: ReturnType<typeof harness>, from: number, count: number, startHour: number): number => {
+      let hour = startHour;
+      for (let i = 0; i < count; i += 60) {
+        const names = Array.from({ length: Math.min(60, count - i) }, (_, j) => `filler${from + i + j}`);
+        present(h, DEN, ['botone', ...names], hour * HOUR);
+        hour += 1;
+      }
+      return hour;
+    };
+
+    it('keeps at most 500 names and forgets the oldest first', () => {
+      const h = harness({ contactNotice: { cooldownHours: 720, maxPerHour: 60 } });
+      h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'private' });
+      present(h, DEN, ['botone', 'mallory'], 0);
+      const hour = fill(h, 0, 499, 1);
+      expect(toldCountForTests(h.accountId)).toBe(500);
+      present(h, DEN, ['botone', 'trudy'], hour * HOUR);
+      expect(toldCountForTests(h.accountId)).toBe(500);
+      const before = h.notes.length;
+      present(h, DEN, ['botone', 'filler0'], hour * HOUR);
+      expect(h.notes).toHaveLength(before);
+      present(h, DEN, ['botone', 'mallory'], hour * HOUR);
+      expect(h.notes).toHaveLength(before + 1);
+      expect(toldCountForTests(h.accountId)).toBe(500);
+    });
+
+    it('forgets names whose cooldown is over before others', () => {
+      const h = harness({ contactNotice: { cooldownHours: 10, maxPerHour: 60 } });
+      h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'private' });
+      fill(h, 0, 60, 0);
+      fill(h, 60, 440, 1);
+      expect(toldCountForTests(h.accountId)).toBe(500);
+      present(h, DEN, ['botone', 'mallory'], 10 * HOUR);
+      expect(toldCountForTests(h.accountId)).toBe(441);
+      const before = h.notes.length;
+      present(h, DEN, ['botone', 'filler60'], 10 * HOUR);
+      expect(h.notes).toHaveLength(before);
+    });
+
+    it('keeps a name told again after its cooldown as the newest', () => {
+      const h = harness({ contactNotice: { cooldownHours: 10, maxPerHour: 60 } });
+      h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'private' });
+      present(h, DEN, ['botone', 'mallory'], 0);
+      fill(h, 0, 498, 1);
+      present(h, DEN, ['botone', 'mallory'], 10 * HOUR);
+      expect(h.notes.filter((n) => n.startsWith('mallory '))).toHaveLength(2);
+      present(h, DEN, ['botone', 'trudy', 'victor'], 10 * HOUR);
+      expect(toldCountForTests(h.accountId)).toBe(500);
+      const before = h.notes.length;
+      present(h, DEN, ['botone', 'mallory'], 10 * HOUR);
+      expect(h.notes).toHaveLength(before);
+      present(h, DEN, ['botone', 'filler0'], 10 * HOUR);
+      expect(h.notes).toHaveLength(before + 1);
+    });
   });
 });
