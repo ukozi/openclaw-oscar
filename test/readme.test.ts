@@ -51,7 +51,15 @@ describe('README says what operators must know', () => {
     ['room rate limit silence', /silent in that room for up to two minutes/],
     ['an invited room that closed is created again', /invited room that closed before the bot joined it is created again/],
     ['a message can arrive twice after a stall', /long server stall, a message from the bot can arrive twice/],
-    ['what is not built', /no TOC transport, no file transfer, no buddy icons and no media/],
+    ['what is not built', /no TOC transport and no buddy icons, and the bot sends no pictures or files/],
+    ['files are off by default', /Both are off by default: set `files\.directIm` to true for pictures, `files\.sendFile` to true for files/],
+    ['who may send files', /Owners and approved people can send the agent pictures over Direct IM and files over Send File/],
+    ['a stranger offer makes no connection', /A stranger's offer is declined before the bot connects anywhere: the stranger gets no reply and the owners get the usual notice/],
+    ['text is accepted by content, Markdown included', /Text is accepted by its content, whatever the file name says, so Markdown, CSV, JSON and log files pass/],
+    ['the limits', /up to `files\.maxMb` megabytes, 10 by default.*at most 3 files and no folders/],
+    ['the relay requirement', /pictures and files need the server's rendezvous relay.*Set `files\.relayHost` when the relay runs on another host/],
+    ['a refused file gets one IM', /An allowed sender whose file is refused gets one short IM saying why/],
+    ['files stay until the host removes them', /stay in OpenClaw's media folder until the host's own retention, `media\.ttlHours`, removes them\. The plugin deletes nothing/],
   ])('%s', (_name, pattern) => {
     expect(flat).toMatch(pattern);
   });
@@ -106,7 +114,7 @@ describe('README config example', () => {
 
 describe('README style', () => {
   it('stays about a screen and a half', () => {
-    expect(lines.length).toBeLessThanOrEqual(110);
+    expect(lines.length).toBeLessThanOrEqual(120);
   });
 
   it('is plain ASCII with no emoji, arrows, dashes or curly quotes', () => {

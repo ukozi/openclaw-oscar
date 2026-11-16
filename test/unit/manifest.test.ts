@@ -20,6 +20,12 @@ describe('package.json', () => {
     expect(pkg.description.length).toBeGreaterThan(12);
   });
 
+  it('keeps the lockfile at the package version', () => {
+    const lock = readJson('package-lock.json');
+    expect(lock.version).toBe(pkg.version);
+    expect(lock.packages[''].version).toBe(pkg.version);
+  });
+
   it('copies the host engines range', () => {
     expect(pkg.engines.node).toBe('>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0');
   });
