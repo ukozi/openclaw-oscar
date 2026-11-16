@@ -2,8 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { waitFor } from 'open-oscar-client-kit/testing';
 import type { FakeOscarServer } from 'open-oscar-client-kit/testing';
 import { ByteReader, RDV_CANCEL_DECLINED, decodeTlvs, encodeRendezvousCancel } from 'open-oscar-client-kit/wire';
+import { Slots } from '../../src/inbound/media-gate.js';
 import { OscarSendError } from '../../src/oscar/index.js';
 import type { FileSink, OscarSessionOptions, OutgoingFile, TransferOptions } from '../../src/oscar/index.js';
+import { createFileSender } from '../../src/sending/send-file.js';
+import type { SendOutcome } from '../../src/sending/send-file.js';
 import { startServer } from '../fake/kit.js';
 import { makeSession, stopAllSessions } from '../fake/session-harness.js';
 import type { Harness } from '../fake/session-harness.js';
@@ -86,6 +89,34 @@ describe('sending from the session', () => {
     expect(h.transfers.every((t) => t.id === id && t.peer === 'alice' && t.direction === 'out')).toBe(true);
     expect(h.transfers.at(-1)).toEqual({ id, peer: 'alice', direction: 'out', state: 'done', index: 0, bytesDone: NOTES.length });
     expect(server.relayed()).toHaveLength(1);
+  });
+
+  it('three files in one offer reach a peer that accepts', async () => {
+    const h = await signOn();
+    const { sink, files } = memorySink();
+    server.peer('alice').acceptOffers(sink);
+    const slots = new Slots();
+    const sender = createFileSender(h.session, { now: h.timers.now, timers: h.timers.api, log: h.logs.log, slots });
+    const big = new Uint8Array(200_000).map((_, i) => i % 251);
+    const ends: SendOutcome[] = [];
+    const sent = [
+      { name: 'notes.md', bytes: NOTES },
+      { name: 'big.bin', bytes: big },
+      { name: 'dot.gif', bytes: GIF },
+    ];
+    expect(sender.offer('Alice', sent, (outcome) => void ends.push(outcome))).toBe('queued');
+    expect(slots.active()).toBe(1);
+    await waitFor(() => ends.length === 1, 'the end of the offer');
+    expect(ends).toEqual(['done']);
+    expect(files).toEqual(sent.map((f) => ({ name: f.name, bytes: Buffer.from(f.bytes) })));
+    const ids = new Set(h.transfers.map((t) => t.id));
+    expect(ids.size).toBe(1);
+    expect(h.transfers.every((t) => t.direction === 'out' && t.peer === 'alice')).toBe(true);
+    expect(h.transfers.at(-1)).toMatchObject({ state: 'done', index: 2 });
+    expect(server.relayed()).toHaveLength(1);
+    expect(slots.active()).toBe(0);
+    sender.stop();
+    await sender.idle();
   });
 
   it('reports a declined file offer', async () => {
