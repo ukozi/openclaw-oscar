@@ -159,7 +159,7 @@ export function createSendFileIntake(
     const policy = readPolicy(deps.getCfg());
     const verdict = await gate(from, policy);
     if (stopped) return;
-    // Anyone not allowed gets no answer: an answer costs a send.
+    // An offer from anyone not allowed waits unanswered; past the limit the oldest is declined.
     if (verdict !== 'allow') {
       if (verdict === 'stranger' && policy.files.sendFile) deps.stranger(from, ev.fromDisplay);
       const oldest = ignored.add(ev.id);
