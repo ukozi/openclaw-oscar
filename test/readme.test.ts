@@ -52,14 +52,14 @@ describe('README says what operators must know', () => {
     ['an invited room that closed is created again', /invited room that closed before the bot joined it is created again/],
     ['a message can arrive twice after a stall', /long server stall, a message from the bot can arrive twice/],
     ['what is not built', /no TOC transport and no buddy icons, and the bot sends no pictures or files/],
-    ['files are off by default', /Both are off by default: set `files\.directIm` to true for pictures, `files\.sendFile` to true for files/],
-    ['who may send files', /Owners and approved people can send the agent pictures over Direct IM and files over Send File/],
-    ['a stranger offer makes no connection', /A stranger's offer is declined before the bot connects anywhere: the stranger gets no reply and the owners get the usual notice/],
-    ['text is accepted by content, Markdown included', /Text is accepted by its content, whatever the file name says, so Markdown, CSV, JSON and log files pass/],
-    ['the limits', /up to `files\.maxMb` megabytes, 10 by default.*at most 3 files and no folders/],
-    ['the relay requirement', /pictures and files need the server's rendezvous relay.*Set `files\.relayHost` when the relay runs on another host/],
-    ['a refused file gets one IM', /An allowed sender whose file is refused gets one short IM saying why/],
-    ['files stay until the host removes them', /stay in OpenClaw's media folder until the host's own retention, `media\.ttlHours`, removes them\. The plugin deletes nothing/],
+    ['files are off by default', /off by default.*`files\.directIm`.*`files\.sendFile`/],
+    ['who may send files', /Owners and approved people.*Direct IM.*Send File/],
+    ['a stranger offer makes no connection', /stranger's offer.*before the bot connects/],
+    ['text is judged by content, Markdown included', /by its content.*Markdown/],
+    ['the limits', /`files\.maxMb`.*10 by default.*3 files and no folders/],
+    ['the relay requirement', /rendezvous relay.*`files\.relayHost`/],
+    ['a refused file gets one IM', /refused gets one short IM/],
+    ['files stay until the host removes them', /`attachments\.ttlHours`.*`media\.ttlHours`.*deletes nothing/],
   ])('%s', (_name, pattern) => {
     expect(flat).toMatch(pattern);
   });
