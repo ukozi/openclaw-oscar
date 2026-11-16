@@ -1,11 +1,13 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { resolveStableChannelMessageIngress } from 'openclaw/plugin-sdk/channel-ingress-runtime';
-import { getMediaDir } from 'openclaw/plugin-sdk/media-runtime';
+import { buildOutboundMediaLoadOptions, getMediaDir } from 'openclaw/plugin-sdk/media-runtime';
 import { loadWebMedia } from 'openclaw/plugin-sdk/web-media';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readPolicy } from '../../src/config.js';
 import { ingressParams } from '../../src/inbound/im.js';
 import { loadOutgoing } from '../../src/sending/load.js';
@@ -48,7 +50,32 @@ describe('real media loader', () => {
   const secret = join(outside, 'secret.png');
   const load = (url: string, role: 'owner' | 'approved', maxBytes = MB) => loadOutgoing({ url, cfg: {}, role, maxBytes, log: silentLog });
 
-  beforeAll(() => {
+  // A public address in numbers: no name is looked up, and the fetch below never reaches it.
+  const REMOTE = 'http://8.8.8.8/slow.bin';
+  const seen: boolean[] = [];
+  // One part, then silence until the signal fires.
+  const stalled = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const signal = init?.signal ?? undefined;
+    seen.push(signal !== undefined);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        signal?.addEventListener('abort', () => controller.error(signal.reason));
+      },
+    });
+    return new Response(body, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
+  };
+  let server: Server;
+  let port = 0;
+  let hits = 0;
+
+  beforeAll(async () => {
+    server = createServer((_req, res) => {
+      hits += 1;
+      res.writeHead(200, { 'content-type': 'image/png' }).end(PNG);
+    });
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    port = (server.address() as { port: number }).port;
     mkdirSync(join(media, 'outbound'), { recursive: true });
     mkdirSync(join(media, 'inbound'), { recursive: true });
     writeFileSync(chart, PNG);
@@ -59,16 +86,42 @@ describe('real media loader', () => {
     symlinkSync(join(media, 'inbound'), join(media, 'outbound', 'door'));
   });
 
+  afterAll(async () => {
+    await new Promise((done) => server.close(done));
+    rmSync(outside, { recursive: true, force: true });
+  });
+
   it("the SDK's loader refuses a path outside the roots", async () => {
     await expect(loadWebMedia(secret, { localRoots: [media], optimizeImages: false })).rejects.toMatchObject({ name: 'LocalMediaAccessError', code: 'path-not-allowed' });
     expect(await load(secret, 'approved')).toEqual({ ok: false, why: 'not-allowed' });
     expect(await load(secret, 'owner')).toEqual({ ok: false, why: 'not-allowed' });
   });
 
-  it('refuses a loopback address', async () => {
-    await expect(loadWebMedia('http://127.0.0.1:9/x.png', { maxBytes: MB, optimizeImages: false })).rejects.toThrow();
-    expect(await load('http://127.0.0.1:9/x.png', 'approved')).toEqual({ ok: false, why: 'failed' });
-    expect(await load('http://localhost:9/x.png', 'owner')).toEqual({ ok: false, why: 'failed' });
+  it('refuses a loopback address and never asks it', async () => {
+    for (const host of ['127.0.0.1', 'localhost']) {
+      const url = `http://${host}:${port}/x.png`;
+      await expect(loadWebMedia(url, { maxBytes: MB, optimizeImages: false }), host).rejects.toThrow(/blocked|private|internal/i);
+      expect(await load(url, 'approved'), host).toEqual({ ok: false, why: 'failed' });
+      expect(await load(url, 'owner'), host).toEqual({ ok: false, why: 'failed' });
+    }
+    expect(hits).toBe(0);
+    expect((await fetch(`http://127.0.0.1:${port}/x.png`)).status).toBe(200);
+    expect(hits).toBe(1);
+  });
+
+  it('ends a remote load when the signal fires', async () => {
+    const options = buildOutboundMediaLoadOptions({ maxBytes: MB, optimizeImages: false, fetchImpl: stalled, requestInit: { signal: AbortSignal.timeout(200) } });
+    const started = Date.now();
+    await expect(loadWebMedia(REMOTE, options)).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(seen.at(-1)).toBe(true);
+  });
+
+  it('ends a remote load that sends nothing for too long', async () => {
+    const options = { ...buildOutboundMediaLoadOptions({ maxBytes: MB, optimizeImages: false, fetchImpl: stalled }), readIdleTimeoutMs: 200 };
+    const started = Date.now();
+    await expect(loadWebMedia(REMOTE, options)).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   it('gives a file of the media folder whole, with its name and type', async () => {

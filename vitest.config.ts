@@ -1,9 +1,10 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 const stateDir = mkdtempSync(join(tmpdir(), 'openclaw-test-state-'));
+process.once('exit', () => rmSync(stateDir, { recursive: true, force: true }));
 
 export default defineConfig({
   test: {
