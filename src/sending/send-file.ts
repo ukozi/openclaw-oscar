@@ -12,6 +12,7 @@ type Offer = {
   to: string;
   files: OutFile[];
   onEnd: (outcome: SendOutcome) => void;
+  check?: () => boolean;
   over: boolean;
   id?: string;
   // What the session told before the id was known.
@@ -46,7 +47,8 @@ export function createFileSender(
   deps: { now: () => number; timers: Timers; log: Logger; slots: Slots },
 ): {
   // 'too-many' when the person already has 3 files waiting or moving. onEnd is called once.
-  offer(to: string, files: OutFile[], onEnd: (outcome: SendOutcome) => void): 'queued' | 'too-many';
+  // check is asked when the offer goes out; an offer it refuses ends as failed.
+  offer(to: string, files: OutFile[], onEnd: (outcome: SendOutcome) => void, check?: () => boolean): 'queued' | 'too-many';
   stop(): void;
   idle(): Promise<void>;
 } {
@@ -147,12 +149,27 @@ export function createFileSender(
     );
   };
 
+  const still = (o: Offer): boolean => {
+    try {
+      return o.check === undefined || o.check();
+    } catch (err) {
+      deps.log.warn('a file offer could not be checked', { to: o.to, error: errText(err) });
+      return false;
+    }
+  };
+
   // Starts the first offer of each person who has none moving, while slots are free.
   function pump(): void {
     if (stopped) return;
     for (const [to, person] of [...people]) {
       const next = person.waiting[0];
       if (person.moving || !next) continue;
+      if (!still(next)) {
+        deps.log.info('a file offer is no longer allowed', { to });
+        // Ending it starts what waits behind it.
+        finish(next, 'failed');
+        continue;
+      }
       if (deps.slots.take(to, 'send-file-out') !== 'ok') continue;
       person.waiting.shift();
       person.moving = next;
@@ -172,12 +189,12 @@ export function createFileSender(
   });
 
   return {
-    offer(to, files, onEnd) {
+    offer(to, files, onEnd, check) {
       const name = normalizeName(to);
       const person = people.get(name) ?? { waiting: [] };
       const held = (person.moving?.files.length ?? 0) + person.waiting.reduce((sum, w) => sum + w.files.length, 0);
       if (stopped || held + files.length > FILES_LIMITS.perSend) return 'too-many';
-      const o: Offer = { to: name, files, onEnd, over: false, early: [] };
+      const o: Offer = { to: name, files, onEnd, over: false, early: [], ...(check ? { check } : {}) };
       people.set(name, person);
       person.waiting.push(o);
       o.wait = deps.timers.setTimeout(() => expire(o, 'no free slot in time'), FILES_LIMITS.transferMs);

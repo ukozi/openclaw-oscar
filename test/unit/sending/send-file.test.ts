@@ -173,6 +173,42 @@ describe('Send File sender', () => {
     expect(FILES_LIMITS.perSend).toBe(3);
   });
 
+  it('asks again before a waiting offer goes out, and drops one that is no longer allowed', async () => {
+    const s = setup();
+    let ok = true;
+    const asked: string[] = [];
+    const check = (tag: string) => (): boolean => {
+      asked.push(tag);
+      return ok;
+    };
+    const end = (tag: string) => (outcome: SendOutcome): void => void (s.ends[tag] ??= []).push(outcome);
+    expect(s.sender.offer('alice', [file('a.txt')], end('first'), check('first'))).toBe('queued');
+    expect(s.sender.offer('alice', [file('b.txt')], end('second'), check('second'))).toBe('queued');
+    expect(s.sender.offer('alice', [file('c.txt')], end('third'), () => true)).toBe('queued');
+    await s.sender.idle();
+    expect(asked).toEqual(['first']);
+    ok = false;
+    await s.transfer('alice:1', 'done');
+    expect(asked).toEqual(['first', 'second']);
+    // The second is dropped, with nothing offered and nothing to cancel; the third goes out.
+    expect(s.ends).toEqual({ first: ['done'], second: ['failed'] });
+    expect(s.sent.map((c) => c.files.map((f) => f.name))).toEqual([['a.txt'], ['c.txt']]);
+    expect(s.cancelled).toEqual([]);
+    await s.transfer('alice:2', 'done');
+    expect(s.slots.active()).toBe(0);
+    expect(s.clock.pending()).toBe(0);
+  });
+
+  it('drops an offer whose check throws', async () => {
+    const s = setup();
+    const result = s.sender.offer('alice', [file('a.txt')], (outcome) => void (s.ends.alice ??= []).push(outcome), () => {
+      throw new Error('boom');
+    });
+    await s.sender.idle();
+    expect(result).toBe('queued');
+    expect([s.sent, s.ends, s.slots.active(), s.clock.pending()]).toEqual([[], { alice: ['failed'] }, 0, 0]);
+  });
+
   it('waits for a slot and starts when one is free', async () => {
     const s = setup();
     for (const name of ['p1', 'p2', 'p3']) s.slots.take(name, 'send-file');
