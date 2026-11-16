@@ -280,6 +280,18 @@ describe('sendMedia', () => {
     expect(res).toEqual({ messageId: '1', chatId: 'alice' });
   });
 
+  it('cuts a long caption to the chunk limit and hands the file over once', async () => {
+    const calls = withSender();
+    const limit = 200;
+    const caption = Array.from({ length: 120 }, (_, i) => `word${i}`).join(' ');
+    const res = await sendAdapterMedia({ cfg: cfg({ textChunkLimit: limit }), to: 'alice', text: caption, mediaUrl: '/work/chart.png' });
+    expect(session.sent.length).toBeGreaterThan(1);
+    for (const sent of session.sent) expect(sent.html.length).toBeLessThanOrEqual(limit);
+    expect(session.sent.map((s) => s.html.trim()).join(' ').split(/\s+/)).toEqual(caption.split(' '));
+    expect(calls.map((c) => c.sentBefore)).toEqual([session.sent.length]);
+    expect(res).toEqual({ messageId: String(session.sent.length), chatId: 'alice' });
+  });
+
   it('sendMedia with no caption returns a result', async () => {
     const calls = withSender();
     for (const text of ['', '  ', undefined]) {

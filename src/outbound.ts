@@ -172,8 +172,11 @@ export type AdapterMediaContext = {
 
 // The caption goes out as an IM; the file follows on its own path.
 export async function sendAdapterMedia(ctx: AdapterMediaContext): Promise<{ messageId: string; chatId: string }> {
-  const text = ctx.text ?? '';
-  const sent = text.trim() !== '' ? await sendAdapterText({ cfg: ctx.cfg, to: ctx.to, text, accountId: ctx.accountId }) : undefined;
+  // The host hands over a caption whole.
+  let sent: { messageId: string; chatId: string } | undefined;
+  for (const text of chunkText(ctx.text ?? '', resolveAccount(liveConfig(ctx.cfg), ctx.accountId).textChunkLimit)) {
+    if (text.trim() !== '') sent = await sendAdapterText({ cfg: ctx.cfg, to: ctx.to, text, accountId: ctx.accountId });
+  }
   const checked = checkTarget(ctx);
   if (!checked.ok) throw checked.error;
   const media = getRuntime(checked.accountId)?.media;
