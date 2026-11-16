@@ -73,6 +73,18 @@ describe('Slots', () => {
     slots.release('alice', 'direct-im');
     expect(slots.active()).toBe(1);
   });
+
+  it('counts a file the bot sends apart from one it takes, within the same four', () => {
+    const slots = new Slots();
+    expect(slots.take('alice', 'send-file')).toBe('ok');
+    expect(slots.take('alice', 'send-file-out')).toBe('ok');
+    expect(slots.take('Alice', 'send-file-out')).toBe('busy');
+    expect(slots.take('bob', 'send-file-out')).toBe('ok');
+    expect(slots.take('carol', 'direct-im')).toBe('ok');
+    expect(slots.take('dave', 'send-file-out')).toBe('busy-others');
+    slots.release('alice', 'send-file-out');
+    expect(slots.take('dave', 'send-file-out')).toBe('ok');
+  });
 });
 
 describe('createRefusals', () => {

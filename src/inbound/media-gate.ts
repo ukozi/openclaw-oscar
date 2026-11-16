@@ -5,12 +5,12 @@ import { normalizeName } from '../names.js';
 import type { Logger } from '../oscar/index.js';
 import { roleOf } from '../policy.js';
 
-export const FILES_LIMITS = { perOffer: 3, active: 4, idleMs: 300_000, stallMs: 180_000, transferMs: 900_000, refusalCooldownMs: 60_000, textChars: 8000, ignoredOffers: 12 };
+export const FILES_LIMITS = { perOffer: 3, perSend: 3, active: 4, idleMs: 300_000, stallMs: 180_000, transferMs: 900_000, refusalCooldownMs: 60_000, textChars: 8000, ignoredOffers: 12 };
 
 export type Refusal = 'too-large' | 'wrong-type' | 'too-many' | 'busy' | 'busy-others' | 'damaged';
 // silent: the bot itself, a teammate bot, or a listed person the host does not admit.
 export type GateResult = 'allow' | 'stranger' | 'silent';
-export type TransferKind = 'direct-im' | 'send-file';
+export type TransferKind = 'direct-im' | 'send-file' | 'send-file-out';
 
 export async function senderGate(p: {
   from: string;
@@ -89,5 +89,5 @@ export function createRefusals(p: {
   };
 }
 
-export type TurnMedia = { path: string; contentType: string; kind: 'image' | 'document'; name: string; bytes: number; via: TransferKind };
+export type TurnMedia = { path: string; contentType: string; kind: 'image' | 'document'; name: string; bytes: number; via: Exclude<TransferKind, 'send-file-out'> };
 export type MediaEvent = { from: string; fromDisplay: string; text: string; media: TurnMedia[] };
