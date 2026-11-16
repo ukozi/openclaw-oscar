@@ -296,15 +296,19 @@ describe('sendMediaTo', () => {
   });
 
   it('never throws when a sender throws', async () => {
+    setup();
+    const reached: string[] = [];
     const broken = createMediaSender({
-      accountId: 'default', self: () => 'botone', getCfg: () => ({ channels: { oscar: { owners: ['alice'], files: { sendFile: true } } } }), now: () => 1, log: silentLog,
+      accountId: 'default', self: () => 'botone', getCfg: () => ({ channels: { oscar: { owners: ['alice'], files: { directIm: true, sendFile: true } } } }), now: () => 1, log: silentLog,
       presenceOf: () => undefined,
-      files: { offer: () => { throw new Error('boom'); }, stop: () => undefined, idle: async () => undefined },
-      directIm: undefined,
+      files: { offer: () => { reached.push('offer'); throw new Error('boom'); }, stop: () => undefined, idle: async () => undefined },
+      directIm: { send: () => { reached.push('picture'); throw new Error('boom'); } },
       note: () => undefined,
       roomNote: () => undefined,
     });
     await expect(broken.sendMediaTo({ cfg: {}, accountId: 'default', to: 'alice', urls: [REPORT] })).resolves.toBeUndefined();
+    await expect(broken.sendMediaTo({ cfg: {}, accountId: 'default', to: 'alice', urls: [CHART] })).resolves.toBeUndefined();
+    expect(reached).toEqual(['offer', 'picture']);
   });
 
   it('offers nothing when the person was taken off the lists while the file loaded', async () => {
