@@ -137,6 +137,8 @@ export const copy = {
   setupConfigRoom: (room: string): string => `${room} is set in my config.`,
   trustDowngraded: (name: string, room: string): string =>
     `${name} joined ${room}, who isn't on my lists. I'm treating ${room} as public now. Reply '${room} private' to change it back.`,
+  trustExposed: (name: string, room: string): string =>
+    `${name} is in ${room} and isn't on my lists. I'm treating ${room} as public while they are there.`,
   ownersMissing: (entry: string): string =>
     `OpenClaw doesn't treat you as an owner over IM, so some of my tools refuse you. Reply 'fix owners' and I'll add ${entry} to commands.ownerAllowFrom.`,
   ownersFixed: (list: string): string => `Added ${list} to commands.ownerAllowFrom.`,

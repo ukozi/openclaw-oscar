@@ -10,7 +10,7 @@ function samples(): string[] {
     copy.noticeIm('mallory'), copy.noticeInvite('mallory'),
     copy.noticeApprove('mallory', true), copy.noticeApprove('mallory', false),
     copy.noticeOddName(), copy.noticeRollup(1), copy.noticeRollup(4),
-    copy.unlistedJoin('mallory', 'testroom'), copy.inviteFull(),
+    copy.unlistedJoin('mallory', 'testroom'), copy.trustExposed('mallory', 'testroom'), copy.inviteFull(),
     copy.ack(''), copy.busy(''), copy.closing(), copy.takeover('botone'), copy.mismatch('botone', 'bottwo'),
     copy.outcome('botone', '2-k7f3', 'done'), copy.outcome('botone', '2-k7f3', 'none'), copy.outcome('botone', '2-k7f3', 'failed'),
     copy.awayDefault(),
@@ -40,6 +40,7 @@ describe('copy', () => {
     expect(copy.noticeOddName()).toBe('That name contains unusual letters.');
     expect(copy.noticeRollup(4)).toBe('4 more people tried to reach me this hour. I did not reply to any of them.');
     expect(copy.unlistedJoin('mallory', 'testroom')).toBe('mallory joined testroom. They are not on my lists.');
+    expect(copy.trustExposed('mallory', 'testroom')).toBe("mallory is in testroom and isn't on my lists. I'm treating testroom as public while they are there.");
     expect(copy.inviteFull()).toBe("I can't join right now, I'm in too many rooms.");
     expect(copy.closing()).toBe('nothing to add');
     expect(copy.takeover('botone')).toBe("botone is quiet, I'll take this.");

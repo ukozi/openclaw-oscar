@@ -26,6 +26,7 @@ import { getRunTracker } from './presence/runs.js';
 import { attachProfileStore, ProfileStore, profileStore, storeFileFor } from './rooms/profiles.js';
 import { attachRoomSetup, leaveRoomNow } from './rooms/leave.js';
 import { RoomSetup } from './rooms/setup.js';
+import { forgetUnlistedPresent, noteUnlistedPresent } from './rooms/trust.js';
 import {
   clearRuntime, createPasswordGuard, currentGeneration, getRuntime, liveConfig, nextGeneration, roomKey, setRuntime, sharedLoginBudget,
 } from './runtime.js';
@@ -189,6 +190,14 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     contacted: (peer) => presence.contacted(peer),
     updateBuddies: () => session.updateBuddies(),
   });
+  const tellEveryOwner = async (text: string): Promise<void> => {
+    for (const owner of readPolicy(getCfg()).owners) {
+      if (owner === self()) continue;
+      await sendNotice({ cfg: getCfg(), accountId, bot: self(), owner, text }).catch((err: unknown) => {
+        log.warn('owner note was not delivered', { owner, error: err instanceof Error ? err.message : String(err) });
+      });
+    }
+  };
   const detachRooms = attachRooms(rt, {
     policy: () => readPolicy(getCfg()),
     self: () => session.selfInfo()?.screenName ?? account.display,
@@ -207,14 +216,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
         });
       }
     },
-    tellEveryOwner: async (text) => {
-      for (const owner of readPolicy(getCfg()).owners) {
-        if (owner === self()) continue;
-        await sendNotice({ cfg: getCfg(), accountId, bot: self(), owner, text }).catch((err: unknown) => {
-          log.warn('owner note was not delivered', { owner, error: err instanceof Error ? err.message : String(err) });
-        });
-      }
-    },
+    tellEveryOwner,
     contacts: () => notices.ring().map((entry) => ({ name: entry.name, kind: entry.kind, at: entry.lastAt })),
   });
   const chain = installChain({ rt, getCfg, tracker: getRunTracker(), log });
@@ -228,6 +230,10 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     record: (ev) => sink.record(ev),
     replay: (ev) => chain.onRoomMessage(ev),
     leave: (ref) => leaveRoomNow(rt, ref, readPolicy(getCfg())),
+    exposed: (ref) => noteUnlistedPresent({
+      accountId, policy: readPolicy(getCfg()), ref, occupants: rt.rooms.get(roomKey(ref))?.occupants ?? [], self: self(), now: now(),
+      tell: (text) => void tellEveryOwner(text),
+    }),
   });
   chain.setGate(setup);
   attachRoomSetup(accountId, setup);
@@ -285,6 +291,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     if (getRuntime(accountId) === rt) clearRuntime(accountId);
     if (profileStore(accountId) === profiles) attachProfileStore(accountId, null);
     attachRoomSetup(accountId, null);
+    forgetUnlistedPresent(accountId);
     await profiles.flush();
     ctx.setStatus({ ...ctx.getStatus(), accountId, running: false, connected: false, lastStopAt: now() });
   });

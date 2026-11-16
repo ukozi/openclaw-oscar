@@ -5,7 +5,7 @@ import type { RoomRef } from '../../../src/names.js';
 import type { ImEvent } from '../../../src/oscar/index.js';
 import { attachProfileStore, effectiveProfile, ProfileStore, storeFileFor } from '../../../src/rooms/profiles.js';
 import { RoomSetup } from '../../../src/rooms/setup.js';
-import { onUnlistedJoin } from '../../../src/rooms/trust.js';
+import { noteUnlistedPresent, onUnlistedJoin, trustNow, unlistedPresent } from '../../../src/rooms/trust.js';
 import type { RoomState } from '../../../src/runtime.js';
 import { KEY, policyFixture, ROOM } from '../rooms-fixtures.js';
 
@@ -85,7 +85,7 @@ describe('restoring trust', () => {
       policy: () => h.policy,
       now: () => 7,
       log: silent,
-      rooms: () => rooms,
+        rooms: () => rooms,
       invitedBy: () => undefined,
       ask: async (owner, text) => {
         asks.push({ owner, text });
@@ -93,6 +93,7 @@ describe('restoring trust', () => {
       record: () => {},
       replay: () => {},
       leave: async () => 'left',
+      exposed: () => {},
     });
     const im = (text: string) => setup.onIm({ from: 'alice', fromDisplay: 'alice', text, cookie: 1n } as ImEvent);
     return { asks, im };
@@ -124,5 +125,86 @@ describe('restoring trust', () => {
     const s = setupFor(h);
     s.im('den private');
     expect(h.store.get(DEN_KEY)?.profile).toEqual({ mode: 'team', trust: 'private' });
+  });
+});
+
+describe('trust while someone unlisted is present', () => {
+  const HOUR = 3_600_000;
+
+  function present(h: ReturnType<typeof harness>, ref: RoomRef, occupants: string[], now = 0): void {
+    noteUnlistedPresent({ accountId: h.accountId, policy: h.policy, ref, occupants, self: 'BotOne', now, tell: (text) => h.notes.push(text) });
+  }
+
+  it('lists the unlisted occupants other than the bot', () => {
+    const h = harness({ allowFrom: ['carol'] });
+    expect(unlistedPresent(['botone', 'alice', 'carol', 'bottwo', 'mallory', 'trudy'], 'BotOne', h.policy)).toEqual(['mallory', 'trudy']);
+    expect(unlistedPresent(['botone'], 'botone', h.policy)).toEqual([]);
+  });
+
+  it('treats a private room as public while someone unlisted is present', () => {
+    const h = harness(privateHome());
+    h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'private' });
+    expect(trustNow(h.accountId, h.policy, DEN, ['botone', 'alice', 'mallory'], 'botone')).toBe('public');
+    expect(trustNow(h.accountId, h.policy, ROOM, ['botone', 'mallory'], 'botone')).toBe('public');
+  });
+
+  it('treats a room with no trust set as public while someone unlisted is present', () => {
+    const h = harness();
+    expect(trustNow(h.accountId, h.policy, ROOM, ['botone', 'alice'], 'botone')).toBeUndefined();
+    expect(trustNow(h.accountId, h.policy, ROOM, ['botone', 'alice', 'mallory'], 'botone')).toBe('public');
+  });
+
+  it('keeps a private room private when only owners, approved people and teammates are present', () => {
+    const h = harness({ allowFrom: ['carol'] });
+    h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'private' });
+    expect(trustNow(h.accountId, h.policy, DEN, ['botone', 'alice', 'bob', 'carol', 'bottwo'], 'botone')).toBe('private');
+  });
+
+  it('adds no trust line while the settings are pending', () => {
+    const h = harness();
+    expect(trustNow(h.accountId, h.policy, DEN, ['botone', 'mallory'], 'botone')).toBeUndefined();
+  });
+
+  it('is private again after the unlisted person leaves', () => {
+    const h = harness();
+    h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'private' });
+    const occupants = new Set(['botone', 'alice', 'mallory']);
+    expect(trustNow(h.accountId, h.policy, DEN, occupants, 'botone')).toBe('public');
+    occupants.delete('mallory');
+    expect(trustNow(h.accountId, h.policy, DEN, occupants, 'botone')).toBe('private');
+  });
+
+  it('tells once per person in a private room and says nothing for a public or pending one', () => {
+    const h = harness();
+    present(h, DEN, ['botone', 'mallory']);
+    h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'public' });
+    present(h, DEN, ['botone', 'mallory']);
+    expect(h.notes).toEqual([]);
+    h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'private' });
+    present(h, DEN, ['botone', 'alice', 'mallory', 'trudy', 'bottwo']);
+    expect(h.notes).toEqual([copy.trustExposed('mallory', 'den'), copy.trustExposed('trudy', 'den')]);
+  });
+
+  it('tells once for the same person and room within the cooldown', () => {
+    const h = harness();
+    h.store.setProfile(DEN_KEY, { mode: 'team', trust: 'private' });
+    h.store.setProfile('room:4:attic', { mode: 'team', trust: 'private' });
+    present(h, DEN, ['botone', 'mallory'], 0);
+    present(h, DEN, ['botone', 'mallory'], 5 * HOUR);
+    present(h, { exchange: 4, name: 'attic' }, ['botone', 'mallory'], 5 * HOUR);
+    expect(h.notes).toEqual([copy.trustExposed('mallory', 'den'), copy.trustExposed('mallory', 'attic')]);
+    present(h, DEN, ['botone', 'mallory'], 6 * HOUR);
+    expect(h.notes).toHaveLength(3);
+  });
+
+  it('stores nothing for someone who was already present', () => {
+    const h = harness(privateHome());
+    h.store.setProfile(DEN_KEY, { mode: 'lounge', trust: 'private' });
+    present(h, DEN, ['botone', 'mallory']);
+    present(h, ROOM, ['botone', 'mallory']);
+    expect(h.notes).toHaveLength(2);
+    expect(h.store.get(DEN_KEY)?.profile).toEqual({ mode: 'lounge', trust: 'private' });
+    expect(h.store.get(KEY)).toBeUndefined();
+    expect(trustNow(h.accountId, h.policy, DEN, ['botone'], 'botone')).toBe('private');
   });
 });

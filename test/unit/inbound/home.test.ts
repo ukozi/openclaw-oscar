@@ -9,6 +9,7 @@ import { roomIssues } from '../../../src/inbound/issues.js';
 import { setRoomBrain } from '../../../src/inbound/room.js';
 import type { RoomRef } from '../../../src/names.js';
 import { attachProfileStore, ProfileStore, storeFileFor } from '../../../src/rooms/profiles.js';
+import { forgetUnlistedPresent } from '../../../src/rooms/trust.js';
 import { applyRoomReady, roomsExt } from '../../../src/runtime.js';
 import { KEY, ROOM, fakeSession, flush, line, makeRt, manualTimers, policyFixture, roomDeps } from '../rooms-fixtures.js';
 
@@ -31,6 +32,7 @@ function setup(over: Partial<RootPolicy> = {}, online = true) {
 afterEach(() => {
   for (const detach of detachers.splice(0)) detach();
   setRoomBrain('botone', null);
+  forgetUnlistedPresent('botone');
 });
 
 describe('home room', () => {
@@ -214,6 +216,26 @@ describe('unlisted-join note', () => {
     expect(store.get(KEY)?.trustOverride).toBe('public');
     expect(s.ownerNotes).toEqual([]);
     expect(s.everyOwnerNotes).toEqual([copy.trustDowngraded('Mallory', 'testroom')]);
+  });
+
+  it('tells every owner when someone unlisted was already in a private room at join', async () => {
+    const s = setup({ owners: ['alice', 'bob'], room: { ref: ROOM, historyFrom: 'listed', notifyOnUnlistedJoin: true, profile: { mode: 'team' as const, trust: 'private' as const } } });
+    s.fake.emit('roomReady', { room: DEN, occupants: ['botone', 'mallory'] });
+    s.fake.emit('roomReady', { room: ROOM, occupants: ['BotOne', 'alice', 'Mallory'] });
+    await flush();
+    expect(s.everyOwnerNotes).toEqual([copy.trustExposed('mallory', 'testroom')]);
+    expect(s.ownerNotes).toEqual([]);
+    s.fake.emit('roomClosed', { room: ROOM, willRejoin: true });
+    s.fake.emit('roomReady', { room: ROOM, occupants: ['botone', 'alice', 'mallory'] });
+    await flush();
+    expect(s.everyOwnerNotes).toHaveLength(1);
+  });
+
+  it('says nothing at join when the room is not private', async () => {
+    const s = setup();
+    s.fake.emit('roomReady', { room: ROOM, occupants: ['botone', 'alice', 'mallory'] });
+    await flush();
+    expect(s.everyOwnerNotes).toEqual([]);
   });
 
   it('stops at the hourly cap', async () => {

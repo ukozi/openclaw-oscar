@@ -11,11 +11,12 @@ import {
   unregisterRooms,
 } from '../../../src/inbound/room.js';
 import type { RoomTurn } from '../../../src/inbound/room.js';
+import { copy } from '../../../src/copy.js';
 import { soloPrompt } from '../../../src/inbound/solo.js';
 import type { RootPolicy } from '../../../src/config.js';
 import type { RoomMessageEvent } from '../../../src/oscar/index.js';
 import { neutralizeDirectives } from '../../../src/policy.js';
-import { applyRoomReady, roomsExt, touchActivity } from '../../../src/runtime.js';
+import { applyRoomLeave, applyRoomReady, roomsExt, touchActivity } from '../../../src/runtime.js';
 import type { AccountRuntime } from '../../../src/runtime.js';
 import { KEY, ROOM, fakeSession, flush, line, makeRt, policyFixture, roomDeps, silentLog } from '../rooms-fixtures.js';
 
@@ -207,7 +208,7 @@ describe('wake', () => {
       commandAuthorized: true,
     });
     expect(req?.group?.label).toBe('testroom');
-    expect(req?.group?.systemPrompt).toBe(`${soloPrompt('BotOne')}\n\nKeep answers short.`);
+    expect(req?.group?.systemPrompt).toBe(`${soloPrompt('BotOne')}\n\nKeep answers short.\n\n${copy.trustLine('public')}`);
     expect(req?.group?.history.map((h) => `${h.sender}: ${h.body}`)).toEqual(['bob (approved): earlier']);
     expect(req?.untrustedContext[0]).toEqual({
       label: 'Room',
@@ -310,7 +311,7 @@ describe('brain seam and sink', () => {
     await sink.wake(turn({ body: 'from a brain', botLoopProtection: { scopeId: 'a', conversationId: KEY, senderId: 'bottwo', receiverId: 'botone', defaultEnabled: true } }));
     expect(s.records.map((r) => r.text)).toEqual(['kept']);
     expect(s.turns[0]?.text).toBe('from a brain');
-    expect(s.turns[0]?.group?.systemPrompt).toBe('P');
+    expect(s.turns[0]?.group?.systemPrompt).toBe(`P\n\n${copy.trustLine('public')}`);
     expect(s.turns[0]?.botLoopProtection?.senderId).toBe('bottwo');
     expect(s.turns[0]?.untrustedContext[0]?.payload).toMatchObject({ omitted: omittedLine(1) });
   });
@@ -320,16 +321,33 @@ describe('brain seam and sink', () => {
       room: { ref: ROOM, historyFrom: 'listed', notifyOnUnlistedJoin: true, profile: { mode: 'team', trust: 'private' } },
       rooms: { testroom: { systemPrompt: 'Keep answers short.', profile: { mode: 'team' } } },
     });
+    applyRoomLeave(s.rt, ROOM, 'mallory', 'botone', 2);
     await roomSink('botone').wake(turn());
     expect(s.turns[0]?.group?.systemPrompt).toBe('P\n\nKeep answers short.\n\n'
       + 'This room is private: only your owner and your teammates are here. '
       + 'You may talk about personal details your owner has shared with you.');
   });
 
-  it('leaves the system prompt alone when the room has no trust', async () => {
+  it('treats a private room as public while someone unlisted is present', async () => {
+    const s = setup({ room: { ref: ROOM, historyFrom: 'listed', notifyOnUnlistedJoin: true, profile: { mode: 'team', trust: 'private' } } });
+    await roomSink('botone').wake(turn());
+    expect(s.turns[0]?.group?.systemPrompt).toBe(`P\n\n${copy.trustLine('public')}`);
+    applyRoomLeave(s.rt, ROOM, 'mallory', 'botone', 2);
+    await roomSink('botone').wake(turn({ body: 'again' }));
+    expect(s.turns[1]?.group?.systemPrompt).toBe(`P\n\n${copy.trustLine('private')}`);
+  });
+
+  it('leaves the system prompt alone when the room has no trust and nobody unlisted is present', async () => {
     const s = setup({ rooms: { testroom: { systemPrompt: 'Keep answers short.', profile: { mode: 'team' } } } });
+    applyRoomLeave(s.rt, ROOM, 'mallory', 'botone', 2);
     await roomSink('botone').wake(turn());
     expect(s.turns[0]?.group?.systemPrompt).toBe('P\n\nKeep answers short.');
+  });
+
+  it('gives a room with no trust the public line while someone unlisted is present', async () => {
+    const s = setup({ rooms: { testroom: { systemPrompt: 'Keep answers short.', profile: { mode: 'team' } } } });
+    await roomSink('botone').wake(turn());
+    expect(s.turns[0]?.group?.systemPrompt).toBe(`P\n\nKeep answers short.\n\n${copy.trustLine('public')}`);
   });
 
   it('puts the facts a brain adds after the room entry and nowhere else', async () => {
@@ -339,7 +357,7 @@ describe('brain seam and sink', () => {
     await roomSink('botone').wake(turn({ body: 'again' }));
     expect(s.turns[0]?.untrustedContext.map((entry) => entry.type).slice(0, 2)).toEqual(['room', 'oscar_roster_presence']);
     expect(s.turns[0]?.untrustedContext[1]).toEqual(teammates);
-    expect(s.turns[0]?.group?.systemPrompt).toBe('P');
+    expect(s.turns[0]?.group?.systemPrompt).toBe(`P\n\n${copy.trustLine('public')}`);
     expect(s.turns[1]?.untrustedContext.some((entry) => entry.type === 'oscar_roster_presence')).toBe(false);
   });
 

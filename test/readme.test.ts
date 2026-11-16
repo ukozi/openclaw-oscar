@@ -42,6 +42,7 @@ describe('README says what operators must know', () => {
     ['silent until the setup IM is answered', /it IMs the owner who invited it, or every owner, and says nothing in the room until it gets an answer/],
     ['the three modes', /In `team` mode.*In `lounge` mode.*In `watch` mode the bot answers only when named/],
     ['trust downgrade', /If someone on no list joins a private room, the bot treats the room as public/],
+    ['public while someone unlisted is in it', /Whatever its settings say, a room is public to the agent while anyone on no list is in it/],
     ['leave without the agent', /`leave <room>` at any time.*type `\/leave` in the room.*Neither reaches the agent/],
     ['teammates are every account', /The teammates are every account on this gateway plus the roster/],
     ['fix owners', /the reply `fix owners` adds them/],

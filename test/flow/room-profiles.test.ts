@@ -122,4 +122,29 @@ describe('room profiles', () => {
     await waitFor(() => server.rooms.occupants(ROOM).length === 1, 10_000, 'every bot to leave');
     expect(server.rooms.occupants(ROOM)).toEqual(['alice']);
   }, 40_000);
+
+  it('a private room with a stranger already in it gives the agent the public line', async () => {
+    const { server } = await startGateway();
+    server.addUser('mallory', 'pw-mallory');
+    sdk.agent = () => [{ text: 'botone here' }];
+    const alice = roomPeer(server, 'alice');
+    const mallory = roomPeer(server, 'mallory');
+    const fromBot = () => imTexts(alice.peer, server).filter((m) => m.from === 'botone').map((m) => m.text);
+
+    alice.joinRoom(ROOM);
+    mallory.joinRoom(ROOM);
+    alice.invite('botone', ROOM);
+    await waitFor(() => fromBot().length === 1, 10_000, 'botone to ask for settings');
+    expect(server.rooms.occupants(ROOM).sort()).toEqual(['alice', 'botone', 'mallory']);
+
+    alice.peer.sendIm('botone', 'team private');
+    await waitFor(() => fromBot().includes(copy.trustExposed('mallory', 'testroom')), 10_000, 'botone to tell the owner');
+    expect(fromBot()).toContain(copy.setupApplied('testroom', 'team, private'));
+
+    alice.say(ROOM, 'what is the plan?', { cookie: 7101n });
+    await waitFor(() => sdk.inbound.some((r) => r.ctx.RawBody === 'what is the plan?'), 10_000, 'the turn');
+    const turn = sdk.inbound.find((r) => r.ctx.RawBody === 'what is the plan?');
+    expect(String(turn?.ctx.GroupSystemPrompt).endsWith(copy.trustLine('public'))).toBe(true);
+    expect(String(turn?.ctx.GroupSystemPrompt)).not.toContain(copy.trustLine('private'));
+  }, 30_000);
 });

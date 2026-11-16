@@ -10,7 +10,8 @@ import type { PeerRef, RoomRef } from '../names.js';
 import type { Logger, RoomMessageEvent } from '../oscar/index.js';
 import { neutralizeDirectives, roleOf } from '../policy.js';
 import type { OriginClass, Role } from '../policy.js';
-import { effectiveProfile, trustPrompt } from '../rooms/profiles.js';
+import { trustPrompt } from '../rooms/profiles.js';
+import { trustNow } from '../rooms/trust.js';
 import { pushRecentLine, roomKey, roomsExt, touchActivity } from '../runtime.js';
 import type { AccountRuntime, RoomState } from '../runtime.js';
 import { soloPrompt, soloRoute } from './solo.js';
@@ -199,8 +200,7 @@ async function wakeTurn(rt: AccountRuntime, deps: RoomDeps, turn: RoomTurn): Pro
   state.omittedCount = 0;
   const peer: PeerRef = { kind: 'room', bot: self, room: turn.room, stay: state.stay };
   const operatorPrompt = policy.rooms[normalizeRoom(turn.room.name)]?.systemPrompt?.trim() ?? '';
-  const eff = effectiveProfile(rt.accountId, policy, turn.room);
-  const trust = eff.source === 'pending' ? '' : trustPrompt(eff.profile.trust);
+  const trust = trustPrompt(trustNow(rt.accountId, policy, turn.room, state.occupants, self));
   const request: TurnRequest = {
     accountId: rt.accountId,
     peer,

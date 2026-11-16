@@ -6,6 +6,7 @@ import type { ImEvent, RoomMessageEvent } from '../../../src/oscar/index.js';
 import type { LeaveResult } from '../../../src/rooms/leave.js';
 import { attachProfileStore, ProfileStore, storeFileFor } from '../../../src/rooms/profiles.js';
 import { HOLD_MAX, RoomSetup } from '../../../src/rooms/setup.js';
+import { forgetUnlistedPresent, noteUnlistedPresent } from '../../../src/rooms/trust.js';
 import type { RoomState } from '../../../src/runtime.js';
 import { policyFixture, ROOM } from '../rooms-fixtures.js';
 
@@ -32,6 +33,7 @@ function harness(over: Partial<RootPolicy> = {}) {
   const recorded: string[] = [];
   const replayed: string[] = [];
   const leave = vi.fn(async (ref: RoomRef): Promise<LeaveResult> => (ref.name === 'testroom' ? 'home' : 'left'));
+  const told: string[] = [];
   const setup = new RoomSetup({
     accountId,
     self: () => 'botone',
@@ -46,9 +48,12 @@ function harness(over: Partial<RootPolicy> = {}) {
     record: (ev) => recorded.push(`${ev.from}|${ev.text}`),
     replay: (ev) => replayed.push(`${ev.from}|${ev.text}`),
     leave,
+    exposed: (ref) => noteUnlistedPresent({
+      accountId, policy, ref, occupants: rooms.get(`room:4:${ref.name}`)?.occupants ?? [], self: 'botone', now: 5, tell: (text) => told.push(text),
+    }),
   });
-  const join = (ref: RoomRef, by?: string): void => {
-    rooms.set(`room:4:${ref.name}`, roomState(ref));
+  const join = (ref: RoomRef, by?: string, occupants: string[] = []): void => {
+    rooms.set(`room:4:${ref.name}`, { ...roomState(ref), occupants: new Set(['botone', ...occupants]) });
     if (by) invited.set(`room:4:${ref.name}`, by);
     setup.onRoomReady(ref);
   };
@@ -56,7 +61,7 @@ function harness(over: Partial<RootPolicy> = {}) {
     setup.onRoomLine({ room, from, fromDisplay: from, text, cookie: 1n, whisper, serverGenerated: false } as RoomMessageEvent);
   const im = (from: string, text: string): 'handled' | 'pass' =>
     setup.onIm({ from, fromDisplay: from, text, cookie: 2n } as ImEvent);
-  return { accountId, store, setup, asks, recorded, replayed, leave, join, say, im, rooms };
+  return { accountId, store, setup, asks, recorded, replayed, leave, join, say, im, rooms, told };
 }
 
 async function flush(): Promise<void> {
@@ -64,7 +69,10 @@ async function flush(): Promise<void> {
 }
 
 afterEach(() => {
-  for (let i = 1; i <= seq; i++) attachProfileStore(`setup${i}`, null);
+  for (let i = 1; i <= seq; i++) {
+    attachProfileStore(`setup${i}`, null);
+    forgetUnlistedPresent(`setup${i}`);
+  }
 });
 
 describe('asking', () => {
@@ -378,5 +386,41 @@ describe('leave', () => {
     await flush();
     expect(h.asks).toEqual([{ owner: 'alice', text: copy.notInRoom('den') }]);
     expect(h.asks[0]?.text).toBe("I'm not in den.");
+  });
+});
+
+describe('someone unlisted already present', () => {
+  it('tells every owner when the settings are saved private with someone unlisted present', () => {
+    const h = harness();
+    h.join(DEN, 'alice', ['alice', 'mallory']);
+    h.im('alice', 'team private');
+    expect(h.told).toEqual([copy.trustExposed('mallory', 'den')]);
+    expect(h.store.get(DEN_KEY)?.profile).toEqual({ mode: 'team', trust: 'private' });
+
+    h.store.setProfile('room:4:attic', { mode: 'watch', trust: 'private' });
+    h.join(ATTIC, 'alice', ['trudy']);
+    h.im('alice', 'same');
+    h.store.setProfile('room:4:attic', { mode: 'watch', trust: 'public' });
+    h.rooms.get('room:4:attic')?.occupants.add('victor');
+    h.im('alice', 'attic private');
+    expect(h.told).toEqual([copy.trustExposed('mallory', 'den'), copy.trustExposed('trudy', 'attic'), copy.trustExposed('victor', 'attic')]);
+  });
+
+  it('says nothing when the settings are saved public', () => {
+    const h = harness();
+    h.join(DEN, 'alice', ['mallory']);
+    h.im('alice', 'team public');
+    expect(h.told).toEqual([]);
+  });
+
+  it('tells every owner when an owner sets a configured room private with someone unlisted present', () => {
+    const h = harness({ room: { ref: ROOM, historyFrom: 'listed', notifyOnUnlistedJoin: true, profile: { mode: 'team', trust: 'private' } } });
+    h.store.setTrustOverride('room:4:testroom', 'public');
+    h.rooms.get('room:4:testroom')?.occupants.add('mallory');
+    h.im('alice', 'testroom public');
+    expect(h.told).toEqual([]);
+    h.im('alice', 'testroom private');
+    expect(h.store.get('room:4:testroom')).toBeUndefined();
+    expect(h.told).toEqual([copy.trustExposed('mallory', 'testroom')]);
   });
 });

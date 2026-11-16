@@ -3,7 +3,7 @@ import { copy } from '../copy.js';
 import { isAsciiName, normalizeName } from '../names.js';
 import type { RoomRef } from '../names.js';
 import { roleOf } from '../policy.js';
-import { onUnlistedJoin } from '../rooms/trust.js';
+import { noteUnlistedPresent, onUnlistedJoin } from '../rooms/trust.js';
 import { applyRoomClosed, applyRoomJoin, applyRoomLeave, applyRoomReady, roomKey, roomsExt } from '../runtime.js';
 import type { AccountRuntime } from '../runtime.js';
 import { clearAloneTimers, handleInvite, watchAlone } from './invite.js';
@@ -89,9 +89,17 @@ export function attachRooms(rt: AccountRuntime, deps: RoomDeps): () => void {
       if (state.phase === 'online') kickHome(rt, deps);
     }),
     rt.session.on('roomReady', (ev) => {
-      applyRoomReady(rt, ev.room, ev.occupants, self(), deps.now());
+      const state = applyRoomReady(rt, ev.room, ev.occupants, self(), deps.now());
       if (homeKey(deps.policy()) === roomKey(ev.room)) ext.home = { status: 'joined' };
       watchAlone(rt, deps, ev.room);
+      noteUnlistedPresent({
+        accountId: rt.accountId, policy: deps.policy(), ref: ev.room, occupants: state.occupants, self: self(), now: deps.now(),
+        tell: (text) => {
+          deps.tellEveryOwner(text).catch((err: unknown) => {
+            deps.log.warn('unlisted occupant note failed', { room: roomKey(ev.room), error: errText(err) });
+          });
+        },
+      });
     }),
     rt.session.on('roomJoin', (ev) => {
       const name = normalizeName(ev.name);

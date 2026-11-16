@@ -24,6 +24,7 @@ export type RoomSetupDeps = {
   record: (ev: RoomMessageEvent) => void;
   replay: (ev: RoomMessageEvent) => void;
   leave: (ref: RoomRef) => Promise<LeaveResult>;
+  exposed: (ref: RoomRef) => void;
 };
 
 type Waiting = { ref: RoomRef; held: RoomMessageEvent[]; reminded: boolean };
@@ -124,6 +125,7 @@ export class RoomSetup implements RoomGate {
     }
     store.setProfile(key, profile);
     this.send(from, copy.setupApplied(ref.name, copy.profileSummary(profile, true)));
+    if (profile.trust === 'private') this.deps.exposed(ref);
     const waiting = this.pending.get(key);
     this.pending.delete(key);
     this.settled.add(key);
@@ -139,7 +141,9 @@ export class RoomSetup implements RoomGate {
     }
     store.setTrustOverride(roomKey(ref), trust === 'public' ? 'public' : null);
     const eff = effectiveProfile(this.deps.accountId, policy, ref);
-    return this.answer(owner, copy.setupApplied(ref.name, eff.source === 'pending' ? trust : copy.profileSummary(eff.profile, true)));
+    this.answer(owner, copy.setupApplied(ref.name, eff.source === 'pending' ? trust : copy.profileSummary(eff.profile, true)));
+    if (trust === 'private') this.deps.exposed(ref);
+    return 'handled';
   }
 
   forget(roomKey: string): void {
