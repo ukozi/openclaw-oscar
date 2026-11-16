@@ -577,6 +577,23 @@ describe('Direct IM intake, sending', () => {
     expect(s.ends).toEqual(['done', 'done', 'done']);
   });
 
+  it("accepts the person's offer that came while the bot was opening a session", async () => {
+    const s = setup();
+    let release = (): void => {};
+    s.state.hold = new Promise<void>((resolve) => (release = resolve));
+    s.state.openAs = 'a-1';
+    s.intake.send('alice', [{ name: 'a.gif', bytes: GIF, width: 1, height: 1 }], (outcome) => void s.ends.push(outcome));
+    await flush();
+    s.emit('directImOffer', { id: 'a-1', from: 'alice', fromDisplay: 'Alice' });
+    release();
+    await s.intake.idle();
+    expect(s.calls).toEqual(['open alice', 'accept a-1']);
+    expect(s.slots.active()).toBe(1);
+    await s.opens('a-1', 'alice', 'receiving');
+    expect(s.sent).toEqual([{ id: 'a-1', names: ['a.gif'] }]);
+    expect(s.ends).toEqual(['done']);
+  });
+
   it('reports failed when the person declines, and when nobody answers', async () => {
     for (const [end, by] of [['declined', 'peer'], ['timed-out', undefined], ['refused-address', undefined], ['signed-off', undefined]] as const) {
       const s = setup();

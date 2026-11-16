@@ -224,14 +224,18 @@ export function createDirectImIntake(
       await decline(ev.id);
       return;
     }
-    const slot = deps.slots.take(from, 'direct-im');
-    if (slot !== 'ok') {
-      await decline(ev.id);
-      if (slot === 'busy-others') deps.refuse(from, 'busy-others');
-      return;
+    // The bot may already hold this offer: it asked to open a session as the offer came.
+    let s = live.get(ev.id);
+    if (!s) {
+      const slot = deps.slots.take(from, 'direct-im');
+      if (slot !== 'ok') {
+        await decline(ev.id);
+        if (slot === 'busy-others') deps.refuse(from, 'busy-others');
+        return;
+      }
+      s = { peer: from, bytes: 0, open: false, waiting: [], sending: Promise.resolve() };
+      live.set(ev.id, s);
     }
-    const s: Live = { peer: from, bytes: 0, open: false, waiting: [], sending: Promise.resolve() };
-    live.set(ev.id, s);
     arm(ev.id, s);
     try {
       await session.acceptDirectIm(ev.id);
