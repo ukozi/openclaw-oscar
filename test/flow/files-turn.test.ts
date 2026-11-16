@@ -87,13 +87,16 @@ describe('pictures and files reach the agent', () => {
 
   it("a stranger's picture and file reach nobody", async () => {
     flow = await startFlow({ server: { relay: true }, sec: { files: { directIm: true, sendFile: true } } });
-    const mallory = flow.peer('mallory');
-    expect((await mallory.openDirectIm('botone')).outcome).toBe('declined');
-    expect((await mallory.offerFile('botone', 'notes.md', NOTES)).outcome).toBe('declined');
     const alice = flow.peer('alice');
     sdk.agent = () => [{ text: 'hello' }];
     alice.sendIm('botone', 'hi');
-    await waitFor(() => imTexts(alice).length === 1, 8000, 'the reply to alice');
+    await waitFor(() => imTexts(alice).some((m) => m.text === 'hello'), 8000, 'the reply to alice');
+    const mallory = flow.peer('mallory');
+    expect((await mallory.openDirectIm('botone')).outcome).toBe('declined');
+    expect((await mallory.offerFile('botone', 'notes.md', NOTES)).outcome).toBe('declined');
+    const notice = copy.noticeFile('mallory');
+    await waitFor(() => imTexts(alice).some((m) => m.text.startsWith(notice)), 8000, 'the owner notice');
+    expect(imTexts(alice).map((m) => m.text.split('\n')[0])).toEqual(['hello', notice]);
     expect(flow.server.relayed()).toEqual([]);
     expect(sdk.media).toEqual([]);
     expect(sdk.inbound.map((r) => r.ctx.SenderId)).toEqual(['alice']);
