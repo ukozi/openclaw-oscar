@@ -461,6 +461,20 @@ describe('pictures and files', () => {
     expect(t.s.outgoing).toEqual([]);
   });
 
+  it('cancels an offer that waits for an answer when the account stops', async () => {
+    const t = await boot({ sendFile: true });
+    sdk.files.set(REPORT, { buffer: Buffer.from(NOTES), contentType: 'text/markdown' });
+    await getRuntime('default')?.media?.sendMediaTo({ cfg: cfg({ files: { sendFile: true } }), accountId: 'default', to: 'alice', urls: [REPORT] });
+    await vi.waitFor(() => expect(t.s.outgoingIds).toHaveLength(1));
+    const id = t.s.outgoingIds[0] as string;
+    expect(t.s.files).toEqual([]);
+    await t.stop();
+    expect(t.s.files).toEqual([{ call: 'cancel', id }]);
+    t.s.emit('transfer', { id, peer: 'alice', direction: 'out', state: 'failed', index: 0, bytesDone: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(t.s.sent).toEqual([]);
+  });
+
   it("keeps the tool deny list for an approved sender's files", async () => {
     const t = await boot({ sendFile: true });
     sdk.agent = () => [{ text: 'read it' }];
