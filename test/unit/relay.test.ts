@@ -13,7 +13,7 @@ vi.mock('../../src/outbound.js', () => ({
   }),
 }));
 
-import { RELAY_DEDUPE_MS, isAnnounceInput, registerAnnounceRelay, relayDecision } from '../../src/relay.js';
+import { RELAY_DEDUPE_MS, STAMPS_MAX, isAnnounceInput, registerAnnounceRelay, relayDecision } from '../../src/relay.js';
 import { setHost } from '../../src/runtime.js';
 
 type Obj = Record<string, unknown>;
@@ -256,20 +256,35 @@ describe('registerAnnounceRelay', () => {
       expect(sent).toEqual([]);
     });
 
-    it('forgets the provenance of a run once it ended', async () => {
+    it('uses the provenance of a run for one end only', async () => {
       promptBuild({ prompt: PHRASE, messages: [] }, { ...ctx, runId: 'n6', inputProvenance: sessionsSend });
-      await end('n6', user(PHRASE), 'First.');
-      vi.advanceTimersByTime(RELAY_DEDUPE_MS + 1);
+      await end('n6', user(PHRASE), 'ANNOUNCE_SKIP');
       await end('n6', user(PHRASE), 'Second.');
-      expect(sent.map((s) => s.markdown)).toEqual(['First.', 'First.']);
+      expect(sent).toEqual([]);
     });
 
-    it('forgets the provenance of a run that never ended', async () => {
+    it('ignores the provenance of a run that ends after the window', async () => {
       promptBuild({ prompt: PHRASE, messages: [] }, { ...ctx, runId: 'n7', inputProvenance: sessionsSend });
       vi.advanceTimersByTime(RELAY_DEDUPE_MS + 1);
-      promptBuild({ prompt: 'hello', messages: [] }, { ...ctx, runId: 'n8' });
       await end('n7', user(PHRASE), 'Late.');
       expect(sent).toEqual([]);
+    });
+
+    it('keeps the provenance of the newest runs only', async () => {
+      for (let i = 0; i <= STAMPS_MAX; i++) promptBuild({ prompt: PHRASE, messages: [] }, { ...ctx, runId: `m${i}`, inputProvenance: sessionsSend });
+      await end('m0', user(PHRASE), 'Oldest.');
+      await end('m1', user(PHRASE), 'Second oldest.');
+      await end(`m${STAMPS_MAX}`, user(PHRASE), 'Newest.');
+      expect(sent.map((s) => s.markdown)).toEqual(['Second oldest.', 'Second oldest.', 'Newest.', 'Newest.']);
+    });
+
+    it('drops the runs past the window before it drops a live one', async () => {
+      for (let i = 0; i < STAMPS_MAX; i++) promptBuild({ prompt: PHRASE, messages: [] }, { ...ctx, runId: `p${i}`, inputProvenance: sessionsSend });
+      vi.advanceTimersByTime(RELAY_DEDUPE_MS + 1);
+      promptBuild({ prompt: PHRASE, messages: [] }, { ...ctx, runId: 'p0', inputProvenance: sessionsSend });
+      promptBuild({ prompt: PHRASE, messages: [] }, { ...ctx, runId: 'fresh', inputProvenance: sessionsSend });
+      await end('p0', user(PHRASE), 'Still known.');
+      expect(sent.map((s) => s.markdown)).toEqual(['Still known.', 'Still known.']);
     });
   });
 });

@@ -8,7 +8,7 @@ import { liveConfig } from './runtime.js';
 
 export const RELAY_DEDUPE_MS = 600_000;
 export const SKIP_TOKENS = ['ANNOUNCE_SKIP', 'REPLY_SKIP', 'NO_REPLY', 'HEARTBEAT_OK'];
-const STAMPS_MAX = 500;
+export const STAMPS_MAX = 500;
 const ANNOUNCE_TEXT = 'Agent-to-agent announce step.';
 const INTERNAL_CHANNEL = 'webchat';
 // The two lines OpenClaw puts before a message it routes from another session.
