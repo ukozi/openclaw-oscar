@@ -6,11 +6,13 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { resolveStableChannelMessageIngress } from 'openclaw/plugin-sdk/channel-ingress-runtime';
 import { buildOutboundMediaLoadOptions, getMediaDir } from 'openclaw/plugin-sdk/media-runtime';
+import { resolveOutboundMediaUrls } from 'openclaw/plugin-sdk/reply-payload';
 import { loadWebMedia } from 'openclaw/plugin-sdk/web-media';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readPolicy } from '../../src/config.js';
 import { ingressParams } from '../../src/inbound/im.js';
 import { loadOutgoing } from '../../src/sending/load.js';
+import { replyPayload } from '../fake/openclaw.js';
 import { silentLog } from './rooms-fixtures.js';
 
 const policy = (sec: Record<string, unknown>) => readPolicy({ channels: { oscar: sec } });
@@ -37,6 +39,16 @@ describe('real ingress resolver', () => {
   it('agrees with the fake about open without a star', async () => {
     const params = { ...ingressParams('botone', 'mallory', policy({ owners: ['alice'], dmPolicy: 'open', dangerouslyAllowOpenDm: true })), allowFrom: ['alice'] };
     expect((await resolveStableChannelMessageIngress(params)).senderAccess.decision).toBe('block');
+  });
+});
+
+describe('real reply payload', () => {
+  it('lists the media of a reply the way the test SDK does', () => {
+    const fake = replyPayload.resolveOutboundMediaUrls as typeof resolveOutboundMediaUrls;
+    for (const payload of [{}, { mediaUrl: '/a.png' }, { mediaUrls: ['/a.png', '/b.png'] }, { mediaUrl: '/a.png', mediaUrls: ['/b.png'] }, { mediaUrl: '/a.png', mediaUrls: [] }, { mediaUrl: '' }]) {
+      expect(fake(payload)).toEqual(resolveOutboundMediaUrls(payload));
+    }
+    expect(resolveOutboundMediaUrls({ mediaUrl: '/a.png', mediaUrls: ['/b.png'] })).toEqual(['/b.png']);
   });
 });
 

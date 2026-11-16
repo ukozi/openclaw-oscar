@@ -28,6 +28,7 @@ export class FakeSession {
     | { call: 'openDirectIm'; to: string }
     | { call: 'sendDirectMessage'; id: string; pictures: readonly OutgoingPicture[] }
   )[] = [];
+  outgoingIds: string[] = [];
   away: (string | null)[] = [];
   buddyUpdates = 0;
   started = false;
@@ -107,11 +108,15 @@ export class FakeSession {
       async cancelTransfer(id: string): Promise<void> { self.files.push({ call: 'cancel', id }); },
       async sendFiles(to: string, files: readonly OutgoingFile[]): Promise<string> {
         self.outgoing.push({ call: 'sendFiles', to, files });
-        return `${to}:out-${self.nextId++}`;
+        const id = `${to}:out-${self.nextId++}`;
+        self.outgoingIds.push(id);
+        return id;
       },
       async openDirectIm(to: string): Promise<string> {
         self.outgoing.push({ call: 'openDirectIm', to });
-        return `${to}:dim-${self.nextId++}`;
+        const id = `${to}:dim-${self.nextId++}`;
+        self.outgoingIds.push(id);
+        return id;
       },
       async sendDirectMessage(id: string, message: { pictures: readonly OutgoingPicture[] }): Promise<void> {
         self.outgoing.push({ call: 'sendDirectMessage', id, pictures: message.pictures });

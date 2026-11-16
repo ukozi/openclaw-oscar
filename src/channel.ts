@@ -22,7 +22,7 @@ import type { PeerRef } from './names.js';
 import { createNotices, sendNotice } from './notice.js';
 import { createOscarSession } from './oscar/index.js';
 import type { Logger, SessionState } from './oscar/index.js';
-import { outboundBase, sendAdapterText } from './outbound.js';
+import { outboundBase, sendAdapterMedia, sendAdapterText, sendRoomLine } from './outbound.js';
 import { maybeWarnOwners, ownerFixHandler } from './owners.js';
 import { roleOf, senderToolPolicy, toolDeny } from './policy.js';
 import { presenceActions, presenceToolHints, startPresence } from './presence/register.js';
@@ -37,6 +37,9 @@ import {
 } from './runtime.js';
 import type { AccountRuntime, ProbeResult, Timers } from './runtime.js';
 import { channelSecrets } from './secret-contract-api.js';
+import { createMediaSender } from './sending/index.js';
+import { createRoomNotes, createSendNotes } from './sending/notes.js';
+import { createFileSender } from './sending/send-file.js';
 import { oscarSetupAdapter, oscarSetupWizard } from './setup.js';
 import { oscarStatus } from './status.js';
 
@@ -208,10 +211,25 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     }),
     stranger: (name, display) => notices.contact({ name, display, kind: 'file', at: now() }),
   };
-  const intakes = [
-    ...(files.directIm ? [createDirectImIntake(session, intakeDeps)] : []),
-    ...(files.sendFile ? [createSendFileIntake(session, intakeDeps)] : []),
-  ];
+  const directIm = files.directIm ? createDirectImIntake(session, intakeDeps) : undefined;
+  const intakes = [...(directIm ? [directIm] : []), ...(files.sendFile ? [createSendFileIntake(session, intakeDeps)] : [])];
+  const media = createMediaSender({
+    accountId, self, getCfg, now, log,
+    presenceOf: (name) => session.presenceOf(name),
+    files: files.sendFile ? createFileSender(session, { now, timers, log, slots: intakeDeps.slots }) : undefined,
+    directIm,
+    note: createSendNotes({
+      getCfg, now, log,
+      send: (to, text) => sendNotice({ cfg: getCfg(), accountId, bot: self(), owner: to, text }),
+    }),
+    roomNote: createRoomNotes({
+      getCfg, now, log,
+      send: async (room, text) => {
+        await sendRoomLine(accountId, room, text);
+      },
+    }),
+  });
+  rt.media = media;
   const tellEveryOwner = async (text: string): Promise<void> => {
     for (const owner of readPolicy(getCfg()).owners) {
       if (owner === self()) continue;
@@ -307,6 +325,7 @@ export async function startAccount(ctx: ChannelGatewayContext<ResolvedAccount>):
     detachRooms();
     for (const off of offs) off();
     guard.stop();
+    media.stop();
     for (const intake of intakes) intake.stop();
     im.stop();
     notices.stop();
@@ -424,7 +443,7 @@ export const oscarPlugin: ChannelPlugin<ResolvedAccount, { passwordCheck: ProbeR
         });
       },
     },
-    message: createChannelMessageAdapterFromOutbound({ id: CHANNEL_ID, outbound: { sendText: async (ctx) => sendAdapterText(ctx) } }),
+    message: createChannelMessageAdapterFromOutbound({ id: CHANNEL_ID, outbound: { sendText: async (ctx) => sendAdapterText(ctx), sendMedia: async (ctx) => sendAdapterMedia(ctx) } }),
     heartbeat: {
       checkReady: async ({ cfg, accountId }) => {
         const rt = getRuntime(accountId && accountId.length > 0 ? accountId : defaultAccountId(liveConfig(cfg)));
@@ -439,5 +458,5 @@ export const oscarPlugin: ChannelPlugin<ResolvedAccount, { passwordCheck: ProbeR
     gateway: { startAccount, stopAccount },
   },
   threading: { topLevelReplyToMode: 'off' },
-  outbound: { base: outboundBase, attachedResults: { channel: CHANNEL_ID, sendText: (ctx) => sendAdapterText(ctx) } },
+  outbound: { base: outboundBase, attachedResults: { channel: CHANNEL_ID, sendText: (ctx) => sendAdapterText(ctx), sendMedia: (ctx) => sendAdapterMedia(ctx) } },
 });

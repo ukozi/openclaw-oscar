@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { copy } from '../../../src/copy.js';
 import { FILES_LIMITS } from '../../../src/inbound/media-gate.js';
-import { createSendNotes } from '../../../src/sending/notes.js';
+import { createRoomNotes, createSendNotes } from '../../../src/sending/notes.js';
 import type { SendProblem } from '../../../src/sending/notes.js';
 
 const cfg = { channels: { oscar: { owners: ['alice'], allowFrom: ['bob'], files: { sendFile: true, maxMb: 5 } } } };
@@ -92,5 +92,43 @@ describe('createSendNotes', () => {
     expect(() => h.note('bob', 'off')).not.toThrow();
     await settle();
     expect(h.warnings).toEqual([{ msg: 'file note was not delivered', fields: { to: 'bob', why: 'off', error: 'rate limited' } }]);
+  });
+});
+
+describe('createRoomNotes', () => {
+  const ROOM = { exchange: 4 as const, name: 'testroom' };
+  const OTHER = { exchange: 4 as const, name: 'bobsden' };
+
+  function roomHarness(send?: () => Promise<void>) {
+    const clock = { at: 1_000_000 };
+    const sent: { room: string; text: string }[] = [];
+    const warnings: { msg: string; fields?: Record<string, unknown> }[] = [];
+    const note = createRoomNotes({
+      getCfg: () => cfg,
+      now: () => clock.at,
+      log: { debug() {}, info() {}, warn: (msg, fields) => void warnings.push({ msg, ...(fields ? { fields } : {}) }), error() {} },
+      send: send ?? (async (room, text) => void sent.push({ room: room.name, text })),
+    });
+    return { clock, sent, warnings, note };
+  }
+
+  it('sends the line into the room, once a minute for each room', async () => {
+    const h = roomHarness();
+    h.note(ROOM, 'off');
+    h.note({ exchange: 4, name: 'TestRoom' }, 'off');
+    h.note(OTHER, 'off');
+    await settle();
+    expect(h.sent).toEqual([{ room: 'testroom', text: copy.fileNotSent('off', { maxMb: 5 }) }, { room: 'bobsden', text: copy.fileNotSent('off', { maxMb: 5 }) }]);
+    h.clock.at += FILES_LIMITS.refusalCooldownMs;
+    h.note(ROOM, 'off');
+    await settle();
+    expect(h.sent).toHaveLength(3);
+  });
+
+  it('logs a room line that was not delivered and does not throw', async () => {
+    const h = roomHarness(async () => { throw new Error('not in room'); });
+    expect(() => h.note(ROOM, 'off')).not.toThrow();
+    await settle();
+    expect(h.warnings).toEqual([{ msg: 'file note was not delivered', fields: { room: 'testroom', why: 'off', error: 'not in room' } }]);
   });
 });

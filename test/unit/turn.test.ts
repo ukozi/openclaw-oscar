@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('openclaw/plugin-sdk/channel-inbound', async () => (await import('../fake/openclaw.js')).channelInbound);
+vi.mock('openclaw/plugin-sdk/reply-payload', async () => (await import('../fake/openclaw.js')).replyPayload);
+vi.mock('openclaw/plugin-sdk/web-media', async () => (await import('../fake/openclaw.js')).webMedia);
+vi.mock('openclaw/plugin-sdk/media-runtime', async () => (await import('../fake/openclaw.js')).mediaRuntime);
 vi.mock('openclaw/plugin-sdk/routing', async () => (await import('../fake/openclaw.js')).routing);
 vi.mock('openclaw/plugin-sdk/session-store-runtime', async () => (await import('../fake/openclaw.js')).sessionStoreRuntime);
 vi.mock('openclaw/plugin-sdk/conversation-runtime', async () => (await import('../fake/openclaw.js')).conversationRuntime);
@@ -148,6 +151,49 @@ describe('delivery', () => {
     }
     expect(seen).toEqual(['final:markdown']);
     expect(session.sent.map((s) => s.html)).toEqual([toWireHtml('first answer')]);
+  });
+
+  it('sends the text first, then hands the media of the reply to the sender with the agent of the route', async () => {
+    const calls: { sentBefore: number; p: Record<string, unknown> }[] = [];
+    const rt = getRuntime('default');
+    if (rt) rt.media = { sendMediaTo: async (p) => void calls.push({ sentBefore: session.sent.length, p }), stop: () => undefined };
+    cfg = { ...cfg, bindings: [{ agentId: 'helper', match: { channel: 'oscar' } }] };
+    sdk.agent = () => [{ text: 'here it is', mediaUrl: '/m/a.png' }, { text: 'two more', mediaUrls: ['/m/b.png', 'https://example.net/c.pdf'], mediaUrl: '/m/b.png' }];
+    await dispatchImTurn(turn({ from: 'bob', fromDisplay: 'Bob' }), deps());
+    expect(session.sent.map((m) => m.html)).toEqual(['here it is', 'two more']);
+    expect(calls.map((c) => c.sentBefore)).toEqual([1, 2]);
+    expect(calls.map((c) => c.p)).toEqual([
+      { cfg, accountId: 'default', to: 'bob', urls: ['/m/a.png'], agentId: 'helper' },
+      { cfg, accountId: 'default', to: 'bob', urls: ['/m/b.png', 'https://example.net/c.pdf'], agentId: 'helper' },
+    ]);
+    expect(sdk.delivered).toMatchObject([{ visibleReplySent: true }, { visibleReplySent: true }]);
+  });
+
+  it('a reply that is only a file starts a send and counts as a visible reply', async () => {
+    const urls: string[][] = [];
+    const rt = getRuntime('default');
+    if (rt) rt.media = { sendMediaTo: async (p) => void urls.push(p.urls), stop: () => undefined };
+    sdk.agent = () => [{ text: '  ', mediaUrl: '/m/a.png' }, { mediaUrls: ['/m/b.png'] }, { text: '' }];
+    await dispatchImTurn(turn(), deps());
+    expect(session.sent).toEqual([]);
+    expect(urls).toEqual([['/m/a.png'], ['/m/b.png']]);
+    expect(sdk.delivered).toEqual([{ messageIds: [], visibleReplySent: true }, { messageIds: [], visibleReplySent: true }, undefined]);
+  });
+
+  it('does not hand over the media when the text was not sent', async () => {
+    const urls: string[][] = [];
+    const rt = getRuntime('default');
+    if (rt) rt.media = { sendMediaTo: async (p) => void urls.push(p.urls), stop: () => undefined };
+    sdk.agent = () => [{ text: 'here it is', mediaUrl: '/m/a.png' }];
+    session.failNext = new Error('rate-limited');
+    await dispatchImTurn(turn(), deps());
+    expect(urls).toEqual([]);
+  });
+
+  it('reports no visible reply for a file while no sender is there', async () => {
+    sdk.agent = () => [{ mediaUrl: '/m/a.png' }, { text: 'only text' }];
+    await dispatchImTurn(turn(), deps());
+    expect(sdk.delivered).toMatchObject([{ messageIds: [], visibleReplySent: false }, { visibleReplySent: true }]);
   });
 
   it('logs a failed delivery without the body and does not throw', async () => {

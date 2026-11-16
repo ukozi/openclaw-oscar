@@ -7,6 +7,7 @@ import { createLoginBudget } from './oscar/index.js';
 import type { Logger, LoginBudget, OscarSession, StateReason, TimerApi } from './oscar/index.js';
 import type { Role } from './policy.js';
 import type { AwayController } from './presence/away.js';
+import type { MediaSender } from './sending/index.js';
 
 export type RoomState = {
   ref: RoomRef; stay: string; occupants: Set<string>; joinSeenAt: Map<string, number>; selfJoinedAt: number;
@@ -24,6 +25,7 @@ export type AccountRuntime = {
   away?: AwayController;
   stopPresence?: () => Promise<void>;
   chain?: ChainController;
+  media?: MediaSender;
   log?: Logger;
 };
 type MutationParams = { afterWrite: { mode: 'auto' }; mutate: (draft: Record<string, unknown>) => void };

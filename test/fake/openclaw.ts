@@ -5,7 +5,8 @@ import type { AnyAgentTool, OpenClawPluginToolContext } from 'openclaw/plugin-sd
 import type { AgentToolResult } from 'openclaw/plugin-sdk/tool-results';
 
 export type Rec = Record<string, unknown>;
-export type FakeReply = { text: string; kind?: string };
+export type FakeReply = { text?: string; kind?: string; mediaUrl?: string; mediaUrls?: string[] };
+export type FakeMediaAccess = { mediaAccess?: unknown; mediaLocalRoots?: readonly string[]; mediaReadFile?: (path: string) => Promise<Buffer> };
 
 type Outbound = {
   sanitizeText?: (p: { text: string; payload: Rec }) => string;
@@ -13,7 +14,14 @@ type Outbound = {
   textChunkLimit?: number;
   resolveTarget?: (p: Rec) => { ok: true; to: string } | { ok: false; error: Error };
   sendText?: (ctx: Rec) => Promise<Rec>;
+  sendMedia?: (ctx: Rec) => Promise<Rec>;
 };
+
+// Like the host: the list when it has any entry, otherwise the single field.
+function resolveOutboundMediaUrls(payload: { mediaUrls?: string[]; mediaUrl?: string }): string[] {
+  if (payload.mediaUrls?.length) return payload.mediaUrls;
+  return payload.mediaUrl ? [payload.mediaUrl] : [];
+}
 
 function chunkText(text: string, limit: number): string[] {
   if (text.length <= limit) return [text];
@@ -29,13 +37,21 @@ function chunkText(text: string, limit: number): string[] {
   return out;
 }
 
-async function deliverThroughPlugin(p: { cfg: unknown; to: string; accountId?: string; payloads: Rec[] }): Promise<Rec[]> {
+// Like the host: one sendMedia call for each media URL, the text as the caption of the first.
+async function deliverThroughPlugin(p: { cfg: unknown; to: string; accountId?: string; payloads: Rec[]; access?: FakeMediaAccess }): Promise<Rec[]> {
   const outbound = ((sdk.plugin ?? {}).outbound ?? {}) as Outbound;
   if (!outbound.sendText) throw new Error('fake sdk: usePlugin() was not called or the plugin has no outbound.sendText');
   const results: Rec[] = [];
   for (const payload of p.payloads) {
     let text = String(payload.text ?? '');
     if (outbound.sanitizeText) text = outbound.sanitizeText({ text, payload });
+    const urls = resolveOutboundMediaUrls(payload as { mediaUrls?: string[]; mediaUrl?: string });
+    if (urls.length > 0 && outbound.sendMedia) {
+      for (const [at, mediaUrl] of urls.entries()) {
+        results.push(await outbound.sendMedia({ cfg: p.cfg, to: p.to, text: at === 0 ? text : '', mediaUrl, accountId: p.accountId, ...p.access }));
+      }
+      continue;
+    }
     const chunks = outbound.chunker ? outbound.chunker(text, outbound.textChunkLimit ?? 4000) : [text];
     for (const chunk of chunks) results.push(await outbound.sendText({ cfg: p.cfg, to: p.to, text: chunk, accountId: p.accountId }));
   }
@@ -58,6 +74,7 @@ export const sdk = {
   files: new Map<string, { buffer: Buffer; contentType?: string }>(),
   remote: new Map<string, { buffer: Buffer; contentType?: string; fileName?: string }>(),
   loads: [] as { url: string; options: Rec }[],
+  delivered: [] as unknown[],
   loadFail: undefined as unknown,
   loadResult: undefined as Rec | undefined,
   loadHangs: undefined as 'until-aborted' | 'for-ever' | undefined,
@@ -66,11 +83,11 @@ export const sdk = {
   usePlugin(plugin: unknown): void {
     sdk.plugin = plugin as Rec;
   },
-  async messageTool(p: { cfg: unknown; accountId: string; to: string; text: string }): Promise<void> {
+  async messageTool(p: { cfg: unknown; accountId: string; to: string; text: string; mediaUrl?: string; access?: FakeMediaAccess }): Promise<void> {
     const outbound = ((sdk.plugin ?? {}).outbound ?? {}) as Outbound;
     const resolved = outbound.resolveTarget?.({ cfg: p.cfg, to: p.to, accountId: p.accountId, mode: 'explicit' });
     if (resolved && !resolved.ok) throw resolved.error;
-    await deliverThroughPlugin({ cfg: p.cfg, to: resolved?.to ?? p.to, accountId: p.accountId, payloads: [{ text: p.text }] });
+    await deliverThroughPlugin({ cfg: p.cfg, to: resolved?.to ?? p.to, accountId: p.accountId, payloads: [{ text: p.text, ...(p.mediaUrl ? { mediaUrl: p.mediaUrl } : {}) }], ...(p.access ? { access: p.access } : {}) });
   },
   reset(): void {
     sdk.inbound.length = 0;
@@ -88,6 +105,7 @@ export const sdk = {
     sdk.files.clear();
     sdk.remote.clear();
     sdk.loads.length = 0;
+    sdk.delivered.length = 0;
     sdk.loadFail = undefined;
     sdk.loadResult = undefined;
     sdk.loadHangs = undefined;
@@ -121,7 +139,7 @@ async function runChannelInboundEvent(params: Rec): Promise<Rec> {
     for (const reply of await sdk.agent(ctx)) {
       const info = { kind: reply.kind ?? 'final' };
       try {
-        await delivery.deliver(reply, info);
+        sdk.delivered.push(await delivery.deliver(reply, info));
       } catch (err) {
         delivery.onError?.(err, info);
       }
@@ -304,10 +322,16 @@ function defineChannelPluginEntry(o: Rec): Rec {
 
 function createChatChannelPlugin(params: Rec): Rec {
   const base = params.base as Rec;
-  const outbound = params.outbound as { base?: Rec; attachedResults?: { channel: string; sendText?: (ctx: Rec) => Promise<Rec> | Rec } } | undefined;
+  type Send = (ctx: Rec) => Promise<Rec> | Rec;
+  const outbound = params.outbound as { base?: Rec; attachedResults?: { channel: string; sendText?: Send; sendMedia?: Send } } | undefined;
   const attached = outbound?.attachedResults;
+  const wrap = (send: Send) => async (ctx: Rec) => ({ channel: attached?.channel, ...(await send(ctx)) });
   const resolvedOutbound = attached
-    ? { ...outbound?.base, sendText: async (ctx: Rec) => ({ channel: attached.channel, ...(await attached.sendText?.(ctx)) }) }
+    ? {
+        ...outbound?.base,
+        sendText: async (ctx: Rec) => ({ channel: attached.channel, ...(await attached.sendText?.(ctx)) }),
+        ...(attached.sendMedia ? { sendMedia: wrap(attached.sendMedia) } : {}),
+      }
     : outbound;
   const threading = params.threading as { topLevelReplyToMode?: string } | undefined;
   return {
@@ -398,6 +422,7 @@ export const mediaRuntime: Rec = {
   extensionForMime: (mime?: string | null) => (mime ? MIME_EXTENSIONS[mime] : undefined),
 };
 export const mediaStore: Rec = { saveMediaBuffer };
+export const replyPayload: Rec = { resolveOutboundMediaUrls };
 export const channelInbound: Rec = { runChannelInboundEvent, buildChannelInboundEventContext };
 export const routing: Rec = { resolveAgentRoute };
 export const sessionStoreRuntime: Rec = { resolveStorePath: (_store?: string, opts?: { agentId?: string }) => `/fake/state/${opts?.agentId ?? 'main'}/sessions.json` };

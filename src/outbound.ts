@@ -1,8 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createTypingCallbacks } from 'openclaw/plugin-sdk/channel-outbound';
 import { chunkText } from 'openclaw/plugin-sdk/reply-chunking';
+import { resolveAgentRoute } from 'openclaw/plugin-sdk/routing';
 import { fallbackFor, sendByFallback } from './fallback.js';
-import { ROOM_CHUNK_MAX, defaultAccountId, readPolicy, resolveAccount } from './config.js';
+import { CHANNEL_ID, ROOM_CHUNK_MAX, defaultAccountId, readPolicy, resolveAccount } from './config.js';
 import { formatTarget, normalizeName, parseTarget } from './names.js';
 import type { RoomRef, Target } from './names.js';
 import type { SendPriority, SendReceipt } from './oscar/index.js';
@@ -162,6 +163,37 @@ export async function sendAdapterText(ctx: { cfg: unknown; to: string; text: str
   const rerouted = await viaFallback(ctx.cfg, ctx.accountId, ctx.to, htmlToText(html));
   if (rerouted) return { messageId: rerouted, chatId: ctx.to };
   return sendWire({ cfg: ctx.cfg, accountId: ctx.accountId, to: ctx.to, html });
+}
+
+export type AdapterMediaContext = {
+  cfg: unknown; to: string; text?: string; accountId?: string | null; mediaUrl?: string;
+  mediaAccess?: unknown; mediaLocalRoots?: readonly string[]; mediaReadFile?: (path: string) => Promise<Buffer>;
+};
+
+// The caption goes out as an IM; the file follows on its own path.
+export async function sendAdapterMedia(ctx: AdapterMediaContext): Promise<{ messageId: string; chatId: string }> {
+  const text = ctx.text ?? '';
+  const sent = text.trim() !== '' ? await sendAdapterText({ cfg: ctx.cfg, to: ctx.to, text, accountId: ctx.accountId }) : undefined;
+  const checked = checkTarget(ctx);
+  if (!checked.ok) throw checked.error;
+  const media = getRuntime(checked.accountId)?.media;
+  if (!media) {
+    if (sent) return sent;
+    throw new Error(`account ${checked.accountId} is not signed on`);
+  }
+  if (ctx.mediaUrl) {
+    const cfg = liveConfig(ctx.cfg);
+    const { agentId } = resolveAgentRoute({ cfg: cfg as Parameters<typeof resolveAgentRoute>[0]['cfg'], channel: CHANNEL_ID, accountId: checked.accountId });
+    await media.sendMediaTo({
+      cfg, accountId: checked.accountId, to: checked.to, urls: [ctx.mediaUrl], agentId,
+      host: {
+        ...(ctx.mediaAccess !== undefined ? { mediaAccess: ctx.mediaAccess } : {}),
+        ...(ctx.mediaLocalRoots ? { mediaLocalRoots: ctx.mediaLocalRoots } : {}),
+        ...(ctx.mediaReadFile ? { mediaReadFile: ctx.mediaReadFile } : {}),
+      },
+    });
+  }
+  return sent ?? { messageId: 'file', chatId: ctx.to };
 }
 
 const WIRE_ATOM = /<A\b[^>]*>[\s\S]*?<\/A>|<[^>]*>|&#?[A-Za-z0-9]+;|[\s\S]/giu;

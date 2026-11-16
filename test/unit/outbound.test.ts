@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('openclaw/plugin-sdk/reply-chunking', async () => (await import('../fake/openclaw.js')).replyChunking);
 vi.mock('openclaw/plugin-sdk/channel-outbound', async () => (await import('../fake/openclaw.js')).channelOutbound);
+vi.mock('openclaw/plugin-sdk/routing', async () => (await import('../fake/openclaw.js')).routing);
 
 import { toWireHtml } from 'open-oscar-client-kit/wire';
-import { checkTarget, outboundBase, sendAdapterText, sendAutoReply, sendMarkdown, sendWire, setOutboundTextFilter, typingFor, withPriority } from '../../src/outbound.js';
+import { checkTarget, outboundBase, sendAdapterMedia, sendAdapterText, sendAutoReply, sendMarkdown, sendWire, setOutboundTextFilter, typingFor, withPriority } from '../../src/outbound.js';
 import type { OutboundMeta } from '../../src/outbound.js';
 import { getRuntime, resetRuntimeForTests, setRuntime } from '../../src/runtime.js';
 import { sdk } from '../fake/openclaw.js';
@@ -247,5 +248,65 @@ describe('fallback', () => {
     await sendAdapterText({ cfg: withFallback(), to: 'alice', text: 'two' });
     expect(session.sent.map((s) => s.html)).toEqual(['one']);
     expect(sdk.foreign.map((f) => f.text)).toEqual(['two']);
+  });
+});
+
+describe('sendMedia', () => {
+  type Call = { sentBefore: number; p: Record<string, unknown> };
+  const withSender = (): Call[] => {
+    const calls: Call[] = [];
+    const rt = getRuntime('default');
+    if (rt) rt.media = { sendMediaTo: async (p) => void calls.push({ sentBefore: session.sent.length, p }), stop: () => undefined };
+    return calls;
+  };
+  const bound = () => ({ ...cfg(), bindings: [{ agentId: 'helper', match: { channel: 'oscar' } }] });
+
+  it('sendMedia sends the caption once and the file', async () => {
+    const calls = withSender();
+    const readFile = async (): Promise<Buffer> => Buffer.from('x');
+    const config = bound();
+    const res = await sendAdapterMedia({
+      cfg: config, to: 'Alice', text: 'the <B>chart</B>', mediaUrl: '/work/chart.png',
+      mediaAccess: { localRoots: ['/work'] }, mediaLocalRoots: ['/work'], mediaReadFile: readFile,
+    });
+    expect(session.sent).toEqual([{ to: 'alice', html: 'the <B>chart</B>', priority: 'reply' }]);
+    expect(calls).toEqual([{
+      sentBefore: 1,
+      p: {
+        cfg: config, accountId: 'default', to: 'alice', urls: ['/work/chart.png'], agentId: 'helper',
+        host: { mediaAccess: { localRoots: ['/work'] }, mediaLocalRoots: ['/work'], mediaReadFile: readFile },
+      },
+    }]);
+    expect(res).toEqual({ messageId: '1', chatId: 'alice' });
+  });
+
+  it('sendMedia with no caption returns a result', async () => {
+    const calls = withSender();
+    for (const text of ['', '  ', undefined]) {
+      expect(await sendAdapterMedia({ cfg: cfg(), to: 'bob', ...(text !== undefined ? { text } : {}), mediaUrl: 'https://example.net/a.pdf' })).toEqual({ messageId: 'file', chatId: 'bob' });
+    }
+    expect(session.sent).toEqual([]);
+    expect(calls.map((c) => c.p)).toEqual(new Array(3).fill({ cfg: cfg(), accountId: 'default', to: 'bob', urls: ['https://example.net/a.pdf'], agentId: 'main', host: {} }));
+  });
+
+  it('hands over no file when the caption was not sent', async () => {
+    const calls = withSender();
+    session.failNext = new Error('rate-limited');
+    await expect(sendAdapterMedia({ cfg: cfg(), to: 'alice', text: 'hi', mediaUrl: '/work/chart.png' })).rejects.toThrow('rate-limited');
+    expect(calls).toEqual([]);
+  });
+
+  it('refuses a target the account may not address, with and without a caption', async () => {
+    const calls = withSender();
+    await expect(sendAdapterMedia({ cfg: cfg(), to: 'mallory', text: 'hi', mediaUrl: '/work/chart.png' })).rejects.toThrow('mallory is not in owners or allowFrom');
+    await expect(sendAdapterMedia({ cfg: cfg(), to: 'mallory', text: '', mediaUrl: '/work/chart.png' })).rejects.toThrow('mallory is not in owners or allowFrom');
+    expect(calls).toEqual([]);
+    expect(session.sent).toEqual([]);
+  });
+
+  it('fails cleanly when the account is not running', async () => {
+    await expect(sendAdapterMedia({ cfg: cfg(), to: 'alice', text: '', mediaUrl: '/work/chart.png' })).rejects.toThrow('account default is not signed on');
+    resetRuntimeForTests();
+    await expect(sendAdapterMedia({ cfg: cfg(), to: 'alice', text: '', mediaUrl: '/work/chart.png' })).rejects.toThrow('account default is not signed on');
   });
 });

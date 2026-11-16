@@ -2,6 +2,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/channel-core';
 import { buildChannelInboundEventContext, runChannelInboundEvent } from 'openclaw/plugin-sdk/channel-inbound';
 import { recordInboundSession } from 'openclaw/plugin-sdk/conversation-runtime';
 import { dispatchReplyWithBufferedBlockDispatcher } from 'openclaw/plugin-sdk/reply-dispatch-runtime';
+import { resolveOutboundMediaUrls } from 'openclaw/plugin-sdk/reply-payload';
 import { resolveAgentRoute } from 'openclaw/plugin-sdk/routing';
 import { resolveStorePath } from 'openclaw/plugin-sdk/session-store-runtime';
 import { awarenessFor } from '../awareness.js';
@@ -135,9 +136,12 @@ export async function dispatchImTurn(turn: ImTurn, deps: TurnDeps): Promise<void
         delivery: {
           deliver: async (payload, info) => {
             const text = payload.text?.trim();
-            if (!text) return;
-            const sent = await sendMarkdown({ cfg: deps.getCfg(), accountId: deps.accountId, to, markdown: text, kind: info.kind });
-            return { messageIds: sent.messageIds, visibleReplySent: sent.messageIds.length > 0 };
+            const urls = resolveOutboundMediaUrls(payload);
+            if (!text && urls.length === 0) return;
+            const sent = text ? await sendMarkdown({ cfg: deps.getCfg(), accountId: deps.accountId, to, markdown: text, kind: info.kind }) : { messageIds: [] };
+            const media = urls.length > 0 ? getRuntime(deps.accountId)?.media : undefined;
+            await media?.sendMediaTo({ cfg: deps.getCfg(), accountId: deps.accountId, to, urls, agentId: route.agentId });
+            return { messageIds: sent.messageIds, visibleReplySent: sent.messageIds.length > 0 || media !== undefined };
           },
           onError: (err, info) => {
             deps.log.warn('reply was not delivered', { to, kind: info.kind, error: err instanceof Error ? err.message : String(err) });
@@ -222,9 +226,12 @@ export async function dispatchRoomTurn(req: TurnRequest, deps: RoomTurnDeps): Pr
         delivery: {
           deliver: async (payload, info) => {
             const text = payload.text?.trim();
-            if (!text) return;
-            const sent = await sendMarkdown({ cfg: deps.getCfg(), accountId: deps.accountId, to, markdown: text, kind: info.kind });
-            return { messageIds: sent.messageIds, visibleReplySent: sent.messageIds.length > 0 };
+            const urls = resolveOutboundMediaUrls(payload);
+            if (!text && urls.length === 0) return;
+            const sent = text ? await sendMarkdown({ cfg: deps.getCfg(), accountId: deps.accountId, to, markdown: text, kind: info.kind }) : { messageIds: [] };
+            const media = urls.length > 0 ? getRuntime(deps.accountId)?.media : undefined;
+            await media?.sendMediaTo({ cfg: deps.getCfg(), accountId: deps.accountId, to, urls, agentId: route.agentId });
+            return { messageIds: sent.messageIds, visibleReplySent: sent.messageIds.length > 0 || media !== undefined };
           },
           onError: (err, info) => {
             deps.log.warn('room reply was not delivered', { to, kind: info.kind, error: err instanceof Error ? err.message : String(err) });

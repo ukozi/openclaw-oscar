@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('openclaw/plugin-sdk/channel-core', async () => (await import('../fake/openclaw.js')).channelCore);
 vi.mock('openclaw/plugin-sdk/channel-outbound', async () => (await import('../fake/openclaw.js')).channelOutbound);
 vi.mock('openclaw/plugin-sdk/channel-inbound', async () => (await import('../fake/openclaw.js')).channelInbound);
+vi.mock('openclaw/plugin-sdk/reply-payload', async () => (await import('../fake/openclaw.js')).replyPayload);
+vi.mock('openclaw/plugin-sdk/web-media', async () => (await import('../fake/openclaw.js')).webMedia);
+vi.mock('openclaw/plugin-sdk/media-runtime', async () => (await import('../fake/openclaw.js')).mediaRuntime);
 vi.mock('openclaw/plugin-sdk/routing', async () => (await import('../fake/openclaw.js')).routing);
 vi.mock('openclaw/plugin-sdk/session-store-runtime', async () => (await import('../fake/openclaw.js')).sessionStoreRuntime);
 vi.mock('openclaw/plugin-sdk/conversation-runtime', async () => (await import('../fake/openclaw.js')).conversationRuntime);
@@ -15,9 +18,10 @@ vi.mock('openclaw/plugin-sdk/status-helpers', async () => (await import('../fake
 import { toWireHtml } from 'open-oscar-client-kit/wire';
 import { gatewayDeps, oscarPlugin, startAccount, stopAccount } from '../../src/channel.js';
 import { RELOAD_NOOP_PREFIXES, resolveAccount } from '../../src/config.js';
+import { copy } from '../../src/copy.js';
 import { IM_TIMING } from '../../src/inbound/im.js';
 import { getRuntime, resetRuntimeForTests, setRuntime } from '../../src/runtime.js';
-import { sdk } from '../fake/openclaw.js';
+import { FAKE_MEDIA_DIR, sdk } from '../fake/openclaw.js';
 import { FakeSession } from '../fake/session.js';
 
 type Obj = Record<string, unknown>;
@@ -346,6 +350,10 @@ describe('gateway', () => {
 describe('pictures and files', () => {
   const PNG = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4);
   const NOTES = new TextEncoder().encode('# Notes\n\nBring the cake.\n');
+  const u32 = (n: number): number[] => [0, 0, 0, n];
+  const CHART_PNG = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...u32(13), 0x49, 0x48, 0x44, 0x52, ...u32(8), ...u32(6), 8, 2, 0, 0, 0);
+  const CHART = `${FAKE_MEDIA_DIR}/outbound/chart.png`;
+  const REPORT = `${FAKE_MEDIA_DIR}/outbound/report.md`;
 
   async function boot(files?: Obj) {
     let options: Obj | undefined;
@@ -388,16 +396,69 @@ describe('pictures and files', () => {
     await on.stop();
   });
 
-  it('sends a reply as text when the channel declares media', async () => {
+  it('a reply that is only a file starts a send', async () => {
     const t = await boot({ directIm: true });
-    sdk.agent = () => [{ text: 'a fine **cat**', mediaUrl: '/tmp/reply.png' } as never, { text: '', mediaUrl: '/tmp/only.png' } as never];
+    sdk.files.set(CHART, { buffer: Buffer.from(CHART_PNG), contentType: 'image/png' });
+    sdk.agent = () => [{ text: 'a fine **cat**', mediaUrl: CHART }, { text: '', mediaUrl: CHART }];
     await sendPicture(t.s, 'alice', 'look at this');
-    await vi.waitFor(() => expect(t.s.sent.filter((m) => m.to === 'alice')).toHaveLength(1));
+    const picture = { name: 'chart.png', bytes: CHART_PNG, width: 8, height: 6 };
+    // The session the picture came in is live, so the answers go out in it.
+    await vi.waitFor(() => expect(t.s.outgoing).toEqual([
+      { call: 'sendDirectMessage', id: 'd1', pictures: [picture] },
+      { call: 'sendDirectMessage', id: 'd1', pictures: [picture] },
+    ]));
     expect(t.s.sent).toEqual([{ to: 'alice', html: toWireHtml('a fine **cat**'), priority: 'reply' }]);
-    expect(sdk.media).toHaveLength(1);
-    expect(sdk.media[0]).toMatchObject({ contentType: 'image/png', subdir: 'inbound', originalFilename: 'cat.png' });
+    expect(sdk.delivered).toMatchObject([{ visibleReplySent: true }, { messageIds: [], visibleReplySent: true }]);
+    expect(sdk.loads.map((l) => l.url)).toEqual([CHART, CHART]);
     expect(sdk.inbound[0]?.ctx).toMatchObject({ Body: 'look at this', SenderId: 'alice', MediaPaths: [sdk.media[0]?.path], MediaTypes: ['image/png'] });
     await t.stop();
+  });
+
+  it('opens Direct IM for the picture of a reply to an IM', async () => {
+    const t = await boot({ directIm: true });
+    sdk.files.set(CHART, { buffer: Buffer.from(CHART_PNG), contentType: 'image/png' });
+    sdk.agent = () => [{ mediaUrl: CHART }];
+    t.s.emit('im', { from: 'alice', fromDisplay: 'Alice', text: 'chart please', cookie: 1n, autoResponse: false, offline: false, system: false });
+    await vi.waitFor(() => expect(t.s.outgoing).toEqual([{ call: 'openDirectIm', to: 'alice' }]));
+    const id = t.s.outgoingIds[0] as string;
+    t.s.emit('directIm', { id, peer: 'alice', role: 'offering', state: 'open' });
+    await vi.waitFor(() => expect(t.s.outgoing.slice(1)).toEqual([{ call: 'sendDirectMessage', id, pictures: [{ name: 'chart.png', bytes: CHART_PNG, width: 8, height: 6 }] }]));
+    expect(t.s.sent).toEqual([]);
+    await t.stop();
+  });
+
+  it('sends a document of a reply over Send File and says so when it is declined', async () => {
+    const t = await boot({ sendFile: true });
+    sdk.files.set(REPORT, { buffer: Buffer.from(NOTES), contentType: 'text/markdown' });
+    sdk.agent = () => [{ text: 'the notes', mediaUrl: REPORT }];
+    t.s.emit('im', { from: 'bob', fromDisplay: 'Bob', text: 'notes please', cookie: 1n, autoResponse: false, offline: false, system: false });
+    await vi.waitFor(() => expect(t.s.outgoing).toHaveLength(1));
+    expect(t.s.outgoing[0]).toMatchObject({ call: 'sendFiles', to: 'bob', files: [{ name: 'report.md', bytes: NOTES.byteLength }] });
+    expect(t.s.sent.map((m) => m.html)).toEqual([toWireHtml('the notes')]);
+    t.s.emit('transfer', { id: t.s.outgoingIds[0] as string, peer: 'bob', direction: 'out', state: 'declined', by: 'peer', index: 0, bytesDone: 0 });
+    await vi.waitFor(() => expect(t.s.sent).toHaveLength(2));
+    expect(t.s.sent[1]).toMatchObject({ to: 'bob', html: toWireHtml(copy.fileNotSent('failed', { maxMb: 10 })) });
+    await t.stop();
+  });
+
+  it('has sendMedia on the message adapter and on the outbound adapter', async () => {
+    const t = await boot({ sendFile: true });
+    sdk.files.set(REPORT, { buffer: Buffer.from(NOTES), contentType: 'text/markdown' });
+    expect(await plugin.message.send.sendMedia({ cfg: cfg({ files: { sendFile: true } }), to: 'alice', text: '', mediaUrl: REPORT })).toEqual({ messageId: 'file', chatId: 'alice' });
+    expect(await plugin.outbound.sendMedia({ cfg: cfg({ files: { sendFile: true } }), to: 'alice', text: 'here', mediaUrl: REPORT })).toMatchObject({ channel: 'oscar', chatId: 'alice' });
+    await vi.waitFor(() => expect(t.s.outgoing).toHaveLength(1));
+    expect(t.s.sent.map((m) => m.html)).toEqual(['here']);
+    await t.stop();
+  });
+
+  it('stops the senders with the account', async () => {
+    const t = await boot({ directIm: true, sendFile: true });
+    const media = getRuntime('default')?.media;
+    sdk.files.set(REPORT, { buffer: Buffer.from(NOTES), contentType: 'text/markdown' });
+    await t.stop();
+    await media?.sendMediaTo({ cfg: cfg({ files: { directIm: true, sendFile: true } }), accountId: 'default', to: 'alice', urls: [REPORT] });
+    expect(sdk.loads).toEqual([]);
+    expect(t.s.outgoing).toEqual([]);
   });
 
   it("keeps the tool deny list for an approved sender's files", async () => {

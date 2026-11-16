@@ -105,6 +105,31 @@ describe('fake sdk', () => {
     expect(sdk.durable[0]?.mirrorFailed).toBe(true);
   });
 
+  it('calls sendMedia once for each media URL, the text with the first, and sendText when there is no media', async () => {
+    const calls: string[] = [];
+    sdk.usePlugin({ outbound: {
+      sendText: async ({ text }: { text: string }) => { calls.push(`text ${text}`); return { messageId: '1' }; },
+      sendMedia: async ({ text, mediaUrl, mediaLocalRoots }: { text: string; mediaUrl: string; mediaLocalRoots?: string[] }) => { calls.push(`media ${mediaUrl} "${text}" ${String(mediaLocalRoots)}`); return { messageId: '2' }; },
+    } });
+    await call(channelOutbound, 'sendDurableMessageBatch')({ cfg: {}, channel: 'oscar', to: 'alice', payloads: [{ text: 'look', mediaUrls: ['/a.png', '/b.png'] }, { text: 'plain' }] });
+    await sdk.messageTool({ cfg: {}, accountId: 'botone', to: 'alice', text: '', mediaUrl: '/c.pdf', access: { mediaLocalRoots: ['/work'] } });
+    expect(calls).toEqual(['media /a.png "look" undefined', 'media /b.png "" undefined', 'text plain', 'media /c.pdf "" /work']);
+  });
+
+  it('hands a reply with its media fields to deliver and keeps what deliver returns', async () => {
+    const seen: unknown[] = [];
+    sdk.agent = () => [{ text: 'one', mediaUrl: '/a.png' }];
+    await call(channelInbound, 'runChannelInboundEvent')({
+      channel: 'oscar', accountId: 'botone', raw: {},
+      adapter: {
+        ingest: () => ({ id: 'm1', rawText: 'hi' }),
+        resolveTurn: () => ({ routeSessionKey: 'k', ctxPayload: {}, delivery: { deliver: async (p: unknown) => { seen.push(p); return { visibleReplySent: true }; } } }),
+      },
+    });
+    expect(seen).toEqual([{ text: 'one', mediaUrl: '/a.png' }]);
+    expect(sdk.delivered).toEqual([{ visibleReplySent: true }]);
+  });
+
   it('registers by mode like core', () => {
     const seen: string[] = [];
     const entry = call(channelCore, 'defineChannelPluginEntry')({
