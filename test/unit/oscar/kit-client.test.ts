@@ -117,4 +117,30 @@ describe('kitOptions', () => {
     expect(await allowDial({ ip: '198.51.100.7', port: 4443 }, context)).toBe(true);
     expect(await allowDial({ ip: '203.0.113.9', port: 4443 }, context)).toBe(false);
   });
+
+  it('builds the client without file transfer when the setting is off', () => {
+    const built = kitOptions(base({ transfers: { directIm: true, sendFile: false, maxBytes: 1000 } }), hooks);
+    expect('fileTransfer' in built).toBe(false);
+    expect(built.directIm?.allowDial).toBeTypeOf('function');
+  });
+
+  it('turns file transfer on with the dial rule', async () => {
+    const lookup = async (host: string): Promise<string[]> => (host === 'chat.example' ? ['192.0.2.1'] : []);
+    const built = kitOptions(base({ transfers: { directIm: false, sendFile: true, maxBytes: 1000, relayHost: '198.51.100.7', lookup } }), hooks);
+    expect(built.capabilities).toEqual([CAP_CHAT]);
+    expect('directIm' in built).toBe(false);
+    expect('getFile' in built).toBe(false);
+    const allowDial = built.fileTransfer?.allowDial;
+    if (!allowDial) throw new Error('no dial rule');
+    const context = { server: { host: 'chat.example', port: 5190 }, bos: { host: 'chat.example', port: 5190 } };
+    expect(await allowDial({ ip: '192.0.2.1', port: 4443 }, context)).toBe(true);
+    expect(await allowDial({ ip: '198.51.100.7', port: 4443 }, context)).toBe(true);
+    expect(await allowDial({ ip: '203.0.113.9', port: 4443 }, context)).toBe(false);
+  });
+
+  it('gives Direct IM and file transfer the same dial rule when both are on', () => {
+    const built = kitOptions(base({ transfers: { directIm: true, sendFile: true, maxBytes: 1000 } }), hooks);
+    expect(built.fileTransfer?.allowDial).toBeTypeOf('function');
+    expect(built.directIm?.allowDial).toBe(built.fileTransfer?.allowDial);
+  });
 });

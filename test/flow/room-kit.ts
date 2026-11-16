@@ -49,7 +49,7 @@ export async function signOn(server: FakeOscarServer, name: string, buddies: str
   });
   const seen: Seen = {
     state: [], im: [], invite: [], roomMessage: [], roomJoin: [], roomLeave: [], roomReady: [], roomClosed: [], presence: [], rate: [],
-    directImOffer: [], directIm: [], directMessage: [],
+    directImOffer: [], directIm: [], directMessage: [], fileOffer: [], transfer: [],
   };
   for (const event of Object.keys(seen) as (keyof OscarEvents)[]) {
     session.on(event, (payload) => {

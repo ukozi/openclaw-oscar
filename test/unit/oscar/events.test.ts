@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { parseAimHtml } from 'open-oscar-client-kit/client';
 import { htmlToText } from 'open-oscar-client-kit/wire';
-import type { DirectMessage, IncomingIm, Invite, RoomMessage } from 'open-oscar-client-kit/model';
-import { toDirectImOfferEvent, toDirectMessageEvent, toImEvent, toInviteEvent, toRoomMessageEvent } from '../../../src/oscar/events.js';
+import type { DirectMessage, FileOfferNotice, IncomingIm, Invite, RoomMessage, TransferStatus } from 'open-oscar-client-kit/model';
+import {
+  toDirectImOfferEvent,
+  toDirectMessageEvent,
+  toFileOfferEvent,
+  toImEvent,
+  toInviteEvent,
+  toRoomMessageEvent,
+  toTransferEvent,
+} from '../../../src/oscar/events.js';
 
 const LINK = '<A HREF="https://example.com">x</A> &amp; <B>y</B>';
 
@@ -220,5 +228,51 @@ describe('Direct IM events', () => {
 
   it('keeps the auto-response and damaged marks', () => {
     expect(toDirectMessageEvent(message({ autoResponse: true, damaged: true }))).toMatchObject({ autoResponse: true, damaged: true, text: '', pictures: [] });
+  });
+});
+
+describe('Send File events', () => {
+  const offer = (over: Partial<FileOfferNotice> = {}): FileOfferNotice => ({
+    id: 'alicesmith:00000000000000bb',
+    from: 'Alice Smith',
+    count: 1,
+    totalBytes: 1_234,
+    name: 'notes.md',
+    folder: null,
+    at: 3_000,
+    ...over,
+  });
+  const status = (over: Partial<TransferStatus> = {}): TransferStatus => ({
+    id: 'alicesmith:00000000000000bb',
+    direction: 'in',
+    peer: 'Alice Smith',
+    state: 'transferring',
+    count: 1,
+    index: 0,
+    name: 'notes.md',
+    bytesDone: 512,
+    bytesTotal: 1_234,
+    ...over,
+  });
+
+  it('maps a file offer and marks a folder offer', () => {
+    expect(toFileOfferEvent(offer())).toEqual({
+      id: 'alicesmith:00000000000000bb',
+      from: 'alicesmith',
+      fromDisplay: 'Alice Smith',
+      count: 1,
+      totalBytes: 1_234,
+      name: 'notes.md',
+      folder: false,
+    });
+    expect(toFileOfferEvent(offer({ count: 2, name: 'docs\\*', folder: 'docs' }))).toMatchObject({ count: 2, name: 'docs\\*', folder: true });
+    expect(toFileOfferEvent(offer({ folder: '' })).folder).toBe(true);
+  });
+
+  it('maps a transfer and keeps its failure and who ended it', () => {
+    expect(toTransferEvent(status())).toEqual({ id: 'alicesmith:00000000000000bb', peer: 'alicesmith', state: 'transferring', index: 0, bytesDone: 512 });
+    expect(toTransferEvent(status({ state: 'failed', failure: 'file-problem' }))).toMatchObject({ state: 'failed', failure: 'file-problem' });
+    expect(toTransferEvent(status({ state: 'cancelled', by: 'peer' }))).toMatchObject({ state: 'cancelled', by: 'peer' });
+    expect('failure' in toTransferEvent(status({ state: 'done' }))).toBe(false);
   });
 });

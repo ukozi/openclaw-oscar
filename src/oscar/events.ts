@@ -1,7 +1,26 @@
 import { richTextToAimHtml } from 'open-oscar-client-kit/client';
 import { ROOM_SERVER_SENDER, htmlToText, normalizeScreenName } from 'open-oscar-client-kit/wire';
-import type { DirectImOffer, DirectMessage, IncomingIm, Invite, MessageWire, RichText, RoomMessage } from 'open-oscar-client-kit/model';
-import type { DirectImOfferEvent, DirectMessageEvent, ImEvent, InviteEvent, RoomMessageEvent, RoomRef } from './types.js';
+import type {
+  DirectImOffer,
+  DirectMessage,
+  FileOfferNotice,
+  IncomingIm,
+  Invite,
+  MessageWire,
+  RichText,
+  RoomMessage,
+  TransferStatus,
+} from 'open-oscar-client-kit/model';
+import type {
+  DirectImOfferEvent,
+  DirectMessageEvent,
+  FileOfferEvent,
+  ImEvent,
+  InviteEvent,
+  RoomMessageEvent,
+  RoomRef,
+  TransferEvent,
+} from './types.js';
 
 const SYSTEM_SENDER = 'oossystemmsg';
 
@@ -91,5 +110,29 @@ export function toDirectMessageEvent(message: DirectMessage): DirectMessageEvent
     autoResponse: message.autoResponse,
     damaged: message.damaged,
     pictures: message.attachments.map((a) => ({ name: a.name, bytes: a.bytes })),
+  };
+}
+
+export function toFileOfferEvent(offer: FileOfferNotice): FileOfferEvent {
+  return {
+    id: offer.id,
+    from: normalizeScreenName(offer.from),
+    fromDisplay: offer.from,
+    count: offer.count,
+    totalBytes: offer.totalBytes,
+    name: offer.name,
+    folder: offer.folder !== null,
+  };
+}
+
+export function toTransferEvent(status: TransferStatus): TransferEvent {
+  return {
+    id: status.id,
+    peer: normalizeScreenName(status.peer),
+    state: status.state,
+    ...(status.failure === undefined ? {} : { failure: status.failure }),
+    ...(status.by === undefined ? {} : { by: status.by }),
+    index: status.index,
+    bytesDone: status.bytesDone,
   };
 }

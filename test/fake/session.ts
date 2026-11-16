@@ -1,4 +1,4 @@
-import type { InviteEvent, OscarEvents, OscarSession, Presence, RoomRef, SendPriority, SendReceipt, SessionState } from '../../src/oscar/index.js';
+import type { FileSink, InviteEvent, OscarEvents, OscarSession, Presence, RoomRef, SendPriority, SendReceipt, SessionState } from '../../src/oscar/index.js';
 
 type Listener = (payload: never) => void;
 
@@ -9,6 +9,7 @@ export class FakeSession {
   leaves: RoomRef[] = [];
   roomSent: { room: RoomRef; html: string; whisperTo?: string; priority: SendPriority }[] = [];
   directIm: { call: 'accept' | 'decline' | 'close'; id: string }[] = [];
+  files: { call: 'accept' | 'decline' | 'cancel'; id: string; sink?: FileSink }[] = [];
   typing: { to: string; state: 'typing' | 'typed' | 'none' }[] = [];
   away: (string | null)[] = [];
   buddyUpdates = 0;
@@ -84,6 +85,9 @@ export class FakeSession {
       async acceptDirectIm(id: string): Promise<void> { self.directIm.push({ call: 'accept', id }); },
       async declineDirectIm(id: string): Promise<void> { self.directIm.push({ call: 'decline', id }); },
       async closeDirectIm(id: string): Promise<void> { self.directIm.push({ call: 'close', id }); },
+      async acceptFileOffer(id: string, sink: FileSink): Promise<void> { self.files.push({ call: 'accept', id, sink }); },
+      async declineFileOffer(id: string): Promise<void> { self.files.push({ call: 'decline', id }); },
+      async cancelTransfer(id: string): Promise<void> { self.files.push({ call: 'cancel', id }); },
     };
     return api as unknown as OscarSession;
   }

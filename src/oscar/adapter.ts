@@ -12,7 +12,7 @@ import {
   normalizeScreenName,
   strongHash,
 } from 'open-oscar-client-kit/wire';
-import { toDirectImOfferEvent, toDirectMessageEvent, toImEvent, toInviteEvent } from './events.js';
+import { toDirectImOfferEvent, toDirectMessageEvent, toFileOfferEvent, toImEvent, toInviteEvent, toTransferEvent } from './events.js';
 import { makeKitClient } from './kit-client.js';
 import type { KitClient } from './kit-client.js';
 import { login, probeLogin } from './login.js';
@@ -21,6 +21,7 @@ import { RoomList } from './room-list.js';
 import { SendQueue, Typing, sendWithResend, toSendError } from './send.js';
 import { OscarSendError } from './types.js';
 import type {
+  FileSink,
   InviteEvent,
   OscarEvents,
   OscarSession,
@@ -50,6 +51,8 @@ const EVENTS = [
   'directImOffer',
   'directIm',
   'directMessage',
+  'fileOffer',
+  'transfer',
 ] as const;
 
 type Listeners = { [E in keyof OscarEvents]: Set<(payload: OscarEvents[E]) => void> };
@@ -148,6 +151,10 @@ export class KitSession implements OscarSession {
     });
     this.client.on('directMessage', (message) => {
       if (this.directIms.has(message.id)) this.emit('directMessage', toDirectMessageEvent(message));
+    });
+    this.client.on('fileOffer', (offer) => this.emit('fileOffer', toFileOfferEvent(offer)));
+    this.client.on('transfer', (t) => {
+      if (t.direction === 'in') this.emit('transfer', toTransferEvent(t));
     });
   }
 
@@ -379,6 +386,18 @@ export class KitSession implements OscarSession {
 
   closeDirectIm(id: string): Promise<void> {
     return this.client.closeDirectIm(id);
+  }
+
+  acceptFileOffer(id: string, sink: FileSink): Promise<void> {
+    return this.client.acceptFileOffer(id, sink);
+  }
+
+  declineFileOffer(id: string): Promise<void> {
+    return this.client.declineFileOffer(id);
+  }
+
+  cancelTransfer(id: string): Promise<void> {
+    return this.client.cancelTransfer(id);
   }
 }
 

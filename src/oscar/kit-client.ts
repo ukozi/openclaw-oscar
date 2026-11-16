@@ -25,6 +25,9 @@ export type KitClient = Pick<
   | 'acceptDirectIm'
   | 'declineDirectIm'
   | 'closeDirectIm'
+  | 'acceptFileOffer'
+  | 'declineFileOffer'
+  | 'cancelTransfer'
 >;
 
 // Room for the text and the frame around the pictures of one message.
@@ -41,14 +44,17 @@ export function directImLimits(maxBytes: number): { maxMessageBytes: number; max
 export function kitOptions(opts: OscarSessionOptions, hooks: { reconnect: ReconnectPolicy }): OscarClientOptions {
   const t = opts.transfers;
   const dial = (): OscarClientOptions => {
-    if (!t?.directIm) return {};
+    if (!t?.directIm && !t?.sendFile) return {};
     const allowDial = makeDialRule({
       host: opts.host,
       log: opts.log,
       ...(t.relayHost === undefined ? {} : { relayHost: t.relayHost }),
       ...(t.lookup === undefined ? {} : { lookup: t.lookup }),
     });
-    return { directIm: { allowDial, ...directImLimits(t.maxBytes) } };
+    return {
+      ...(t.directIm ? { directIm: { allowDial, ...directImLimits(t.maxBytes) } } : {}),
+      ...(t.sendFile ? { fileTransfer: { allowDial } } : {}),
+    };
   };
   return {
     log: opts.log,

@@ -7,11 +7,13 @@ import type {
   DirectImOfferEvent,
   DirectImStateEvent,
   DirectMessageEvent,
+  FileOfferEvent,
   ImEvent,
   OscarEvents,
   OscarSessionOptions,
   RateEvent,
   SessionState,
+  TransferEvent,
 } from '../../src/oscar/types.js';
 import { caFileOf } from './kit.js';
 
@@ -26,6 +28,8 @@ export type Harness = {
   directImOffers: DirectImOfferEvent[];
   directIms: DirectImStateEvent[];
   directMessages: DirectMessageEvent[];
+  fileOffers: FileOfferEvent[];
+  transfers: TransferEvent[];
   online(): Promise<void>;
   phase(phase: SessionState['phase']): Promise<SessionState>;
 };
@@ -60,6 +64,8 @@ export function makeSession(server: FakeOscarServer, over: Partial<OscarSessionO
     directImOffers: [],
     directIms: [],
     directMessages: [],
+    fileOffers: [],
+    transfers: [],
     online: async () => {
       await h.phase('online');
     },
@@ -75,6 +81,8 @@ export function makeSession(server: FakeOscarServer, over: Partial<OscarSessionO
   session.on('directImOffer', (e) => h.directImOffers.push(e));
   session.on('directIm', (e) => h.directIms.push(e));
   session.on('directMessage', (e) => h.directMessages.push(e));
+  session.on('fileOffer', (e) => h.fileOffers.push(e));
+  session.on('transfer', (e) => h.transfers.push(e));
   harnesses.push(h);
   return h;
 }

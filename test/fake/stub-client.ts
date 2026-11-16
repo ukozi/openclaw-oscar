@@ -9,7 +9,7 @@ import type {
   TypingEvent,
 } from 'open-oscar-client-kit/client';
 import { roomConversationId } from 'open-oscar-client-kit/model';
-import type { BuddyPresence, ImBody, RichText, RoomId, RoomStatus, SelfInfo, SessionState } from 'open-oscar-client-kit/model';
+import type { BuddyPresence, FileSink, ImBody, RichText, RoomId, RoomStatus, SelfInfo, SessionState } from 'open-oscar-client-kit/model';
 import type { KitClient } from '../../src/oscar/kit-client.js';
 
 export type Outcome<T> = { resolve: T } | { reject: unknown } | 'hold';
@@ -173,5 +173,17 @@ export class StubClient implements KitClient {
 
   async closeDirectIm(id: string): Promise<void> {
     this.calls.push({ method: 'closeDirectIm', args: [id] });
+  }
+
+  async acceptFileOffer(id: string, sink: FileSink): Promise<void> {
+    this.calls.push({ method: 'acceptFileOffer', args: [id, sink] });
+  }
+
+  async declineFileOffer(id: string): Promise<void> {
+    this.calls.push({ method: 'declineFileOffer', args: [id] });
+  }
+
+  async cancelTransfer(id: string): Promise<void> {
+    this.calls.push({ method: 'cancelTransfer', args: [id] });
   }
 }

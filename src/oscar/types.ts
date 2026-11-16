@@ -1,10 +1,10 @@
 import type { LoginBudget } from 'open-oscar-client-kit/client';
-import type { DirectImEnd } from 'open-oscar-client-kit/model';
+import type { DirectImEnd, FileSink, TransferFailure, TransferState } from 'open-oscar-client-kit/model';
 import type { Logger, RoomRef, SendPriority, SendReceipt, StateReason, TimerApi } from 'open-oscar-client-kit/wire';
 import type { HostLookup } from './dial.js';
 
 export type { LoginBudget } from 'open-oscar-client-kit/client';
-export type { DirectImEnd } from 'open-oscar-client-kit/model';
+export type { DirectImEnd, FileSink, FileWriter, IncomingFile, TransferFailure, TransferState } from 'open-oscar-client-kit/model';
 export { OscarRoomError, OscarSendError } from 'open-oscar-client-kit/wire';
 export type {
   LinkClose,
@@ -62,6 +62,16 @@ export type DirectMessageEvent = {
   damaged: boolean;
   pictures: { name: string; bytes: Uint8Array }[];
 };
+export type FileOfferEvent = { id: string; from: string; fromDisplay: string; count: number; totalBytes: number; name: string; folder: boolean };
+export type TransferEvent = {
+  id: string;
+  peer: string;
+  state: TransferState;
+  failure?: TransferFailure;
+  by?: 'self' | 'peer';
+  index: number;
+  bytesDone: number;
+};
 
 export type OscarEvents = {
   state: SessionState;
@@ -77,6 +87,8 @@ export type OscarEvents = {
   directImOffer: DirectImOfferEvent;
   directIm: DirectImStateEvent;
   directMessage: DirectMessageEvent;
+  fileOffer: FileOfferEvent;
+  transfer: TransferEvent;
 };
 
 export type PasswordCheck = 'checks' | 'does-not-check' | 'unknown';
@@ -119,4 +131,7 @@ export interface OscarSession {
   acceptDirectIm(id: string): Promise<void>;
   declineDirectIm(id: string): Promise<void>;
   closeDirectIm(id: string): Promise<void>;
+  acceptFileOffer(id: string, sink: FileSink): Promise<void>;
+  declineFileOffer(id: string): Promise<void>;
+  cancelTransfer(id: string): Promise<void>;
 }

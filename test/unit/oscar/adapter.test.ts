@@ -1,6 +1,6 @@
 import { OscarError, SignOnError, backoffDelay } from 'open-oscar-client-kit/client';
 import type { DropEvidence, IssuedTicket, TicketSource } from 'open-oscar-client-kit/client';
-import type { BuddyPresence, DirectImStatus, IncomingIm, Invite, SelfInfo } from 'open-oscar-client-kit/model';
+import type { BuddyPresence, DirectImStatus, FileSink, IncomingIm, Invite, SelfInfo, TransferStatus } from 'open-oscar-client-kit/model';
 import { ManualTimers } from 'open-oscar-client-kit/testing';
 import { PASSWORD_CHECK_CACHE_MS } from 'open-oscar-client-kit/wire';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -694,6 +694,64 @@ describe('Direct IM on the session', () => {
       ['acceptDirectIm', ID],
       ['declineDirectIm', ID],
       ['closeDirectIm', ID],
+    ]);
+  });
+});
+
+describe('Send File on the session', () => {
+  const ID = 'alicesmith:00000000000000bb';
+  const status = (over: Partial<TransferStatus>): TransferStatus => ({
+    id: ID,
+    direction: 'in',
+    peer: 'Alice Smith',
+    state: 'transferring',
+    count: 1,
+    index: 0,
+    name: 'notes.md',
+    bytesDone: 0,
+    bytesTotal: 10,
+    ...over,
+  });
+
+  function listen() {
+    const w = world();
+    const offers: OscarEvents['fileOffer'][] = [];
+    const transfers: OscarEvents['transfer'][] = [];
+    w.session.on('fileOffer', (e) => offers.push(e));
+    w.session.on('transfer', (e) => transfers.push(e));
+    return { ...w, offers, transfers };
+  }
+
+  it('passes on a file offer', () => {
+    const w = listen();
+    w.client.emit('fileOffer', { id: ID, from: 'Alice Smith', count: 1, totalBytes: 10, name: 'notes.md', folder: null, at: 1 });
+    expect(w.offers).toEqual([{ id: ID, from: 'alicesmith', fromDisplay: 'Alice Smith', count: 1, totalBytes: 10, name: 'notes.md', folder: false }]);
+  });
+
+  it('passes on each step of a transfer that comes in and nothing of one that goes out', () => {
+    const w = listen();
+    w.client.emit('transfer', status({ direction: 'out' }));
+    w.client.emit('transfer', status({ direction: 'out', state: 'done', bytesDone: 10 }));
+    w.client.emit('transfer', status({}));
+    w.client.emit('transfer', status({ bytesDone: 4 }));
+    w.client.emit('transfer', status({ state: 'failed', failure: 'file-problem', bytesDone: 4 }));
+    expect(w.transfers).toEqual([
+      { id: ID, peer: 'alicesmith', state: 'transferring', index: 0, bytesDone: 0 },
+      { id: ID, peer: 'alicesmith', state: 'transferring', index: 0, bytesDone: 4 },
+      { id: ID, peer: 'alicesmith', state: 'failed', failure: 'file-problem', index: 0, bytesDone: 4 },
+    ]);
+  });
+
+  it('hands accept, decline and cancel to the client', async () => {
+    const w = listen();
+    const sink: FileSink = { begin: async () => ({ write: async () => {}, finish: async () => {}, abort: async () => {} }) };
+    await w.session.acceptFileOffer(ID, sink);
+    await w.session.declineFileOffer(ID);
+    await w.session.cancelTransfer(ID);
+    expect(w.client.calls.map((c) => [c.method, ...c.args])).toEqual([
+      ['acceptFileOffer', ID, sink],
+      ['declineFileOffer', ID],
+      ['cancelTransfer', ID],
     ]);
   });
 });
