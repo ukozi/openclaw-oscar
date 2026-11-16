@@ -29,6 +29,7 @@ export function policyFixture(over: Partial<RootPolicy> = {}): RootPolicy {
     invites: { accept: 'approved', maxRooms: 5, leaveWhenAloneMinutes: 10 },
     rooms: {},
     awareness: { lines: 5 },
+    files: { directIm: false, sendFile: false, maxBytes: 10 * 1024 * 1024 },
     chain: {
       roster: [],
       floorSeconds: 120,

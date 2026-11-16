@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   RELOAD_NOOP_PREFIXES, ROOM_CHUNK_MAX, ROOT_ONLY_KEYS, buddyList, configProblems, defaultAccountId, listAccountIds,
-  OscarConfigSchema, oscarChannelConfigSchema, readPolicy, resolveAccount, rosterHash,
+  OscarConfigSchema, UI_HINTS, oscarChannelConfigSchema, readPolicy, resolveAccount, rosterHash,
 } from '../../src/config.js';
 import type { ChainConfig } from '../../src/config.js';
 
@@ -255,6 +255,80 @@ describe('room profiles', () => {
 
   it('reloads room profile keys without a restart', () => {
     for (const key of ['mode', 'trust', 'rank']) expect(RELOAD_NOOP_PREFIXES).toContain(`channels.oscar.room.${key}`);
+  });
+});
+
+describe('files', () => {
+  const MB = 1024 * 1024;
+  const files = (patch: Sec) => cfgOf({ ...good(), files: patch });
+
+  it('reads files off by default with a 10 MB limit', () => {
+    expect(readPolicy(cfgOf(good())).files).toEqual({ directIm: false, sendFile: false, maxBytes: 10 * MB });
+    expect(readPolicy(undefined).files).toEqual({ directIm: false, sendFile: false, maxBytes: 10 * MB });
+    expect(readPolicy(files({})).files).toEqual({ directIm: false, sendFile: false, maxBytes: 10 * MB });
+  });
+
+  it('reads files.directIm, files.sendFile, files.maxMb and files.relayHost', () => {
+    const sec = { directIm: true, sendFile: true, maxMb: 25, relayHost: 'relay.example.net' };
+    expect(configProblems(files(sec))).toEqual([]);
+    expect(readPolicy(files(sec)).files).toEqual({ directIm: true, sendFile: true, maxBytes: 25 * MB, relayHost: 'relay.example.net' });
+    expect(readPolicy(files({ directIm: true })).files).toEqual({ directIm: true, sendFile: false, maxBytes: 10 * MB });
+    expect(readPolicy(files({ sendFile: true, maxMb: 1 })).files).toEqual({ directIm: false, sendFile: true, maxBytes: 1 * MB });
+    for (const relayHost of ['192.0.2.7', '2001:db8::7', '::ffff:192.0.2.7']) {
+      expect(configProblems(files({ relayHost })), relayHost).toEqual([]);
+      expect(readPolicy(files({ relayHost })).files.relayHost).toBe(relayHost);
+    }
+  });
+
+  it('turns both switches off when no owner is set', () => {
+    for (const owners of [[], undefined, ['*']]) {
+      expect(readPolicy(cfgOf({ ...good(), owners, files: { directIm: true, sendFile: true, maxMb: 5 } })).files)
+        .toEqual({ directIm: false, sendFile: false, maxBytes: 5 * MB });
+    }
+  });
+
+  it('refuses files.maxMb outside 1 to 25', () => {
+    for (const maxMb of [0, 26, 2.5, -1]) {
+      const problems = configProblems(files({ maxMb }));
+      expect(problems.some((p) => p.startsWith('channels.oscar.files.maxMb:')), `${maxMb}: ${problems.join(' | ')}`).toBe(true);
+      expect(readPolicy(files({ maxMb })).files.maxBytes).toBe(10 * MB);
+    }
+  });
+
+  it('refuses an unknown key under files', () => {
+    expect(configProblems(files({ sendFiles: true }))).toEqual(['channels.oscar.files.sendFiles: unknown key']);
+  });
+
+  it('refuses a relayHost with a port', () => {
+    for (const relayHost of ['relay.example.net:5190', '192.0.2.7:443']) {
+      expect(configProblems(files({ relayHost }))).toEqual(['channels.oscar.files.relayHost: give a host name or an address without a port']);
+      expect(readPolicy(files({ relayHost })).files.relayHost).toBeUndefined();
+    }
+    for (const relayHost of ['', 'https://relay.example.net', 'relay example', 'r'.repeat(254)]) {
+      const problems = configProblems(files({ relayHost }));
+      expect(problems.some((p) => p.startsWith('channels.oscar.files.relayHost:')), `${relayHost}: ${problems.join(' | ')}`).toBe(true);
+      expect(readPolicy(files({ relayHost })).files.relayHost).toBeUndefined();
+    }
+  });
+
+  it('reports files under an account as a root-only key', () => {
+    expect(ROOT_ONLY_KEYS).toContain('files');
+    expect(configProblems(cfgOf({ ...good(), accounts: { botone: { screenName: 'botone', files: { directIm: true } } } }))).toEqual([
+      'channels.oscar.accounts.botone.files: root-only key, move it to channels.oscar.files',
+    ]);
+  });
+
+  it('restarts the account when files changes', () => {
+    for (const path of ['channels.oscar.files', 'channels.oscar.files.directIm', 'channels.oscar.files.sendFile', 'channels.oscar.files.maxMb', 'channels.oscar.files.relayHost']) {
+      expect(RELOAD_NOOP_PREFIXES.some((p) => path === p || path.startsWith(`${p}.`)), path).toBe(false);
+    }
+  });
+
+  it('gives each files key a label', () => {
+    for (const key of ['files.directIm', 'files.sendFile', 'files.maxMb', 'files.relayHost'] as const) {
+      expect(UI_HINTS[key].label.length, key).toBeGreaterThan(0);
+      expect(UI_HINTS[key].help.length, key).toBeGreaterThan(0);
+    }
   });
 });
 

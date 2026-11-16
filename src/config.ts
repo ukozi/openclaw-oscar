@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 import { buildChannelConfigSchema } from 'openclaw/plugin-sdk/channel-config-schema';
 import { buildOptionalSecretInputSchema, hasConfiguredSecretInput } from 'openclaw/plugin-sdk/secret-input';
 import { z } from 'zod';
@@ -17,7 +18,7 @@ const WILDCARD = '*';
 
 export const ROOT_ONLY_KEYS = [
   'owners', 'allowFrom', 'dmPolicy', 'dangerouslyAllowOpenDm', 'contactNotice', 'nonOwnerTools', 'outbound',
-  'room', 'invites', 'rooms', 'awareness', 'chain',
+  'room', 'invites', 'rooms', 'awareness', 'chain', 'files',
 ] as const;
 
 export const RELOAD_NOOP_PREFIXES = [
@@ -39,6 +40,10 @@ export const UI_HINTS = {
   allowFrom: { label: 'Approved people' },
   dangerouslyAllowUnauthenticatedServer: { label: 'Run on a server that does not check passwords', advanced: true },
   dangerouslyAllowOpenDm: { label: 'Allow dmPolicy open', advanced: true },
+  'files.directIm': { label: 'Take pictures over Direct IM', help: 'Owners and approved people can send the bot pictures. Off by default.' },
+  'files.sendFile': { label: 'Take files over Send File', help: 'Owners and approved people can send the bot pictures, PDFs and text files, Markdown included. Off by default.' },
+  'files.maxMb': { label: 'Largest file (MB)', placeholder: '10', help: 'From 1 to 25. The default is 10.' },
+  'files.relayHost': { label: 'Relay host', help: 'The server\'s rendezvous relay, when it runs on another host. The bot connects only to its server and this host.', advanced: true },
 };
 
 export type AwayConfig = { enabled: boolean; message: string; blurb: 'agent' | 'phrases' | 'summarize'; graceMs: number; maxLength: number; replyCooldownMinutes: number };
@@ -60,6 +65,7 @@ export type ChainConfig = {
 export type RoomMode = 'team' | 'lounge' | 'watch';
 export type RoomTrust = 'private' | 'public';
 export type RoomProfile = { mode: RoomMode; trust?: RoomTrust; rank?: string[] };
+export type FilesPolicy = { directIm: boolean; sendFile: boolean; maxBytes: number; relayHost?: string };
 
 export type RootPolicy = {
   owners: string[]; allowFrom: string[];
@@ -73,6 +79,7 @@ export type RootPolicy = {
   awareness: { lines: number };
   chain: ChainConfig;
   teammates: string[];
+  files: FilesPolicy;
 };
 
 type Obj = Record<string, unknown>;
@@ -132,6 +139,11 @@ const profileShape = {
   trust: z.enum(['private', 'public']).optional(),
   rank: z.array(z.string().min(1)).optional(),
 };
+const MB = 1024 * 1024;
+const MAX_MB = { min: 1, max: 25, fallback: 10 };
+const relayHostSchema = z.string().min(1).max(253).regex(/^[A-Za-z0-9.:-]+$/);
+// A colon outside an IPv6 address is a port.
+const hasPort = (host: string): boolean => host.includes(':') && isIP(host) !== 6;
 const toolPolicy = z.object({ allow: z.array(z.string()).optional(), alsoAllow: z.array(z.string()).optional(), deny: z.array(z.string()).optional() }).strict();
 
 const rootShape = {
@@ -168,6 +180,12 @@ const rootShape = {
     resultTimeoutMinutes: z.number().min(1).max(1440).optional(),
     reviewResults: z.boolean().optional(),
   }).strict().optional(),
+  files: z.object({
+    directIm: z.boolean().optional(),
+    sendFile: z.boolean().optional(),
+    maxMb: z.number().int().min(MAX_MB.min).max(MAX_MB.max).optional(),
+    relayHost: relayHostSchema.optional(),
+  }).strict().optional(),
   accounts: z.record(z.string(), z.object(transportShape).strict()).optional(),
   defaultAccount: z.string().optional(),
 };
@@ -194,6 +212,10 @@ function crossFieldProblems(sec: Obj): Problem[] {
   if (room && typeof room.name === 'string') {
     const problem = roomNameProblem(room.name);
     if (problem) problems.push({ path: ['room', 'name'], message: problem });
+  }
+  const relayHost = obj(sec.files)?.relayHost;
+  if (typeof relayHost === 'string' && hasPort(relayHost)) {
+    problems.push({ path: ['files', 'relayHost'], message: 'give a host name or an address without a port' });
   }
 
   const people = new Set([...owners, ...approved].filter((v): v is string => typeof v === 'string').map(normalizeName));
@@ -429,6 +451,20 @@ export function readPolicy(cfg: unknown): RootPolicy {
       reviewResults: bool(chain.reviewResults, false),
     },
     teammates,
+    files: readFiles(obj(sec.files) ?? {}, owned),
+  };
+}
+
+function readFiles(files: Obj, owned: boolean): FilesPolicy {
+  const maxMb = files.maxMb;
+  const mb = typeof maxMb === 'number' && Number.isInteger(maxMb) && maxMb >= MAX_MB.min && maxMb <= MAX_MB.max ? maxMb : MAX_MB.fallback;
+  const relayHost = files.relayHost;
+  const relay = relayHostSchema.safeParse(relayHost).success && !hasPort(relayHost as string) ? (relayHost as string) : undefined;
+  return {
+    directIm: owned && bool(files.directIm, false),
+    sendFile: owned && bool(files.sendFile, false),
+    maxBytes: mb * MB,
+    ...(relay ? { relayHost: relay } : {}),
   };
 }
 

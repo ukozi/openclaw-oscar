@@ -513,6 +513,29 @@
             },
             "additionalProperties": false
           },
+          "files": {
+            "type": "object",
+            "properties": {
+              "directIm": {
+                "type": "boolean"
+              },
+              "sendFile": {
+                "type": "boolean"
+              },
+              "maxMb": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 25
+              },
+              "relayHost": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253,
+                "pattern": "^[A-Za-z0-9.:-]+$"
+              }
+            },
+            "additionalProperties": false
+          },
           "accounts": {
             "type": "object",
             "propertyNames": {
@@ -768,6 +791,24 @@
         },
         "dangerouslyAllowOpenDm": {
           "label": "Allow dmPolicy open",
+          "advanced": true
+        },
+        "files.directIm": {
+          "label": "Take pictures over Direct IM",
+          "help": "Owners and approved people can send the bot pictures. Off by default."
+        },
+        "files.sendFile": {
+          "label": "Take files over Send File",
+          "help": "Owners and approved people can send the bot pictures, PDFs and text files, Markdown included. Off by default."
+        },
+        "files.maxMb": {
+          "label": "Largest file (MB)",
+          "placeholder": "10",
+          "help": "From 1 to 25. The default is 10."
+        },
+        "files.relayHost": {
+          "label": "Relay host",
+          "help": "The server's rendezvous relay, when it runs on another host. The bot connects only to its server and this host.",
           "advanced": true
         }
       }

@@ -36,6 +36,7 @@ export function policyFixture(over: Partial<RootPolicy> = {}): RootPolicy {
     rooms: {},
     awareness: { lines: 5 },
     chain: chainConfig(),
+    files: { directIm: false, sendFile: false, maxBytes: 10 * 1024 * 1024 },
     ...over,
   };
   return { ...base, teammates: over.teammates ?? base.chain.roster.map((e) => e.screenName) };
