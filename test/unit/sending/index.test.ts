@@ -165,6 +165,15 @@ describe('sendMediaTo', () => {
     expect(sdk.loads).toEqual([]);
   });
 
+  it('tells a person who is signed off about three files at most', async () => {
+    const t = setup();
+    t.session.setPresence('alice', { online: false });
+    const links = [1, 2, 3, 4, 5].map((n) => `https://files.example.net/${n}.md`);
+    await t.send('alice', links);
+    expect(t.notes).toEqual([{ to: 'alice', why: 'too-many' }, ...links.slice(0, 3).map((link) => ({ to: 'alice', why: 'failed', link }))]);
+    expect(sdk.loads).toEqual([]);
+  });
+
   it('sends to a person whose presence is not known', async () => {
     const t = setup();
     await t.send('bob', [REPORT]);
@@ -304,6 +313,20 @@ describe('sendMediaTo', () => {
       mediaLocalRoots: ['/fake/agents/helper'],
       mediaReadFile: async () => {
         t.setCfg({ channels: { oscar: { host: 'h', screenName: 'botone', password: 'hunter22', owners: ['bob'], files: { sendFile: true } } } });
+        return NOTES;
+      },
+    };
+    await t.send('alice', [MEMORY], { host });
+    expect(sdk.loads).toHaveLength(1);
+    expect([t.offers, t.notes]).toEqual([[], []]);
+  });
+
+  it('offers nothing when an owner became an approved person while the file loaded', async () => {
+    const t = setup();
+    const host: HostAccess = {
+      mediaLocalRoots: ['/fake/agents/helper'],
+      mediaReadFile: async () => {
+        t.setCfg({ channels: { oscar: { host: 'h', screenName: 'botone', password: 'hunter22', owners: ['bob'], allowFrom: ['alice'], files: { sendFile: true } } } });
         return NOTES;
       },
     };

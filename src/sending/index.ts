@@ -50,8 +50,9 @@ export function createMediaSender(deps: Deps): MediaSender {
   };
 
   const send = async (p: Parameters<MediaSender['sendMediaTo']>[0]): Promise<void> => {
-    const urls = p.urls.filter((url) => typeof url === 'string' && url.trim() !== '');
-    if (urls.length === 0) return;
+    const given = p.urls.filter((url) => typeof url === 'string' && url.trim() !== '');
+    if (given.length === 0) return;
+    const urls = given.slice(0, FILES_LIMITS.perSend);
     const checked = checkTarget({ cfg: deps.getCfg(), accountId: deps.accountId, to: p.to });
     if (!checked.ok) {
       deps.log.info('no file goes to this target', { to: p.to });
@@ -74,15 +75,15 @@ export function createMediaSender(deps: Deps): MediaSender {
     }
     const rt = getRuntime(deps.accountId);
     const online = rt !== undefined && !rt.halted && rt.session.getState().phase === 'online';
+    if (given.length > urls.length) note(to, 'too-many');
     if (!online || deps.presenceOf(to)?.online === false) {
       failed(to, urls);
       return;
     }
-    if (urls.length > FILES_LIMITS.perSend) note(to, 'too-many');
 
     const pictures: { url: string; picture: Picture }[] = [];
     const others: { url: string; file: OutFile }[] = [];
-    for (const url of urls.slice(0, FILES_LIMITS.perSend)) {
+    for (const url of urls) {
       const got = await loadOutgoing({
         url, cfg: p.cfg, role, maxBytes: files.maxBytes, log: deps.log,
         ...(p.agentId !== undefined ? { agentId: p.agentId } : {}),
@@ -101,7 +102,7 @@ export function createMediaSender(deps: Deps): MediaSender {
       else others.push({ url, file: found.kind === 'picture' ? { name: found.picture.name, bytes: found.picture.bytes } : found.file });
     }
     // The lists may have changed while the files loaded.
-    if (!allowed(to)) return;
+    if (allowed(to)?.role !== role) return;
 
     // No line goes to a person who was taken off the lists while the send waited.
     const ended = (list: { url: string }[]) => (outcome: SendOutcome): void => {
