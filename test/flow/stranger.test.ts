@@ -59,7 +59,7 @@ describe('a stranger trying to send a file', () => {
     expect(sdk.inbound).toEqual([]);
   });
 
-  it('ten quick offers of each kind from strangers cost the bot no send, and an owner is answered at once', async () => {
+  it('ten waiting offers of each kind, each Direct IM offer from another name, get no answer, and an owner is answered at once', async () => {
     // One notice an hour, so ten names do not make a burst of notices.
     flow = await startFlow({ server: { relay: true }, sec: { files: { directIm: true, sendFile: true }, contactNotice: { maxPerHour: 1 } } });
     const alice = flow.peer('alice');
@@ -78,6 +78,38 @@ describe('a stranger trying to send a file', () => {
     expect(imTexts(alice).map((m) => m.text)).toEqual([fileNotice, 'here']);
     expect(flow.server.relayed()).toEqual([]);
     expect(sdk.inbound.map((r) => r.ctx.SenderId)).toEqual(['alice']);
+  });
+});
+
+describe('a stranger offer the bot still declines', () => {
+  it('past twelve waiting file offers, each new one makes the bot decline the oldest', async () => {
+    flow = await startFlow({ server: { relay: true }, sec: { files: { sendFile: true } } });
+    const { server } = flow;
+    const alice = flow.peer('alice');
+    const mallory = flow.peer('mallory');
+    for (let i = 0; i < 14; i++) void mallory.offerFile('botone', `notes-${i}.md`, NOTES);
+    await waitFor(() => icbmsSentTo(server, 'botone', 'mallory').length === 2, 8000, 'the two declines');
+    sdk.agent = () => [{ text: 'here' }];
+    alice.sendIm('botone', 'are you there?');
+    await waitFor(() => imTexts(alice).some((m) => m.text === 'here'), 8000, 'the owner turn');
+    expect(icbmsSentTo(server, 'botone', 'mallory')).toEqual([{ subtype: 0x06 }, { subtype: 0x06 }]);
+    expect(mallory.fileTransfers().map((t) => t.outcome)).toEqual(['declined', 'declined']);
+    expect(server.relayed()).toEqual([]);
+  });
+
+  it('a second and a third Direct IM offer of one name each make the client cancel the one before', async () => {
+    flow = await startFlow({ server: { relay: true }, sec: { files: { directIm: true } } });
+    const { server } = flow;
+    const alice = flow.peer('alice');
+    const mallory = flow.peer('mallory');
+    for (let i = 0; i < 3; i++) void mallory.openDirectIm('botone');
+    await waitFor(() => icbmsSentTo(server, 'botone', 'mallory').length === 2, 8000, 'the two cancels');
+    sdk.agent = () => [{ text: 'here' }];
+    alice.sendIm('botone', 'are you there?');
+    await waitFor(() => imTexts(alice).some((m) => m.text === 'here'), 8000, 'the owner turn');
+    expect(icbmsSentTo(server, 'botone', 'mallory')).toEqual([{ subtype: 0x06 }, { subtype: 0x06 }]);
+    expect(server.relayed()).toEqual([]);
+    expect(sdk.media).toEqual([]);
   });
 });
 
